@@ -37,8 +37,8 @@ export class StarshipScene extends Phaser.Scene {
     this.load.image('enemy', '/assets/enemy.png');
     this.load.image('stars', '/assets/stars.png'); // optional
 
-    this.load.audio('shoot', '/assets/shoot.wav'); // optional
-    this.load.audio('boom', '/assets/boom.wav'); // optional
+    this.load.audio('shoot', '/assets/SpaceShipClassicShootingSFX.wav'); // optional
+    this.load.audio('boom', '/assets/Boom.wav'); // optional
 
     this.load.on('loaderror', (file: Phaser.Loader.File) =>
       console.error('Asset failed:', file.key)
@@ -92,17 +92,27 @@ export class StarshipScene extends Phaser.Scene {
     this.ship.setCollideWorldBounds(true);
     this.ship.setDrag(120).setAngularDrag(150).setMaxVelocity(260);
 
-    // NEW: force 256x256 display size for ship
-    this.ship.setDisplaySize(256, 256);
+    // Reduce ONLY the player ship size (e.g., 128x128)
+    this.ship.setDisplaySize(128, 128);
 
-    // Use a centered circle hitbox sized for 256x256 and nudged down slightly
+    // Use a centered circle hitbox sized for display size (scale-aware)
     {
       const body = this.ship.body as Phaser.Physics.Arcade.Body;
-      const frameW = this.ship.displayWidth;
-      const frameH = this.ship.displayHeight;
-      const radius = Math.min(frameW, frameH) * 0.42; // larger circle on 256x256
-      const downShift = frameH * 0.1; // nudge circle down a bit
-      body.setCircle(radius, frameW / 2 - radius, frameH / 2 - radius + downShift);
+
+      // Unscaled frame size
+      const frameW = this.ship.frame.width;
+      const frameH = this.ship.frame.height;
+
+      // Convert desired display radius to body units (divide by scale)
+      const scale = Math.max(this.ship.scaleX, this.ship.scaleY);
+      const desiredDisplayRadius = Math.min(this.ship.displayWidth, this.ship.displayHeight) * 0.4;
+      const radius = desiredDisplayRadius / scale;
+
+      const diameter = radius * 2;
+      const offsetX = (frameW - diameter) / 2;
+      const offsetY = (frameH - diameter) / 2;
+
+      body.setCircle(radius, offsetX, offsetY);
 
       // lock rotation so the ship never rotates
       body.allowRotation = false;
@@ -244,8 +254,7 @@ export class StarshipScene extends Phaser.Scene {
     if (!enemy?.body) return;
     enemy.setActive(true).setVisible(true);
 
-    // NEW: force enemy ships to 256x256 and give them a circular hitbox too
-    enemy.setDisplaySize(256, 256);
+    // Keep enemy’s original asset size; only set a circular hitbox
     {
       const ebody = enemy.body as Phaser.Physics.Arcade.Body;
       const ew = enemy.displayWidth;
