@@ -6,7 +6,7 @@ export class Boot extends Scene {
   }
 
   create() {
-    console.log('Boot scene starting');
-    this.scene.start('StarshipScene'); // Changed this to directly start StarshipScene
+    console.log('Boot scene starting StarshipScene');
+    this.scene.start('StarshipScene');
   }
 }

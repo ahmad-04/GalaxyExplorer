@@ -5,18 +5,28 @@ const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 800,
   height: 600,
+  parent: 'game-container',
+  backgroundColor: '#000000',
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
   physics: {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 0 },
-      debug: false,
+      debug: true, // enable temporarily so we can see bodies move
     },
   },
-  scene: StarshipScene,
+  // Keep only the gameplay scene for now to eliminate side-effects.
+  scene: [StarshipScene],
 };
 
 const StartGame = (parent: string) => {
-  return new Phaser.Game({ ...config, parent });
+  console.log('Starting game with config:', config);
+  const game = new Phaser.Game({ ...config, parent });
+  console.log('Game instance created');
+  return game;
 };
 
 export default StartGame;
