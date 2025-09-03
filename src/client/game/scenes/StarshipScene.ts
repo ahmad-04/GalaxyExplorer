@@ -21,6 +21,7 @@ export class StarshipScene extends Phaser.Scene {
   private boomSfx?: Phaser.Sound.BaseSound;
   private spawnTimer!: Phaser.Time.TimerEvent;
   private difficulty = 1;
+  private starScrollDir = -1; // -1 = up, 1 = down (reversed)
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
@@ -31,7 +32,7 @@ export class StarshipScene extends Phaser.Scene {
 
   preload(): void {
     // Load from Vite publicDir (src/client/public) => served at /assets/*
-    this.load.image('ship', '/assets/ship.png');
+    this.load.image('ship', '/assets/ShipClassic.png');
     this.load.image('bullet', '/assets/bullet.png');
     this.load.image('enemy', '/assets/enemy.png');
     this.load.image('stars', '/assets/stars.png'); // optional
@@ -39,7 +40,9 @@ export class StarshipScene extends Phaser.Scene {
     this.load.audio('shoot', '/assets/shoot.wav'); // optional
     this.load.audio('boom', '/assets/boom.wav'); // optional
 
-    this.load.on('loaderror', (f: any) => console.error('Asset failed:', f?.src));
+    this.load.on('loaderror', (file: Phaser.Loader.File) =>
+      console.error('Asset failed:', file.key)
+    );
   }
 
   create(): void {
@@ -64,7 +67,13 @@ export class StarshipScene extends Phaser.Scene {
       .setDepth(-10);
 
     // Keyboard (WASD + Space)
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,SPACE') as any;
+    this.keys = {
+      W: this.input.keyboard!.addKey(KC.W),
+      A: this.input.keyboard!.addKey(KC.A),
+      S: this.input.keyboard!.addKey(KC.S),
+      D: this.input.keyboard!.addKey(KC.D),
+      SPACE: this.input.keyboard!.addKey(KC.SPACE),
+    };
 
     // Sounds (optional)
     if (this.sound) {
@@ -83,8 +92,26 @@ export class StarshipScene extends Phaser.Scene {
     this.ship.setCollideWorldBounds(true);
     this.ship.setDrag(120).setAngularDrag(150).setMaxVelocity(260);
 
+    // NEW: force 256x256 display size for ship
+    this.ship.setDisplaySize(256, 256);
+
+    // Use a centered circle hitbox sized for 256x256 and nudged down slightly
+    {
+      const body = this.ship.body as Phaser.Physics.Arcade.Body;
+      const frameW = this.ship.displayWidth;
+      const frameH = this.ship.displayHeight;
+      const radius = Math.min(frameW, frameH) * 0.42; // larger circle on 256x256
+      const downShift = frameH * 0.1; // nudge circle down a bit
+      body.setCircle(radius, frameW / 2 - radius, frameH / 2 - radius + downShift);
+
+      // lock rotation so the ship never rotates
+      body.allowRotation = false;
+      this.ship.setAngularVelocity(0);
+      this.ship.setRotation(Phaser.Math.DegToRad(-90));
+    }
+
     // Input
-    this.cursors = this.input.keyboard.createCursorKeys();
+    this.cursors = this.input.keyboard!.createCursorKeys();
 
     // Groups (use resolved keys)
     this.bullets = this.physics.add.group({ defaultKey: this.tex.bullet, maxSize: 60 });
@@ -123,43 +150,61 @@ export class StarshipScene extends Phaser.Scene {
       loop: true,
       callback: () => {
         this.difficulty = Math.min(10, this.difficulty + 1);
-        this.spawnTimer.delay = Math.max(400, this.spawnTimer.delay - 100);
+        const newDelay = Math.max(400, this.spawnTimer.delay - 100);
+        if (this.spawnTimer) {
+          this.spawnTimer.remove();
+        }
+        this.spawnTimer = this.time.addEvent({
+          delay: newDelay,
+          loop: true,
+          callback: () => this.spawnEnemy(),
+        });
       },
     });
   }
 
-  update(time: number): void {
+  override update(time: number, delta: number): void {
     if (!this.ship?.body) return;
 
-    // Parallax
-    this.starfield.tilePositionY += 1 + 0.2 * this.difficulty;
+    // Parallax (frame-rate independent)
+    const d = delta / 16.6667;
+    this.starfield.tilePositionY += this.starScrollDir * (1 + 0.2 * this.difficulty) * d;
 
     // WASD + arrows
     const left = this.cursors.left?.isDown || this.keys.A?.isDown;
     const right = this.cursors.right?.isDown || this.keys.D?.isDown;
     const up = this.cursors.up?.isDown || this.keys.W?.isDown;
-    const down = this.cursors.down?.isDown || this.keys.S?.isDown; // NEW: reverse
+    const down = this.cursors.down?.isDown || this.keys.S?.isDown;
     const fire = this.cursors.space?.isDown || this.keys.SPACE?.isDown;
 
-    // Rotation
-    if (left) this.ship.setAngularVelocity(-160);
-    else if (right) this.ship.setAngularVelocity(160);
-    else this.ship.setAngularVelocity(0);
+    // NEW: no rotation — zero angular velocity every frame
+    this.ship.setAngularVelocity(0);
 
-    // Thrust (forward/backward)
-    const a = this.ship.rotation;
+    // NEW: strafe-style movement (fixed facing)
     const speed = 220;
-    if (up && !down) {
-      this.ship.setVelocity(Math.cos(a) * speed, Math.sin(a) * speed);
-    } else if (down && !up) {
-      // reverse thrust (move backward relative to facing)
-      this.ship.setVelocity(-Math.cos(a) * speed * 0.8, -Math.sin(a) * speed * 0.8);
+    let vx = 0;
+    let vy = 0;
+    if (left) vx -= speed;
+    if (right) vx += speed;
+    if (up) vy -= speed; // up is toward top of screen
+    if (down) vy += speed; // down is toward bottom of screen
+
+    // Normalize diagonals so combined speed isn't faster
+    if (vx !== 0 && vy !== 0) {
+      const inv = 1 / Math.SQRT2;
+      vx *= inv;
+      vy *= inv;
+    }
+
+    if (vx !== 0 || vy !== 0) {
+      this.ship.setVelocity(vx, vy);
     } else {
+      // gentle damping when no input
       const body = this.ship.body as Phaser.Physics.Arcade.Body;
       this.ship.setVelocity(body.velocity.x * 0.98, body.velocity.y * 0.98);
     }
 
-    // Shooting (unchanged)
+    // Shooting (unchanged — bullets go up since ship is fixed at -90°)
     if (fire && time > this.lastFired) {
       const bullet = this.bullets.create(
         this.ship.x,
@@ -169,7 +214,7 @@ export class StarshipScene extends Phaser.Scene {
       if (bullet?.body) {
         const body = bullet.body as Phaser.Physics.Arcade.Body;
         body.setAllowGravity(false);
-        bullet.setRotation(this.ship.rotation);
+        bullet.setRotation(this.ship.rotation); // stays -90
         this.physics.velocityFromRotation(this.ship.rotation, 500, body.velocity);
         this.time.delayedCall(1000, () => bullet.destroy());
         this.lastFired = time + this.fireRate;
@@ -198,6 +243,18 @@ export class StarshipScene extends Phaser.Scene {
     const enemy = this.enemies.create(x, 60, this.tex.enemy) as Phaser.Physics.Arcade.Sprite;
     if (!enemy?.body) return;
     enemy.setActive(true).setVisible(true);
+
+    // NEW: force enemy ships to 256x256 and give them a circular hitbox too
+    enemy.setDisplaySize(256, 256);
+    {
+      const ebody = enemy.body as Phaser.Physics.Arcade.Body;
+      const ew = enemy.displayWidth;
+      const eh = enemy.displayHeight;
+      const er = Math.min(ew, eh) * 0.38;
+      const edown = eh * 0.06;
+      ebody.setCircle(er, ew / 2 - er, eh / 2 - er + edown);
+    }
+
     enemy.setVelocity(0, Phaser.Math.Between(80, 140) + 20 * (this.difficulty - 1));
 
     // Zig-zag
@@ -266,7 +323,7 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   private createShipFallback(key: string) {
-    const g = this.make.graphics({ add: false });
+    const g = this.add.graphics();
     g.clear();
     g.fillStyle(0xffffff, 1);
     // triangle pointing up in a 48x48 box
@@ -281,7 +338,7 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   private createCircleFallback(key: string, size: number, color: number) {
-    const g = this.make.graphics({ add: false });
+    const g = this.add.graphics();
     g.fillStyle(color, 1);
     g.fillCircle(size / 2, size / 2, size / 2);
     g.generateTexture(key, size, size);
@@ -289,7 +346,7 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   private createRectFallback(key: string, w: number, h: number, color: number) {
-    const g = this.make.graphics({ add: false });
+    const g = this.add.graphics();
     g.fillStyle(color, 1);
     g.fillRect(0, 0, w, h);
     g.generateTexture(key, w, h);
@@ -297,7 +354,7 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   private createStarsFallback(key: string, w: number, h: number, count: number) {
-    const g = this.make.graphics({ add: false });
+    const g = this.add.graphics();
     // transparent background; draw small white stars
     g.fillStyle(0xffffff, 1);
     for (let i = 0; i < count; i++) {
