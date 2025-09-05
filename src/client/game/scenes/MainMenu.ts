@@ -2,9 +2,16 @@ import { Scene } from 'phaser';
 
 export class MainMenu extends Scene {
   private spaceKey!: Phaser.Input.Keyboard.Key;
+  private startEnabled = true;
 
   constructor() {
     super('MainMenu');
+  }
+
+  init() {
+    // Reset the startEnabled flag whenever the scene is initialized
+    this.startEnabled = true;
+    console.log('MainMenu scene initialized, startEnabled =', this.startEnabled);
   }
 
   create() {
@@ -16,6 +23,14 @@ export class MainMenu extends Scene {
     // Add spacebar key and capture it to prevent page scrolling
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    
+    // Add a direct keyboard event listener for space key
+    this.input.keyboard?.on('keydown-SPACE', () => {
+      console.log('Space key pressed via event listener');
+      if (this.startEnabled) {
+        this.startGame();
+      }
+    });
 
     this.add
       .text(this.scale.width / 2, this.scale.height / 2 - 100, 'Galaxy Explorer', {
@@ -55,13 +70,23 @@ export class MainMenu extends Scene {
   }
 
   override update() {
-    // Check for spacebar press
-    if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+    // Check for spacebar press - use both methods for redundancy
+    if (this.startEnabled && this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+      console.log('Space key detected in update()');
       this.startGame();
     }
   }
 
   private startGame() {
+    if (!this.startEnabled) {
+      console.log('Start game attempted but startEnabled is false');
+      return;
+    }
+    
+    // Disable starting to prevent multiple calls
+    this.startEnabled = false;
+    console.log('Starting game, startEnabled set to false');
+    
     this.scene.start('StarshipScene');
   }
 }

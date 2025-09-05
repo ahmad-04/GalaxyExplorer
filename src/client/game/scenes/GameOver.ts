@@ -162,6 +162,7 @@ export class GameOver extends Scene {
     });
 
     this.mainMenuButton.on('pointerdown', () => {
+      console.log('Main menu button clicked, transitioning to MainMenu scene');
       this.scene.start('MainMenu');
     });
   }
