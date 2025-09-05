@@ -30,6 +30,13 @@ export class StarshipScene extends Phaser.Scene {
     super({ key: 'StarshipScene' });
   }
 
+  init(): void {
+    // Reset score when scene starts/restarts
+    this.score = 0;
+    this.difficulty = 1;
+    this.lastFired = 0;
+  }
+
   preload(): void {
     // Load from Vite publicDir (src/client/public) => served at /assets/*
     this.load.image('ship', '/assets/ShipClassic.png');
