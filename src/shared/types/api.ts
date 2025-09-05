@@ -15,3 +15,12 @@ export type DecrementResponse = {
   postId: string;
   count: number;
 };
+
+export type Score = {
+  username: string;
+  score: number;
+};
+
+export type LeaderboardResponse = {
+  scores: Score[];
+};

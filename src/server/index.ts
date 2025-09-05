@@ -118,6 +118,38 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
     });
   }
 });
+import { Devvit, RedditAPIClient, User } from '@devvit/public-api';
+import { LeaderboardResponse, Score } from '../shared/types/api';
+
+// ... existing code ...
+
+router.post('/api/submit-score', async (req, res) => {
+  const { score } = req.body;
+  const user = await context.reddit.getCurrentUser();
+
+  if (typeof score !== 'number' || !user?.name) {
+    return res.status(400).json({ error: 'Invalid score or user' });
+  }
+
+  await redis.zAdd('leaderboard', { score, member: user.name });
+  res.status(200).send();
+});
+
+router.get<{}, LeaderboardResponse>('/api/leaderboard', async (_req, res) => {
+  const scores = await redis.zRange('leaderboard', 0, 2, {
+    reverse: true,
+    withScores: true,
+  });
+  const leaderboardScores: Score[] = scores.map(
+    (item: { score: number; member: string }) => ({
+      username: item.member,
+      score: item.score,
+    })
+  );
+  res.json({ scores: leaderboardScores });
+});
+
+// ... existing code ...
 
 // Use router middleware
 app.use(router);
