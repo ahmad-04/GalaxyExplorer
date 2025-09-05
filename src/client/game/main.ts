@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { MainMenu } from './scenes/MainMenu';
 import { GameOver } from './scenes/GameOver';
 import { StarshipScene } from './scenes/StarshipScene';
 
@@ -20,7 +21,7 @@ const config: Phaser.Types.Core.GameConfig = {
     },
   },
   // Keep only the gameplay scene for now to eliminate side-effects.
-  scene: [StarshipScene, GameOver],
+  scene: [MainMenu, StarshipScene, GameOver],
 };
 
 const StartGame = (parent: string) => {
