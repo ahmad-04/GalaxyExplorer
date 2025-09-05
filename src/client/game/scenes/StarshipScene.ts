@@ -293,7 +293,7 @@ export class StarshipScene extends Phaser.Scene {
     this.physics.pause();
     this.ship.setTint(0xff0000);
     this.cameras.main.shake(120, 0.01);
-    this.time.delayedCall(800, () => this.scene.restart());
+    this.time.delayedCall(800, () => this.scene.start('GameOver', { score: this.score }));
   }
 
   // ---------- helpers: create fallbacks to avoid green boxes ----------
