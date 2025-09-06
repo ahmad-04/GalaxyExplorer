@@ -17,13 +17,20 @@ export class MainMenu extends Phaser.Scene {
   }
 
   create() {
+    // Check for custom background config
+    const bgConfig = this.registry.get('backgroundConfig');
+    if (bgConfig) {
+      this.generateCustomBackground(bgConfig);
+      this.starsTextureKey = 'custom_stars';
+    } else {
+      // Ensure default stars texture exists or create a fallback
+      this.ensureStarsTexture();
+    }
+
     // Enable keyboard input and ensure focus
     this.game.canvas.setAttribute('tabindex', '0');
     this.input.once('pointerdown', () => this.game.canvas.focus());
     this.game.canvas.focus();
-
-    // Ensure stars texture exists or create a fallback
-    this.ensureStarsTexture();
 
     // Add background
     this.background = this.add.tileSprite(
@@ -59,7 +66,7 @@ export class MainMenu extends Phaser.Scene {
       .setOrigin(0.5);
 
     const startButton = this.add
-      .text(this.scale.width / 2, this.scale.height / 2 + 50, 'Start Game', {
+      .text(this.scale.width / 2, this.scale.height / 2, 'Start Game', {
         fontFamily: 'Arial',
         fontSize: '32px',
         color: '#ffffff',
@@ -69,9 +76,20 @@ export class MainMenu extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive();
 
+    const customizeButton = this.add
+      .text(this.scale.width / 2, this.scale.height / 2 + 70, 'Customize', {
+        fontFamily: 'Arial',
+        fontSize: '32px',
+        color: '#ffffff',
+        backgroundColor: '#0000ff',
+        padding: { x: 20, y: 10 },
+      })
+      .setOrigin(0.5)
+      .setInteractive();
+
     // Add instruction text
     this.add
-      .text(this.scale.width / 2, this.scale.height / 2 + 120, 'Press SPACE to start', {
+      .text(this.scale.width / 2, this.scale.height / 2 + 140, 'Press SPACE to start', {
         fontFamily: 'Arial',
         fontSize: '20px',
         color: '#cccccc',
@@ -82,11 +100,17 @@ export class MainMenu extends Phaser.Scene {
     startButton.on('pointerdown', () => {
       this.startGame();
     });
+
+    customizeButton.on('pointerdown', () => {
+      this.scene.start('CustomizationScene');
+    });
   }
 
   override update() {
+    const bgConfig = this.registry.get('backgroundConfig');
+    const speed = bgConfig ? bgConfig.speed : 0.5;
     // Scroll the background
-    this.background.tilePositionY -= 0.5;
+    this.background.tilePositionY -= speed;
 
     // Check for spacebar press - use both methods for redundancy
     if (this.startEnabled && this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
@@ -129,5 +153,13 @@ export class MainMenu extends Phaser.Scene {
     }
     g.generateTexture(key, w, h);
     g.destroy();
+  }
+
+  private generateCustomBackground(config: { density: number }) {
+    const key = 'custom_stars';
+    if (this.textures.exists(key)) {
+      this.textures.remove(key);
+    }
+    this.createStarsFallback(key, this.scale.width, this.scale.height, config.density);
   }
 }

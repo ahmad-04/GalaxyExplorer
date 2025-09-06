@@ -62,8 +62,16 @@ export class StarshipScene extends Phaser.Scene {
     const KC = Phaser.Input.Keyboard.KeyCodes;
     this.input.keyboard?.addCapture([KC.LEFT, KC.RIGHT, KC.UP, KC.DOWN, KC.SPACE]);
 
-    // Resolve textures or create fallbacks to avoid green boxes
-    this.ensureTextures();
+    // Check for custom background config and set up textures
+    const bgConfig = this.registry.get('backgroundConfig');
+    if (bgConfig) {
+      this.generateCustomBackground(bgConfig);
+      this.tex.stars = 'custom_stars';
+      this.ensureTextures(true); // Skips star texture setup
+    } else {
+      // Resolve all textures or create fallbacks to avoid green boxes
+      this.ensureTextures();
+    }
 
     // Parallax starfield
     const { width, height } = this.scale;
@@ -184,8 +192,10 @@ export class StarshipScene extends Phaser.Scene {
     if (!this.ship?.body) return;
 
     // Parallax (frame-rate independent)
+    const bgConfig = this.registry.get('backgroundConfig');
+    const speed = bgConfig ? bgConfig.speed : 1;
     const d = delta / 16.6667;
-    this.starfield.tilePositionY += this.starScrollDir * (1 + 0.2 * this.difficulty) * d;
+    this.starfield.tilePositionY += this.starScrollDir * (speed + 0.2 * this.difficulty) * d;
 
     // WASD + arrows
     const left = this.cursors.left?.isDown || this.keys.A?.isDown;
@@ -198,13 +208,13 @@ export class StarshipScene extends Phaser.Scene {
     this.ship.setAngularVelocity(0);
 
     // NEW: strafe-style movement (fixed facing)
-    const speed = 220;
+    const shipSpeed = 220;
     let vx = 0;
     let vy = 0;
-    if (left) vx -= speed;
-    if (right) vx += speed;
-    if (up) vy -= speed; // up is toward top of screen
-    if (down) vy += speed; // down is toward bottom of screen
+    if (left) vx -= shipSpeed;
+    if (right) vx += shipSpeed;
+    if (up) vy -= shipSpeed; // up is toward top of screen
+    if (down) vy += shipSpeed; // down is toward bottom of screen
 
     // Normalize diagonals so combined speed isn't faster
     if (vx !== 0 && vy !== 0) {
@@ -312,8 +322,16 @@ export class StarshipScene extends Phaser.Scene {
     this.time.delayedCall(800, () => this.scene.start('GameOver', { score: this.score }));
   }
 
+  private generateCustomBackground(config: { density: number }) {
+    const key = 'custom_stars';
+    if (this.textures.exists(key)) {
+      this.textures.remove(key);
+    }
+    this.createStarsFallback(key, this.scale.width, this.scale.height, config.density);
+  }
+
   // ---------- helpers: create fallbacks to avoid green boxes ----------
-  private ensureTextures() {
+  private ensureTextures(skipStars = false) {
     // Ship
     if (!this.textures.exists('ship')) {
       this.createShipFallback('ship_fallback');
@@ -336,6 +354,10 @@ export class StarshipScene extends Phaser.Scene {
       this.tex.enemy = 'enemy_fallback';
     } else {
       this.tex.enemy = 'enemy';
+    }
+
+    if (skipStars) {
+      return;
     }
 
     // Stars background
