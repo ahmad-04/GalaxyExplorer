@@ -239,10 +239,11 @@ export class StarshipScene extends Phaser.Scene {
       }
     }
 
-    // Wrap (unchanged)
+    // Wrap
     this.wrap(this.ship);
-    this.bullets.getChildren().forEach((b) => this.wrap(b as Phaser.GameObjects.GameObject));
-    this.enemies.getChildren().forEach((e) => this.wrap(e as Phaser.GameObjects.GameObject));
+    this.enemies
+      .getChildren()
+      .forEach((e) => this.wrapHorizontal(e as Phaser.GameObjects.GameObject));
   }
 
   private wrap(obj: Phaser.GameObjects.GameObject): void {
@@ -255,9 +256,17 @@ export class StarshipScene extends Phaser.Scene {
     else if (s.y > h) s.y = 0;
   }
 
+  private wrapHorizontal(obj: Phaser.GameObjects.GameObject): void {
+    const s = obj as Phaser.Physics.Arcade.Sprite;
+    const w = this.scale.width;
+    const buffer = s.width;
+    if (s.x < -buffer) s.x = w + buffer;
+    else if (s.x > w + buffer) s.x = -buffer;
+  }
+
   private spawnEnemy(): void {
     const x = Phaser.Math.Between(60, this.scale.width - 60);
-    const enemy = this.enemies.create(x, 60, this.tex.enemy) as Phaser.Physics.Arcade.Sprite;
+    const enemy = this.enemies.create(x, -60, this.tex.enemy) as Phaser.Physics.Arcade.Sprite;
     if (!enemy?.body) return;
     enemy.setActive(true).setVisible(true);
 
