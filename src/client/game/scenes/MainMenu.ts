@@ -1,8 +1,10 @@
-import { Scene } from 'phaser';
+import * as Phaser from 'phaser';
 
-export class MainMenu extends Scene {
+export class MainMenu extends Phaser.Scene {
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private startEnabled = true;
+  private background!: Phaser.GameObjects.TileSprite;
+  private starsTextureKey = 'stars';
 
   constructor() {
     super('MainMenu');
@@ -19,11 +21,24 @@ export class MainMenu extends Scene {
     this.game.canvas.setAttribute('tabindex', '0');
     this.input.once('pointerdown', () => this.game.canvas.focus());
     this.game.canvas.focus();
-    
+
+    // Ensure stars texture exists or create a fallback
+    this.ensureStarsTexture();
+
+    // Add background
+    this.background = this.add.tileSprite(
+      0,
+      0,
+      this.scale.width,
+      this.scale.height,
+      this.starsTextureKey
+    );
+    this.background.setOrigin(0, 0);
+
     // Add spacebar key and capture it to prevent page scrolling
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    
+
     // Add a direct keyboard event listener for space key
     this.input.keyboard?.on('keydown-SPACE', () => {
       console.log('Space key pressed via event listener');
@@ -70,6 +85,9 @@ export class MainMenu extends Scene {
   }
 
   override update() {
+    // Scroll the background
+    this.background.tilePositionY -= 0.5;
+
     // Check for spacebar press - use both methods for redundancy
     if (this.startEnabled && this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
       console.log('Space key detected in update()');
@@ -82,11 +100,34 @@ export class MainMenu extends Scene {
       console.log('Start game attempted but startEnabled is false');
       return;
     }
-    
+
     // Disable starting to prevent multiple calls
     this.startEnabled = false;
     console.log('Starting game, startEnabled set to false');
-    
+
     this.scene.start('StarshipScene');
+  }
+
+  private ensureStarsTexture() {
+    if (!this.textures.exists('stars')) {
+      this.createStarsFallback('stars_fallback', 256, 256, 120);
+      this.starsTextureKey = 'stars_fallback';
+    } else {
+      this.starsTextureKey = 'stars';
+    }
+  }
+
+  private createStarsFallback(key: string, w: number, h: number, count: number) {
+    const g = this.add.graphics();
+    // transparent background; draw small white stars
+    g.fillStyle(0xffffff, 1);
+    for (let i = 0; i < count; i++) {
+      const x = Phaser.Math.Between(0, w - 1);
+      const y = Phaser.Math.Between(0, h - 1);
+      const r = Phaser.Math.Between(1, 2);
+      g.fillRect(x, y, r, r);
+    }
+    g.generateTexture(key, w, h);
+    g.destroy();
   }
 }

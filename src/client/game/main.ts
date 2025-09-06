@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { Boot } from './scenes/Boot';
 import { MainMenu } from './scenes/MainMenu';
 import { GameOver } from './scenes/GameOver';
 import { StarshipScene } from './scenes/StarshipScene';
@@ -17,17 +18,14 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 0 },
-      debug: true, // enable temporarily so we can see bodies move
+      debug: false,
     },
   },
-  // Keep only the gameplay scene for now to eliminate side-effects.
-  scene: [MainMenu, StarshipScene, GameOver],
+  scene: [Boot, MainMenu, StarshipScene, GameOver],
 };
 
 const StartGame = (parent: string) => {
-  console.log('Starting game with config:', config);
   const game = new Phaser.Game({ ...config, parent });
-  console.log('Game instance created');
   return game;
 };
 
