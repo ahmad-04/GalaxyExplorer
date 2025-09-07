@@ -22,6 +22,7 @@ export class StarshipScene extends Phaser.Scene {
   private spawnTimer!: Phaser.Time.TimerEvent;
   private difficulty = 1;
   private starScrollDir = -1; // -1 = up, 1 = down (reversed)
+  private shipAcceleration = 220;
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
@@ -101,11 +102,17 @@ export class StarshipScene extends Phaser.Scene {
     const { width: w, height: h } = this.scale;
     this.physics.world.setBounds(0, 0, w, h);
 
+    // Adjust ship properties based on custom settings
+    const speedMultiplier = bgConfig ? bgConfig.speed / 0.5 : 1;
+    const shipMaxVelocity = 260 + 50 * (speedMultiplier - 1);
+    const shipDrag = 200 + 100 * (speedMultiplier - 1);
+    this.shipAcceleration = 220 + 80 * (speedMultiplier - 1);
+
     // Ship
     this.ship = this.physics.add.sprite(w / 2, h - 80, this.tex.ship);
     this.ship.setOrigin(0.5).setAngle(-90);
     this.ship.setCollideWorldBounds(true);
-    this.ship.setDrag(120).setAngularDrag(150).setMaxVelocity(260);
+    this.ship.setDrag(shipDrag).setAngularDrag(150).setMaxVelocity(shipMaxVelocity);
 
     // Reduce ONLY the player ship size (e.g., 128x128)
     this.ship.setDisplaySize(128, 128);
@@ -208,7 +215,7 @@ export class StarshipScene extends Phaser.Scene {
     this.ship.setAngularVelocity(0);
 
     // NEW: strafe-style movement (fixed facing)
-    const shipSpeed = 220;
+    const shipSpeed = this.shipAcceleration;
     let vx = 0;
     let vy = 0;
     if (left) vx -= shipSpeed;
@@ -290,7 +297,13 @@ export class StarshipScene extends Phaser.Scene {
       ebody.setCircle(er, ew / 2 - er, eh / 2 - er + edown);
     }
 
-    enemy.setVelocity(0, Phaser.Math.Between(80, 140) + 20 * (this.difficulty - 1));
+    // Adjust speed based on custom settings
+    const bgConfig = this.registry.get('backgroundConfig');
+    const speedMultiplier = bgConfig ? bgConfig.speed / 0.5 : 1; // Default speed is 0.5, so we use that as the baseline
+    const baseSpeed = Phaser.Math.Between(80, 140);
+    const finalSpeed = baseSpeed * speedMultiplier + 20 * (this.difficulty - 1);
+
+    enemy.setVelocity(0, finalSpeed);
 
     // Zig-zag
     this.tweens.add({

@@ -11,6 +11,7 @@ export class CustomizationScene extends Phaser.Scene {
   };
 
   private densityText!: Phaser.GameObjects.Text;
+  private speedText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('CustomizationScene');
@@ -59,6 +60,33 @@ export class CustomizationScene extends Phaser.Scene {
       .setInteractive()
       .on('pointerdown', () => this.updateDensity(50));
 
+    // --- Scroll Speed UI ---
+    this.add.text(100, 220, 'Scroll Speed:', { fontSize: '24px', color: '#ffffff' });
+    this.speedText = this.add.text(350, 220, this.currentConfig.speed.toFixed(1), {
+      fontSize: '24px',
+      color: '#ffffff',
+    });
+
+    this.add
+      .text(320, 220, '-', {
+        fontSize: '32px',
+        color: '#ffffff',
+        backgroundColor: '#555555',
+        padding: { x: 5 },
+      })
+      .setInteractive()
+      .on('pointerdown', () => this.updateSpeed(-0.5));
+
+    this.add
+      .text(450, 220, '+', {
+        fontSize: '32px',
+        color: '#ffffff',
+        backgroundColor: '#555555',
+        padding: { x: 5 },
+      })
+      .setInteractive()
+      .on('pointerdown', () => this.updateSpeed(0.5));
+
     // --- Back Button ---
     const backButton = this.add
       .text(this.scale.width / 2, this.scale.height - 50, 'Save & Back', {
@@ -90,6 +118,14 @@ export class CustomizationScene extends Phaser.Scene {
     // Regenerate the background with the new density
     this.generateStarfieldTexture();
     this.background.setTexture(this.generatedTextureKey);
+  }
+
+  private updateSpeed(change: number) {
+    // Update the speed, ensuring it stays within a reasonable range
+    this.currentConfig.speed = parseFloat(
+      Phaser.Math.Clamp(this.currentConfig.speed + change, 0.5, 3.0).toFixed(1)
+    );
+    this.speedText.setText(this.currentConfig.speed.toFixed(1));
   }
 
   private generateStarfieldTexture() {
