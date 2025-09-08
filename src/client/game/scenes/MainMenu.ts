@@ -128,7 +128,7 @@ export class MainMenu extends Phaser.Scene {
     }
   }
 
-  private applyBackgroundConfig(config: any) {
+  private applyBackgroundConfig(config: { color: string; density: number }) {
     if (config && this.background) {
       this.cameras.main.setBackgroundColor(config.color);
       this.generateCustomBackground(config);
@@ -159,7 +159,21 @@ export class MainMenu extends Phaser.Scene {
     this.startEnabled = false;
     console.log('Starting game, startEnabled set to false');
 
-    this.scene.start('StarshipScene');
+    // Get ship configuration from registry if available
+    const shipConfig = this.registry.get('shipConfig');
+    if (shipConfig) {
+      console.log('Starting game with ship config:', shipConfig);
+      this.scene.start('StarshipScene', shipConfig);
+    } else {
+      // Use default configuration if none is saved
+      const defaultShipConfig = {
+        ship: 'ship',
+        primaryTint: 0xffffff,
+        secondaryTint: 0xffffff,
+      };
+      console.log('Starting game with default ship config');
+      this.scene.start('StarshipScene', defaultShipConfig);
+    }
   }
 
   private ensureStarsTexture() {

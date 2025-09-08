@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
 
 export class StarshipScene extends Phaser.Scene {
-  private ship!: Phaser.Physics.Arcade.Sprite;
+  private shipPrimary!: Phaser.Physics.Arcade.Sprite;
+  private ship!: Phaser.Physics.Arcade.Sprite; // Main ship reference for physics
   private bullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -23,6 +24,12 @@ export class StarshipScene extends Phaser.Scene {
   private difficulty = 1;
   private starScrollDir = -1; // -1 = up, 1 = down (reversed)
   private shipAcceleration = 220;
+  private shipConfig!: {
+    ship: string;
+    primaryTint: number;
+    secondaryTint: number;
+    combinedTextureKey?: string;
+  };
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
@@ -31,19 +38,62 @@ export class StarshipScene extends Phaser.Scene {
     super({ key: 'StarshipScene' });
   }
 
-  init(): void {
+  init(data?: {
+    ship?: string;
+    primaryTint?: number;
+    secondaryTint?: number;
+    combinedTextureKey?: string;
+  }): void {
     // Reset score when scene starts/restarts
     this.score = 0;
     this.difficulty = 1;
     this.lastFired = 0;
+
+    // If we have data passed directly, use it
+    if (data && Object.keys(data).length > 0) {
+      this.shipConfig = {
+        ship: data.ship || 'ship',
+        primaryTint: data.primaryTint || 0xffffff,
+        secondaryTint: data.secondaryTint || 0xffffff,
+      };
+
+      // Only add combinedTextureKey if it exists
+      if (data.combinedTextureKey) {
+        this.shipConfig.combinedTextureKey = data.combinedTextureKey;
+      }
+
+      console.log('Using ship config from scene data:', this.shipConfig);
+    }
+    // Otherwise check if there's config in the registry
+    else {
+      const registryConfig = this.registry.get('shipConfig');
+      if (registryConfig) {
+        this.shipConfig = registryConfig;
+        console.log('Using ship config from registry:', this.shipConfig);
+      }
+      // Fall back to defaults if nothing is available
+      else {
+        this.shipConfig = {
+          ship: 'ship',
+          primaryTint: 0xffffff,
+          secondaryTint: 0xffffff,
+        };
+        console.log('Using default ship config');
+      }
+    }
   }
 
   preload(): void {
     // Load from Vite publicDir (src/client/public) => served at /assets/*
-    this.load.image('ship', '/assets/ShipClassic.png');
+    this.load.image('ship', '/assets/ship.png');
+    this.load.image('ShipClassic', '/assets/ShipClassic.png');
     this.load.image('bullet', '/assets/bullet.png');
     this.load.image('enemy', '/assets/enemy.png');
     this.load.image('stars', '/assets/stars.png'); // optional
+
+    // Always load galactic ship parts to ensure they're available if needed
+    this.load.image('glacticShipPrimary', '/assets/glacticShipPrimary.png');
+    this.load.image('glacticShipSecondary', '/assets/glacticShipSecondary.png');
 
     this.load.audio('shoot', '/assets/SpaceShipClassicShootingSFX.wav'); // optional
     this.load.audio('boom', '/assets/Boom.wav'); // optional
@@ -109,38 +159,29 @@ export class StarshipScene extends Phaser.Scene {
     const shipDrag = 200 + 100 * (speedMultiplier - 1);
     this.shipAcceleration = 220 + 80 * (speedMultiplier - 1);
 
-    // Ship
-    this.ship = this.physics.add.sprite(w / 2, h - 80, this.tex.ship);
-    this.ship.setOrigin(0.5).setAngle(-90);
-    this.ship.setCollideWorldBounds(true);
-    this.ship.setDrag(shipDrag).setAngularDrag(150).setMaxVelocity(shipMaxVelocity);
+    // --- Create Ship ---
+    const shipX = w / 2;
+    const shipY = h - 80;
 
-    // Reduce ONLY the player ship size (e.g., 128x128)
-    this.ship.setDisplaySize(128, 128);
-
-    // Use a centered circle hitbox sized for display size (scale-aware)
-    {
-      const body = this.ship.body as Phaser.Physics.Arcade.Body;
-
-      // Unscaled frame size
-      const frameW = this.ship.frame.width;
-      const frameH = this.ship.frame.height;
-
-      // Convert desired display radius to body units (divide by scale)
-      const scale = Math.max(this.ship.scaleX, this.ship.scaleY);
-      const desiredDisplayRadius = Math.min(this.ship.displayWidth, this.ship.displayHeight) * 0.4;
-      const radius = desiredDisplayRadius / scale;
-
-      const diameter = radius * 2;
-      const offsetX = (frameW - diameter) / 2;
-      const offsetY = (frameH - diameter) / 2;
-
-      body.setCircle(radius, offsetX, offsetY);
-
-      // lock rotation so the ship never rotates
-      body.allowRotation = false;
-      this.ship.setAngularVelocity(0);
-      this.ship.setRotation(Phaser.Math.DegToRad(-90));
+    if (this.shipConfig.ship === 'galactic' && this.shipConfig.combinedTextureKey) {
+      // Use the combined texture for the galactic ship
+      this.shipPrimary = this.physics.add.sprite(shipX, shipY, this.shipConfig.combinedTextureKey);
+      // No need for tinting as the texture already has the colors applied
+      this.setupShip(this.shipPrimary, true);
+    } else if (this.shipConfig.ship === 'galactic') {
+      // Fallback if no combined texture is available
+      this.shipPrimary = this.physics.add.sprite(shipX, shipY, 'glacticShipPrimary');
+      this.shipPrimary.setTint(this.shipConfig.primaryTint || 0xffffff);
+      this.setupShip(this.shipPrimary, true);
+    } else {
+      // Single-layer ship
+      this.shipPrimary = this.physics.add.sprite(
+        shipX,
+        shipY,
+        this.shipConfig.ship || this.tex.ship
+      );
+      this.shipPrimary.setTint(this.shipConfig.primaryTint || 0xffffff);
+      this.setupShip(this.shipPrimary, true);
     }
 
     // Input
@@ -168,6 +209,8 @@ export class StarshipScene extends Phaser.Scene {
       undefined,
       this
     );
+
+    // Add collision between ship and enemies
     this.physics.add.overlap(this.ship, this.enemies, () => this.onPlayerHit(), undefined, this);
 
     // Enemy spawn with difficulty ramp
@@ -194,6 +237,44 @@ export class StarshipScene extends Phaser.Scene {
         });
       },
     });
+  }
+
+  setupShip(ship: Phaser.Physics.Arcade.Sprite, isPrimary = true): void {
+    const bgConfig = this.registry.get('backgroundConfig');
+    const speedMultiplier = bgConfig ? bgConfig.speed / 0.5 : 1;
+
+    ship.setOrigin(0.5).setAngle(-90);
+    ship.setDisplaySize(128, 128);
+
+    if (isPrimary) {
+      // Set this as the main ship reference
+      this.ship = ship;
+
+      this.physics.world.enable(ship);
+      ship.setCollideWorldBounds(true);
+
+      // Apply physics settings based on speed multiplier
+      const shipMaxVelocity = 260 + 50 * (speedMultiplier - 1);
+      const shipDrag = 200 + 100 * (speedMultiplier - 1);
+      ship.setDrag(shipDrag).setAngularDrag(150).setMaxVelocity(shipMaxVelocity);
+
+      const body = ship.body as Phaser.Physics.Arcade.Body;
+      const frameW = ship.frame.width;
+      const frameH = ship.frame.height;
+      const scale = Math.max(ship.scaleX, ship.scaleY);
+      const desiredDisplayRadius = Math.min(ship.displayWidth, ship.displayHeight) * 0.4;
+      const radius = desiredDisplayRadius / scale;
+      const diameter = radius * 2;
+      const offsetX = (frameW - diameter) / 2;
+      const offsetY = (frameH - diameter) / 2;
+      body.setCircle(radius, offsetX, offsetY);
+      body.allowRotation = false;
+      ship.setAngularVelocity(0);
+      ship.setRotation(Phaser.Math.DegToRad(-90));
+
+      // Overlaps should only be for the primary ship
+      this.physics.add.overlap(ship, this.enemies, () => this.onPlayerHit(), undefined, this);
+    }
   }
 
   override update(time: number, delta: number): void {
@@ -331,7 +412,7 @@ export class StarshipScene extends Phaser.Scene {
 
   private onPlayerHit(): void {
     this.physics.pause();
-    this.ship.setTint(0xff0000);
+    this.shipPrimary.setTint(0xff0000);
     this.cameras.main.shake(120, 0.01);
     this.time.delayedCall(800, () => this.scene.start('GameOver', { score: this.score }));
   }

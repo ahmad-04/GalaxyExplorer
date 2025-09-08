@@ -14,6 +14,26 @@ export class CustomizationScene extends Phaser.Scene {
   private densityText!: Phaser.GameObjects.Text;
   private speedText!: Phaser.GameObjects.Text;
 
+  private shipPrimary!: Phaser.GameObjects.Image;
+  private shipSecondary!: Phaser.GameObjects.Image;
+  private selectedShip: string = 'ship';
+  private shipOptions: string[] = ['ship', 'ShipClassic', 'galactic'];
+  private currentShipIndex: number = 0;
+  private selectedPrimaryTint: number = 0xffffff;
+  private selectedSecondaryTint: number = 0xffffff;
+  private activeTintTarget: 'primary' | 'secondary' = 'primary';
+
+  // Define a ship config type
+  private shipConfigType: {
+    ship: string;
+    primaryTint: number;
+    secondaryTint: number;
+    combinedTextureKey?: string;
+  } = { ship: 'ship', primaryTint: 0xffffff, secondaryTint: 0xffffff };
+
+  private primaryColorIndicator!: Phaser.GameObjects.Text;
+  private secondaryColorIndicator!: Phaser.GameObjects.Text;
+
   constructor() {
     super('CustomizationScene');
   }
@@ -22,183 +42,434 @@ export class CustomizationScene extends Phaser.Scene {
     // Load config from registry if it exists, otherwise use defaults
     const existingConfig = this.registry.get('backgroundConfig');
     if (existingConfig) {
-      // Create a copy to avoid modifying the object in the registry directly
       this.currentConfig = { ...existingConfig };
     }
-    console.log('CustomizationScene started with config:', this.currentConfig);
 
-    // Set the initial background color from the config
+    // Load ship config from registry if it exists
+    const existingShipConfig = this.registry.get('shipConfig');
+    if (existingShipConfig) {
+      this.selectedShip = existingShipConfig.ship || 'ship';
+      this.selectedPrimaryTint = existingShipConfig.primaryTint || 0xffffff;
+      this.selectedSecondaryTint = existingShipConfig.secondaryTint || 0xffffff;
+
+      // Find the index of the selected ship in our options array
+      const shipIndex = this.shipOptions.indexOf(this.selectedShip);
+      if (shipIndex !== -1) {
+        this.currentShipIndex = shipIndex;
+      }
+    }
+
     this.cameras.main.setBackgroundColor(this.currentConfig.color);
-
-    // Generate the initial background
     this.generateStarfieldTexture();
     this.background = this.add
       .tileSprite(0, 0, this.scale.width, this.scale.height, this.generatedTextureKey)
       .setOrigin(0);
 
-    // Add a title
+    // --- Main Title ---
     this.add
-      .text(this.scale.width / 2, 50, 'Customize Background', {
+      .text(this.scale.width / 2, 40, 'Galaxy Explorer Customization', {
         fontFamily: 'Arial Black',
-        fontSize: '48px',
+        fontSize: '36px',
         color: '#ffffff',
       })
       .setOrigin(0.5);
 
-    // --- Star Density UI ---
-    this.add.text(100, 150, 'Star Density:', { fontSize: '24px', color: '#ffffff' });
-    this.densityText = this.add.text(350, 150, this.currentConfig.density.toString(), {
-      fontSize: '24px',
-      color: '#ffffff',
+    // --- Ship Customization Section ---
+    this.add
+      .text(this.scale.width / 2, 90, 'Customize Your Ship', {
+        fontSize: '28px',
+        color: '#dddddd',
+      })
+      .setOrigin(0.5);
+
+    // Create both ship layers. The secondary is hidden by default.
+    this.shipSecondary = this.add
+      .image(this.scale.width / 2, 180, 'glacticShipSecondary')
+      .setScale(2)
+      .setVisible(false);
+    this.shipPrimary = this.add
+      .image(this.scale.width / 2, 180, this.shipOptions[this.currentShipIndex] as string)
+      .setScale(2);
+
+    // Apply the correct textures and tints based on the selected ship
+    this.updateShipPreview();
+
+    const prevButton = this.add
+      .text(this.scale.width / 2 - 120, 180, '<', {
+        fontSize: '48px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setInteractive();
+    prevButton.on('pointerdown', () => this.cycleShip(-1));
+
+    const nextButton = this.add
+      .text(this.scale.width / 2 + 120, 180, '>', {
+        fontSize: '48px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setInteractive();
+    nextButton.on('pointerdown', () => this.cycleShip(1));
+
+    // --- Primary/Secondary Color Selection ---
+    this.primaryColorIndicator = this.add
+      .text(this.scale.width / 2 - 70, 230, 'Primary', {
+        fontSize: '22px',
+        color: '#ffffff',
+        backgroundColor: '#007bff', // Highlighted by default
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(0.5)
+      .setInteractive()
+      .on('pointerdown', () => this.setActiveTintTarget('primary'));
+
+    this.secondaryColorIndicator = this.add
+      .text(this.scale.width / 2 + 70, 230, 'Secondary', {
+        fontSize: '22px',
+        color: '#ffffff',
+        backgroundColor: '#6c757d', // Muted by default
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(0.5)
+      .setInteractive()
+      .on('pointerdown', () => this.setActiveTintTarget('secondary'));
+
+    const colorPalette = [0xffffff, 0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+    const swatchSize = 30;
+    const swatchSpacing = 10;
+    const paletteStartX =
+      this.scale.width / 2 -
+      (colorPalette.length * (swatchSize + swatchSpacing)) / 2 +
+      swatchSize / 2;
+    colorPalette.forEach((color, index) => {
+      const swatch = this.add
+        .rectangle(
+          paletteStartX + index * (swatchSize + swatchSpacing),
+          280, // Adjusted Y position
+          swatchSize,
+          swatchSize,
+          color
+        )
+        .setInteractive();
+      if (color !== 0xffffff) swatch.setStrokeStyle(2, 0xcccccc);
+      swatch.on('pointerdown', () => {
+        this.applyColor(color);
+      });
     });
 
+    // --- Background Customization Section ---
     this.add
-      .text(320, 150, '-', {
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 5 },
+      .text(this.scale.width / 2, 320, 'Customize The Cosmos', {
+        fontSize: '28px',
+        color: '#dddddd',
       })
-      .setInteractive()
-      .on('pointerdown', () => this.updateDensity(-50));
+      .setOrigin(0.5);
 
+    // Density
+    this.createSlider(
+      150,
+      370,
+      'Star Density',
+      () => this.updateDensity(-50),
+      () => this.updateDensity(50)
+    );
+    this.densityText = this.add
+      .text(400, 370, this.currentConfig.density.toString(), {
+        fontSize: '24px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+
+    // Speed
+    this.createSlider(
+      150,
+      420,
+      'Scroll Speed',
+      () => this.updateSpeed(-0.5),
+      () => this.updateSpeed(0.5)
+    );
+    this.speedText = this.add
+      .text(400, 420, this.currentConfig.speed.toFixed(1), {
+        fontSize: '24px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+
+    // Color
     this.add
-      .text(450, 150, '+', {
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 5 },
-      })
-      .setInteractive()
-      .on('pointerdown', () => this.updateDensity(50));
-
-    // --- Scroll Speed UI ---
-    this.add.text(100, 220, 'Scroll Speed:', { fontSize: '24px', color: '#ffffff' });
-    this.speedText = this.add.text(350, 220, this.currentConfig.speed.toFixed(1), {
-      fontSize: '24px',
-      color: '#ffffff',
-    });
-
-    this.add
-      .text(320, 220, '-', {
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 5 },
-      })
-      .setInteractive()
-      .on('pointerdown', () => this.updateSpeed(-0.5));
-
-    this.add
-      .text(450, 220, '+', {
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 5 },
-      })
-      .setInteractive()
-      .on('pointerdown', () => this.updateSpeed(0.5));
-
-    // --- Background Color UI ---
-    this.add.text(100, 290, 'Color:', { fontSize: '24px', color: '#ffffff' });
-    const colors = ['#000000', '#0d1b2a', '#2c0735', '#4a0404'];
-    let x = 320;
-    colors.forEach((color) => {
+      .text(230, 470, 'Background Color:', { fontSize: '24px', color: '#ffffff' })
+      .setOrigin(0.5);
+    const bgColors = ['#000000', '#0d1b2a', '#2c0735', '#4a0404'];
+    let colorX = 380;
+    bgColors.forEach((color) => {
       this.add
-        .rectangle(x, 295, 40, 40, parseInt(color.slice(1), 16))
+        .rectangle(colorX, 470, 30, 30, parseInt(color.slice(1), 16))
         .setInteractive()
         .on('pointerdown', () => this.updateColor(color));
-      x += 50;
+      colorX += 40;
     });
 
     // --- Action Buttons ---
     const backButton = this.add
-      .text(this.scale.width / 2 - 100, this.scale.height - 50, 'Save & Back', {
-        fontFamily: 'Arial',
-        fontSize: '32px',
+      .text(80, 40, '< Back', {
+        fontSize: '24px',
         color: '#ffffff',
-        backgroundColor: '#00cc00',
-        padding: { x: 20, y: 10 },
+        backgroundColor: '#6c757d',
+        padding: { x: 10, y: 5 },
       })
       .setOrigin(0.5)
       .setInteractive();
 
     backButton.on('pointerdown', () => {
-      // Save to the backend for persistence
-      fetch('/api/save-user-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.currentConfig),
-      }).catch((error) => console.error('Failed to save config to server:', error));
-
-      // Also save to registry for immediate use in the next scene
-      console.log('Saving to registry:', this.currentConfig);
-      this.registry.set('backgroundConfig', this.currentConfig);
-
-      // Transition scenes
-      this.scene.stop();
-      this.scene.launch('MainMenu');
+      this.scene.start('MainMenu');
     });
 
-    const shareButton = this.add
-      .text(this.scale.width / 2 + 100, this.scale.height - 50, 'Share', {
-        fontFamily: 'Arial',
-        fontSize: '32px',
+    const saveButton = this.add
+      .text(this.scale.width / 2 - 100, 550, 'Save', {
+        fontSize: '28px',
         color: '#ffffff',
-        backgroundColor: '#ff8c00',
+        backgroundColor: '#007bff',
         padding: { x: 20, y: 10 },
       })
       .setOrigin(0.5)
       .setInteractive();
 
-    shareButton.on('pointerdown', () => this.shareBackground());
+    saveButton.on('pointerdown', () => {
+      // Save background config
+      this.registry.set('backgroundConfig', this.currentConfig);
+
+      // Create a ship config object with the correct type
+      const shipConfig: typeof this.shipConfigType = {
+        ship: this.selectedShip,
+        primaryTint: this.selectedPrimaryTint,
+        secondaryTint: this.selectedSecondaryTint,
+      };
+
+      // If using the galactic ship, add the combined texture key
+      if (this.selectedShip === 'galactic') {
+        const combinedTextureKey = this.createCombinedShipTexture();
+        shipConfig.combinedTextureKey = combinedTextureKey;
+      }
+
+      // Save ship config to registry
+      this.registry.set('shipConfig', shipConfig);
+
+      // Also save to localStorage for persistence between sessions
+      try {
+        localStorage.setItem('galaxyExplorer_backgroundConfig', JSON.stringify(this.currentConfig));
+        localStorage.setItem('galaxyExplorer_shipConfig', JSON.stringify(shipConfig));
+        console.log('Saved configurations to localStorage');
+      } catch (e) {
+        console.error('Error saving to localStorage:', e);
+      }
+
+      // Visual feedback
+      saveButton.setText('Saved!').setStyle({ backgroundColor: '#1a5d1a' });
+      this.time.delayedCall(2000, () => {
+        saveButton.setText('Save').setStyle({ backgroundColor: '#007bff' });
+      });
+    });
+
+    const shareButton = this.add
+      .text(this.scale.width / 2, 550, 'Share', {
+        fontSize: '28px',
+        color: '#ffffff',
+        backgroundColor: '#6c757d',
+        padding: { x: 20, y: 10 },
+      })
+      .setOrigin(0.5)
+      .setInteractive();
+
+    shareButton.on('pointerdown', () => this.shareConfiguration(shareButton));
+
+    const startButton = this.add
+      .text(this.scale.width / 2 + 100, 550, 'Start', {
+        fontSize: '28px',
+        color: '#ffffff',
+        backgroundColor: '#28a745',
+        padding: { x: 20, y: 10 },
+      })
+      .setOrigin(0.5)
+      .setInteractive();
+
+    startButton.on('pointerdown', () => {
+      this.registry.set('backgroundConfig', this.currentConfig);
+
+      // Create a shipConfig object with the correct type
+      const shipConfig: typeof this.shipConfigType = {
+        ship: this.selectedShip,
+        primaryTint: this.selectedPrimaryTint,
+        secondaryTint: this.selectedSecondaryTint,
+      };
+
+      // If using the galactic ship, add the combined texture key
+      if (this.selectedShip === 'galactic') {
+        const combinedTextureKey = this.createCombinedShipTexture();
+        shipConfig.combinedTextureKey = combinedTextureKey;
+      }
+
+      // Store in registry and pass to scene
+      this.registry.set('shipConfig', shipConfig);
+      this.scene.start('StarshipScene', shipConfig);
+    });
   }
 
-  private shareBackground() {
-    const shareButton = this.children.list.find(
-      (child) => child.type === 'Text' && (child as Phaser.GameObjects.Text).text === 'Share'
-    ) as Phaser.GameObjects.Text;
+  private setActiveTintTarget(target: 'primary' | 'secondary') {
+    this.activeTintTarget = target;
+    if (target === 'primary') {
+      this.primaryColorIndicator.setStyle({ backgroundColor: '#007bff' });
+      this.secondaryColorIndicator.setStyle({ backgroundColor: '#6c757d' });
+    } else {
+      this.primaryColorIndicator.setStyle({ backgroundColor: '#6c757d' });
+      this.secondaryColorIndicator.setStyle({ backgroundColor: '#007bff' });
+    }
+  }
 
-    if (!shareButton || shareButton.text === 'Sharing...') {
-      return; // Prevent multiple clicks
+  private applyColor(color: number) {
+    if (this.activeTintTarget === 'primary') {
+      this.selectedPrimaryTint = color;
+      this.shipPrimary.setTint(this.selectedPrimaryTint);
+
+      // If this is the galactic ship, update the combined texture
+      if (this.selectedShip === 'galactic') {
+        this.createCombinedShipTexture();
+      }
+    } else {
+      this.selectedSecondaryTint = color;
+      if (this.shipSecondary.visible) {
+        this.shipSecondary.setTint(this.selectedSecondaryTint);
+
+        // Update the combined texture
+        this.createCombinedShipTexture();
+      }
+    }
+  }
+
+  private createCombinedShipTexture() {
+    // Create a unique key for this specific color combination
+    const combinedKey = `combined_ship_${this.selectedPrimaryTint.toString(16)}_${this.selectedSecondaryTint.toString(16)}`;
+
+    // If the texture already exists, no need to recreate it
+    if (this.textures.exists(combinedKey)) {
+      return combinedKey;
     }
 
+    // Get the width and height from the primary ship texture
+    const primaryFrame = this.textures.getFrame('glacticShipPrimary');
+    const width = primaryFrame.width;
+    const height = primaryFrame.height;
+
+    // Create a render texture to combine the ships
+    const rt = this.add.renderTexture(0, 0, width, height);
+
+    // Create temporary sprites with the right tints
+    const tempSecondary = this.add
+      .image(width / 2, height / 2, 'glacticShipSecondary')
+      .setTint(this.selectedSecondaryTint);
+    const tempPrimary = this.add
+      .image(width / 2, height / 2, 'glacticShipPrimary')
+      .setTint(this.selectedPrimaryTint);
+
+    // Draw both layers to the render texture
+    rt.draw(tempSecondary);
+    rt.draw(tempPrimary);
+
+    // Save the render texture as a new texture
+    rt.saveTexture(combinedKey);
+
+    // Clean up temporary objects
+    tempSecondary.destroy();
+    tempPrimary.destroy();
+    rt.destroy();
+
+    return combinedKey;
+  }
+
+  private shareConfiguration(shareButton: Phaser.GameObjects.Text) {
     const originalText = shareButton.text;
-    shareButton.setText('Sharing...');
+    const originalColor = shareButton.style.backgroundColor;
+    shareButton.setText('Sharing...').setStyle({ backgroundColor: '#5a6268' });
 
-    fetch('/api/share-background', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(this.currentConfig),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Failed to share');
-        }
-        return res.json();
-      })
-      .then((data) => {
-        console.log('Share success:', data);
-        shareButton.setText('Shared!');
+    // Create ship config object with combined texture if applicable
+    const shipConfig: typeof this.shipConfigType = {
+      ship: this.selectedShip,
+      primaryTint: this.selectedPrimaryTint,
+      secondaryTint: this.selectedSecondaryTint,
+    };
 
-        // Navigate to the new post
-        if (data.url) {
-          window.top!.location.href = data.url;
-        }
+    // If using the galactic ship, include the combined texture key
+    if (this.selectedShip === 'galactic') {
+      const combinedTextureKey = this.createCombinedShipTexture();
+      shipConfig.combinedTextureKey = combinedTextureKey;
+    }
 
-        this.time.delayedCall(2000, () => {
-          shareButton.setText(originalText);
-        });
-      })
-      .catch((error) => {
-        console.error('Share error:', error);
-        shareButton.setText('Error!');
-        this.time.delayedCall(2000, () => {
-          shareButton.setText(originalText);
-        });
+    const fullConfig = {
+      background: this.currentConfig,
+      ship: shipConfig,
+    };
+
+    // This is a placeholder for the actual API call.
+    // In a real scenario, you would send `fullConfig` to your server.
+    console.log('Sharing configuration:', fullConfig);
+
+    // Simulate an API call
+    this.time.delayedCall(1500, () => {
+      // On success, you might get a URL back from the server
+      shareButton.setText('Copied!').setStyle({ backgroundColor: '#1a5d1a' });
+
+      // You could use the clipboard API to copy the link
+      // navigator.clipboard.writeText('https://your-share-url.com/...');
+
+      this.time.delayedCall(2000, () => {
+        shareButton.setText(originalText).setStyle({ backgroundColor: originalColor });
       });
+    });
+  }
+
+  private cycleShip(direction: number) {
+    this.currentShipIndex =
+      (this.currentShipIndex + direction + this.shipOptions.length) % this.shipOptions.length;
+    this.selectedShip = this.shipOptions[this.currentShipIndex] as string;
+
+    // Update the ship preview with the new selection
+    this.updateShipPreview();
+
+    // If it's the galactic ship, create the combined texture
+    if (this.selectedShip === 'galactic') {
+      this.createCombinedShipTexture();
+    }
+  }
+
+  private createSlider(
+    x: number,
+    y: number,
+    label: string,
+    onMinus: () => void,
+    onPlus: () => void
+  ) {
+    this.add.text(x, y, label, { fontSize: '24px', color: '#ffffff' }).setOrigin(0.5);
+    this.add
+      .text(x + 150, y, '-', {
+        fontSize: '32px',
+        color: '#ffffff',
+        backgroundColor: '#555555',
+        padding: { x: 8, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setInteractive()
+      .on('pointerdown', onMinus);
+
+    this.add
+      .text(x + 290, y, '+', {
+        fontSize: '32px',
+        color: '#ffffff',
+        backgroundColor: '#555555',
+        padding: { x: 8, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setInteractive()
+      .on('pointerdown', onPlus);
   }
 
   override update() {
@@ -249,5 +520,24 @@ export class CustomizationScene extends Phaser.Scene {
     }
     g.generateTexture(this.generatedTextureKey, w, h);
     g.destroy();
+  }
+
+  private updateShipPreview() {
+    // Set the correct textures and visibility based on the selected ship
+    if (this.selectedShip === 'galactic') {
+      this.shipPrimary.setTexture('glacticShipPrimary');
+      this.shipSecondary.setTexture('glacticShipSecondary').setVisible(true);
+
+      // Apply tints
+      this.shipPrimary.setTint(this.selectedPrimaryTint);
+      this.shipSecondary.setTint(this.selectedSecondaryTint);
+    } else {
+      // It's a single-layer ship
+      this.shipPrimary.setTexture(this.selectedShip);
+      this.shipSecondary.setVisible(false);
+
+      // Apply primary tint only
+      this.shipPrimary.setTint(this.selectedPrimaryTint);
+    }
   }
 }

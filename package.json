@@ -20,7 +20,8 @@
     "login": "devvit login --copy-paste",
     "launch": "npm run build && npm run deploy && devvit publish",
     "prettier": "prettier-package-json --write ./package.json && prettier --write .",
-    "type-check": "tsc --build"
+    "type-check": "tsc --build",
+    "generate-powerups": "node tools/generate-powerups.cjs"
   },
   "dependencies": {
     "@devvit/web": "0.12.0",
@@ -41,6 +42,7 @@
     "typescript": "5.8.2",
     "typescript-eslint": "8.29.0",
     "vite": "6.2.4",
-    "vitest": "3.1.1"
+    "vitest": "3.1.1",
+    "imagemagick": "^0.1.3"
   }
 }

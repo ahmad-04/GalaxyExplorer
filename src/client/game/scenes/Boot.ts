@@ -7,6 +7,11 @@ export class Boot extends Phaser.Scene {
 
   preload() {
     this.load.image('stars', '/assets/stars.png');
+    this.load.image('bg', '/assets/bg.png');
+    this.load.image('ship', '/assets/ship.png');
+    this.load.image('ShipClassic', '/assets/ShipClassic.png');
+    this.load.image('glacticShipPrimary', '/assets/glacticShipPrimary.png');
+    this.load.image('glacticShipSecondary', '/assets/glacticShipSecondary.png');
   }
 
   create() {

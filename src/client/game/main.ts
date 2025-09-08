@@ -19,7 +19,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 0 },
-      debug: false,
+      debug: true, // Enable debug mode to show hitboxes
     },
   },
   scene: [Boot, MainMenu, StarshipScene, GameOver, CustomizationScene],
@@ -28,8 +28,30 @@ const config: Phaser.Types.Core.GameConfig = {
 const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {
   const game = new Phaser.Game({ ...config, parent });
 
+  // Try to load saved configurations from localStorage
+  try {
+    // Load background config
+    const savedBgConfig = localStorage.getItem('galaxyExplorer_backgroundConfig');
+    if (savedBgConfig) {
+      const bgConfig = JSON.parse(savedBgConfig);
+      console.log('[StartGame] Loading background config from localStorage:', bgConfig);
+      game.registry.set('backgroundConfig', bgConfig);
+    }
+
+    // Load ship config
+    const savedShipConfig = localStorage.getItem('galaxyExplorer_shipConfig');
+    if (savedShipConfig) {
+      const shipConfig = JSON.parse(savedShipConfig);
+      console.log('[StartGame] Loading ship config from localStorage:', shipConfig);
+      game.registry.set('shipConfig', shipConfig);
+    }
+  } catch (e) {
+    console.error('[StartGame] Error loading saved configurations:', e);
+  }
+
+  // Override with custom config if provided (e.g. from URL parameters)
   if (customConfig && Object.keys(customConfig).length > 0) {
-    console.log('[StartGame] Setting backgroundConfig in registry:', customConfig);
+    console.log('[StartGame] Setting backgroundConfig from URL params:', customConfig);
     game.registry.set('backgroundConfig', customConfig);
   }
 
