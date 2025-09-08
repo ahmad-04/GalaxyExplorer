@@ -1,17 +1,18 @@
-import { Scene } from 'phaser';
+import * as Phaser from 'phaser';
 
-export class Boot extends Scene {
+export class Boot extends Phaser.Scene {
   constructor() {
-    super({ key: 'Boot' });
+    super('Boot');
   }
 
   preload() {
-    // Preload assets for the main menu
     this.load.image('stars', '/assets/stars.png');
   }
 
   create() {
-    console.log('Boot scene starting MainMenu');
+    console.log('[Boot] Scene create() called.');
+    // The logic to load config from props is now handled in main.ts.
+    // This scene now just needs to start the next one.
     this.scene.start('MainMenu');
   }
 }

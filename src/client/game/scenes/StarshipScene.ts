@@ -66,6 +66,7 @@ export class StarshipScene extends Phaser.Scene {
     // Check for custom background config and set up textures
     const bgConfig = this.registry.get('backgroundConfig');
     if (bgConfig) {
+      this.cameras.main.setBackgroundColor(bgConfig.color);
       this.generateCustomBackground(bgConfig);
       this.tex.stars = 'custom_stars';
       this.ensureTextures(true); // Skips star texture setup

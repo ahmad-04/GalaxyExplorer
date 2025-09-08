@@ -25,8 +25,14 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [Boot, MainMenu, StarshipScene, GameOver, CustomizationScene],
 };
 
-const StartGame = (parent: string) => {
+const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {
   const game = new Phaser.Game({ ...config, parent });
+
+  if (customConfig && Object.keys(customConfig).length > 0) {
+    console.log('[StartGame] Setting backgroundConfig in registry:', customConfig);
+    game.registry.set('backgroundConfig', customConfig);
+  }
+
   return game;
 };
 

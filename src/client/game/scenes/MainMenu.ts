@@ -17,15 +17,9 @@ export class MainMenu extends Phaser.Scene {
   }
 
   create() {
-    // Check for custom background config
-    const bgConfig = this.registry.get('backgroundConfig');
-    if (bgConfig) {
-      this.generateCustomBackground(bgConfig);
-      this.starsTextureKey = 'custom_stars';
-    } else {
-      // Ensure default stars texture exists or create a fallback
-      this.ensureStarsTexture();
-    }
+    // --- 1. Draw the scene immediately with defaults ---
+
+    this.ensureStarsTexture(); // Make sure a texture is available
 
     // Enable keyboard input and ensure focus
     this.game.canvas.setAttribute('tabindex', '0');
@@ -104,6 +98,42 @@ export class MainMenu extends Phaser.Scene {
     customizeButton.on('pointerdown', () => {
       this.scene.start('CustomizationScene');
     });
+
+    // --- 2. Asynchronously load custom config and update if found ---
+
+    // Check for config passed from CustomizationScene first for responsiveness
+    const registryConfig = this.registry.get('backgroundConfig');
+    if (registryConfig) {
+      console.log('Applying config from registry:', registryConfig);
+      this.applyBackgroundConfig(registryConfig);
+    } else {
+      // If no registry config, try loading from the server
+      this.loadConfigFromServer().catch((error) => {
+        console.error('Failed to load or apply server config:', error);
+      });
+    }
+  }
+
+  private async loadConfigFromServer(): Promise<void> {
+    try {
+      const response = await fetch('/api/load-user-config');
+      if (response.ok) {
+        const config = await response.json();
+        console.log('Successfully loaded config from server:', config);
+        this.registry.set('backgroundConfig', config); // Store for other scenes
+        this.applyBackgroundConfig(config);
+      }
+    } catch (error) {
+      console.error('Could not load user config from server:', error);
+    }
+  }
+
+  private applyBackgroundConfig(config: any) {
+    if (config && this.background) {
+      this.cameras.main.setBackgroundColor(config.color);
+      this.generateCustomBackground(config);
+      this.background.setTexture('custom_stars');
+    }
   }
 
   override update() {

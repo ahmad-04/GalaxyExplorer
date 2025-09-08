@@ -8,6 +8,7 @@ export class CustomizationScene extends Phaser.Scene {
   private currentConfig = {
     density: 200,
     speed: 0.5,
+    color: '#000000', // Default to black
   };
 
   private densityText!: Phaser.GameObjects.Text;
@@ -18,6 +19,17 @@ export class CustomizationScene extends Phaser.Scene {
   }
 
   create() {
+    // Load config from registry if it exists, otherwise use defaults
+    const existingConfig = this.registry.get('backgroundConfig');
+    if (existingConfig) {
+      // Create a copy to avoid modifying the object in the registry directly
+      this.currentConfig = { ...existingConfig };
+    }
+    console.log('CustomizationScene started with config:', this.currentConfig);
+
+    // Set the initial background color from the config
+    this.cameras.main.setBackgroundColor(this.currentConfig.color);
+
     // Generate the initial background
     this.generateStarfieldTexture();
     this.background = this.add
@@ -87,9 +99,21 @@ export class CustomizationScene extends Phaser.Scene {
       .setInteractive()
       .on('pointerdown', () => this.updateSpeed(0.5));
 
-    // --- Back Button ---
+    // --- Background Color UI ---
+    this.add.text(100, 290, 'Color:', { fontSize: '24px', color: '#ffffff' });
+    const colors = ['#000000', '#0d1b2a', '#2c0735', '#4a0404'];
+    let x = 320;
+    colors.forEach((color) => {
+      this.add
+        .rectangle(x, 295, 40, 40, parseInt(color.slice(1), 16))
+        .setInteractive()
+        .on('pointerdown', () => this.updateColor(color));
+      x += 50;
+    });
+
+    // --- Action Buttons ---
     const backButton = this.add
-      .text(this.scale.width / 2, this.scale.height - 50, 'Save & Back', {
+      .text(this.scale.width / 2 - 100, this.scale.height - 50, 'Save & Back', {
         fontFamily: 'Arial',
         fontSize: '32px',
         color: '#ffffff',
@@ -100,9 +124,81 @@ export class CustomizationScene extends Phaser.Scene {
       .setInteractive();
 
     backButton.on('pointerdown', () => {
+      // Save to the backend for persistence
+      fetch('/api/save-user-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.currentConfig),
+      }).catch((error) => console.error('Failed to save config to server:', error));
+
+      // Also save to registry for immediate use in the next scene
+      console.log('Saving to registry:', this.currentConfig);
       this.registry.set('backgroundConfig', this.currentConfig);
-      this.scene.start('MainMenu');
+
+      // Transition scenes
+      this.scene.stop();
+      this.scene.launch('MainMenu');
     });
+
+    const shareButton = this.add
+      .text(this.scale.width / 2 + 100, this.scale.height - 50, 'Share', {
+        fontFamily: 'Arial',
+        fontSize: '32px',
+        color: '#ffffff',
+        backgroundColor: '#ff8c00',
+        padding: { x: 20, y: 10 },
+      })
+      .setOrigin(0.5)
+      .setInteractive();
+
+    shareButton.on('pointerdown', () => this.shareBackground());
+  }
+
+  private shareBackground() {
+    const shareButton = this.children.list.find(
+      (child) => child.type === 'Text' && (child as Phaser.GameObjects.Text).text === 'Share'
+    ) as Phaser.GameObjects.Text;
+
+    if (!shareButton || shareButton.text === 'Sharing...') {
+      return; // Prevent multiple clicks
+    }
+
+    const originalText = shareButton.text;
+    shareButton.setText('Sharing...');
+
+    fetch('/api/share-background', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(this.currentConfig),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Failed to share');
+        }
+        return res.json();
+      })
+      .then((data) => {
+        console.log('Share success:', data);
+        shareButton.setText('Shared!');
+
+        // Navigate to the new post
+        if (data.url) {
+          window.top!.location.href = data.url;
+        }
+
+        this.time.delayedCall(2000, () => {
+          shareButton.setText(originalText);
+        });
+      })
+      .catch((error) => {
+        console.error('Share error:', error);
+        shareButton.setText('Error!');
+        this.time.delayedCall(2000, () => {
+          shareButton.setText(originalText);
+        });
+      });
   }
 
   override update() {
@@ -126,6 +222,11 @@ export class CustomizationScene extends Phaser.Scene {
       Phaser.Math.Clamp(this.currentConfig.speed + change, 0.5, 3.0).toFixed(1)
     );
     this.speedText.setText(this.currentConfig.speed.toFixed(1));
+  }
+
+  private updateColor(color: string) {
+    this.currentConfig.color = color;
+    this.cameras.main.setBackgroundColor(color);
   }
 
   private generateStarfieldTexture() {
