@@ -12,6 +12,12 @@ export class Boot extends Phaser.Scene {
     this.load.image('ShipClassic', '/assets/ShipClassic.png');
     this.load.image('glacticShipPrimary', '/assets/glacticShipPrimary.png');
     this.load.image('glacticShipSecondary', '/assets/glacticShipSecondary.png');
+    this.load.image('bullet', 'assets/bullet.png');
+    this.load.image('enemy', 'assets/enemy.png');
+    this.load.image('powerup_score', 'assets/powerup-score.png');
+    this.load.image('powerup_shield', 'assets/shield.png');
+    this.load.image('shield', 'assets/shield.png');
+    this.load.audio('boom', 'assets/Boom.wav');
   }
 
   create() {

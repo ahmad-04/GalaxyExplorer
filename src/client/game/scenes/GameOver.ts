@@ -30,16 +30,16 @@ export class GameOver extends Scene {
 
   async create() {
     console.log('GameOver scene created. Score:', this.score);
-    
+
     // Enable keyboard input and ensure focus
     this.game.canvas.setAttribute('tabindex', '0');
     this.input.once('pointerdown', () => this.game.canvas.focus());
     this.game.canvas.focus();
-    
+
     // Add spacebar key and capture it to prevent page scrolling
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    
+
     // Configure camera
     this.camera = this.cameras.main;
     this.camera.setBackgroundColor(0x000000);
@@ -108,17 +108,12 @@ export class GameOver extends Scene {
       });
     } else {
       this.add
-        .text(
-          this.scale.width / 2,
-          this.scale.height / 2 + 90,
-          'No high scores yet!',
-          {
-            fontFamily: 'Arial',
-            fontSize: '20px',
-            color: '#aaaaaa',
-            align: 'center',
-          }
-        )
+        .text(this.scale.width / 2, this.scale.height / 2 + 90, 'No high scores yet!', {
+          fontFamily: 'Arial',
+          fontSize: '20px',
+          color: '#aaaaaa',
+          align: 'center',
+        })
         .setOrigin(0.5);
     }
 
@@ -158,23 +153,63 @@ export class GameOver extends Scene {
 
     // Button interactions
     this.restartButton.on('pointerdown', () => {
-      this.restartGame();
+      console.log('[GameOver] Restart button clicked');
+      console.log('[GameOver] Starting fresh StarshipScene');
+
+      // First, make sure any existing scene is completely gone
+      if (this.scene.get('StarshipScene')) {
+        console.log('[GameOver] Stopping existing StarshipScene');
+        this.scene.stop('StarshipScene');
+      }
+
+      // Wait a tiny bit to ensure the scene is fully stopped
+      this.time.delayedCall(50, () => {
+        // Start a fresh StarshipScene
+        console.log('[GameOver] Creating new StarshipScene');
+        this.scene.start('StarshipScene');
+      });
     });
 
     this.mainMenuButton.on('pointerdown', () => {
-      console.log('Main menu button clicked, transitioning to MainMenu scene');
-      this.scene.start('MainMenu');
+      console.log('[GameOver] Main Menu button clicked');
+
+      // First, make sure any existing scene is completely gone
+      if (this.scene.get('StarshipScene')) {
+        console.log('[GameOver] Stopping existing StarshipScene before going to menu');
+        this.scene.stop('StarshipScene');
+      }
+
+      // Wait a tiny bit to ensure the scene is fully stopped
+      this.time.delayedCall(50, () => {
+        // Go back to the main menu
+        console.log('[GameOver] Starting MainMenu scene');
+        this.scene.start('MainMenu');
+      });
     });
   }
 
   override update() {
     // Check for spacebar press
     if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+      console.log('[GameOver] Space key pressed, restarting game');
       this.restartGame();
     }
   }
 
   private restartGame() {
-    this.scene.start('StarshipScene');
+    console.log('[GameOver] restartGame() called');
+
+    // First, make sure any existing scene is completely gone
+    if (this.scene.get('StarshipScene')) {
+      console.log('[GameOver] Stopping existing StarshipScene before restart');
+      this.scene.stop('StarshipScene');
+    }
+
+    // Wait a tiny bit to ensure the scene is fully stopped
+    this.time.delayedCall(50, () => {
+      // Force full recreation of the game scene
+      console.log('[GameOver] Starting new StarshipScene');
+      this.scene.start('StarshipScene');
+    });
   }
 }

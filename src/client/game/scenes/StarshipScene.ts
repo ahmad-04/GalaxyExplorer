@@ -1,12 +1,22 @@
 import * as Phaser from 'phaser';
 
+// Add an enum for power-up types
+enum PowerUpType {
+  SCORE_MULTIPLIER,
+  SHIELD,
+  RAPID_FIRE,
+}
+
 export class StarshipScene extends Phaser.Scene {
   private shipPrimary!: Phaser.Physics.Arcade.Sprite;
   private ship!: Phaser.Physics.Arcade.Sprite; // Main ship reference for physics
   private bullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
+  private powerUps!: Phaser.Physics.Arcade.Group;
+  private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private score = 0;
+  private scoreMultiplier = 1;
   private scoreText!: Phaser.GameObjects.Text;
   private lastFired = 0;
   private fireRate = 200; // ms
@@ -21,6 +31,7 @@ export class StarshipScene extends Phaser.Scene {
   private shootSfx?: Phaser.Sound.BaseSound;
   private boomSfx?: Phaser.Sound.BaseSound;
   private spawnTimer!: Phaser.Time.TimerEvent;
+  private difficultyTimer!: Phaser.Time.TimerEvent;
   private difficulty = 1;
   private starScrollDir = -1; // -1 = up, 1 = down (reversed)
   private shipAcceleration = 220;
@@ -30,6 +41,25 @@ export class StarshipScene extends Phaser.Scene {
     secondaryTint: number;
     combinedTextureKey?: string;
   };
+  // Flag to track if collision detection is active
+  private collisionsActive = false;
+
+  // Power-up state
+  private activePowerUps: Map<PowerUpType, Phaser.Time.TimerEvent> = new Map();
+  private powerUpDuration = 10000; // 10 seconds
+  private isShieldActive = false;
+  private shieldObject: Phaser.GameObjects.Sprite | undefined;
+
+  // Power-up timer UI
+  private powerUpUIs: Map<
+    PowerUpType,
+    {
+      icon: Phaser.GameObjects.Sprite;
+      label: Phaser.GameObjects.Text;
+      timerCircle: Phaser.GameObjects.Graphics;
+    }
+  > = new Map();
+  private powerUpUIContainer!: Phaser.GameObjects.Container;
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
@@ -44,11 +74,43 @@ export class StarshipScene extends Phaser.Scene {
     secondaryTint?: number;
     combinedTextureKey?: string;
   }): void {
-    // Reset score when scene starts/restarts
+    console.log('[StarshipScene] init called', data);
+
+    // Reset all game state when scene starts/restarts
     this.score = 0;
     this.difficulty = 1;
     this.lastFired = 0;
+    this.scoreMultiplier = 1;
+    this.activePowerUps.clear();
+    this.isShieldActive = false;
+    this.collisionsActive = false; // Start with collisions disabled until setup is complete
 
+    // Clear any existing UI elements
+    this.powerUpUIs.forEach((ui) => {
+      ui.icon.destroy();
+      ui.label.destroy();
+      ui.timerCircle.destroy();
+    });
+    this.powerUpUIs.clear();
+
+    // Create power-up textures for fallback
+    this.ensurePowerUpTexture('powerup_score');
+    this.ensurePowerUpTexture('powerup_shield');
+    this.ensurePowerUpTexture('powerup_rapidfire');
+
+    // Explicitly destroy any existing timers
+    if (this.spawnTimer) {
+      console.log('[StarshipScene] Removing existing spawn timer');
+      this.spawnTimer.remove();
+      this.spawnTimer = null as unknown as Phaser.Time.TimerEvent;
+    }
+    if (this.difficultyTimer) {
+      console.log('[StarshipScene] Removing existing difficulty timer');
+      this.difficultyTimer.remove();
+      this.difficultyTimer = null as unknown as Phaser.Time.TimerEvent;
+    }
+    this.activePowerUps.forEach((timer) => timer.remove());
+    this.activePowerUps.clear();
     // If we have data passed directly, use it
     if (data && Object.keys(data).length > 0) {
       this.shipConfig = {
@@ -91,6 +153,11 @@ export class StarshipScene extends Phaser.Scene {
     this.load.image('enemy', '/assets/enemy.png');
     this.load.image('stars', '/assets/stars.png'); // optional
 
+    // Load the power-up icon with error handler
+    this.load.image('powerup', '/assets/powerup.png').on('fileerror', () => {
+      console.log('Power-up image not found, will create fallback');
+    });
+
     // Always load galactic ship parts to ensure they're available if needed
     this.load.image('glacticShipPrimary', '/assets/glacticShipPrimary.png');
     this.load.image('glacticShipSecondary', '/assets/glacticShipSecondary.png');
@@ -104,6 +171,27 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   create(): void {
+    console.log('[StarshipScene] create method starting');
+    console.log(
+      '[StarshipScene] Physics state:',
+      this.physics.world.isPaused ? 'PAUSED' : 'ACTIVE'
+    );
+
+    // Ensure physics is running
+    if (this.physics.world.isPaused) {
+      console.log('[StarshipScene] Resuming paused physics');
+      this.physics.resume();
+    }
+
+    console.log('[StarshipScene] Physics should now be active');
+
+    // Clear existing starfield if present to prevent duplicate backgrounds on restart
+    if (this.starfield) {
+      console.log('[StarshipScene] Removing existing starfield');
+      this.starfield.destroy();
+      this.starfield = null as unknown as Phaser.GameObjects.TileSprite;
+    }
+
     // Ensure keyboard works inside Devvit iframe
     this.game.canvas.setAttribute('tabindex', '0');
     this.input.once('pointerdown', () => this.game.canvas.focus());
@@ -113,25 +201,40 @@ export class StarshipScene extends Phaser.Scene {
     const KC = Phaser.Input.Keyboard.KeyCodes;
     this.input.keyboard?.addCapture([KC.LEFT, KC.RIGHT, KC.UP, KC.DOWN, KC.SPACE]);
 
-    // Check for custom background config and set up textures
+    // Apply background color from config if available
     const bgConfig = this.registry.get('backgroundConfig');
-    if (bgConfig) {
+    if (bgConfig && bgConfig.color) {
+      console.log('[StarshipScene] Setting background color from config:', bgConfig.color);
       this.cameras.main.setBackgroundColor(bgConfig.color);
-      this.generateCustomBackground(bgConfig);
-      this.tex.stars = 'custom_stars';
-      this.ensureTextures(true); // Skips star texture setup
     } else {
-      // Resolve all textures or create fallbacks to avoid green boxes
-      this.ensureTextures();
+      // Default background color
+      this.cameras.main.setBackgroundColor(0x000020);
     }
 
-    // Parallax starfield
-    const { width, height } = this.scale;
+    // Create a generic starfield texture if we don't have one already
+    if (!this.textures.exists('stars_fallback')) {
+      console.log('[StarshipScene] Creating fallback stars texture');
+      this.createGenericTexture('stars_fallback', 0x00001a, 256, 256);
+    }
+
+    // Set the texture to use for stars
+    this.tex.stars = 'stars_fallback';
+
+    // Create the starfield with the appropriate texture
     this.starfield = this.add
-      .tileSprite(0, 0, width, height, this.tex.stars)
-      .setOrigin(0)
+      .tileSprite(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        this.scale.width,
+        this.scale.height,
+        this.tex.stars
+      )
+      .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(-10);
+
+    // Resolve all textures or create fallbacks to avoid green boxes
+    this.ensureTextures(true); // Skip stars since we've already handled them
 
     // Keyboard (WASD + Space)
     this.keys = {
@@ -155,8 +258,6 @@ export class StarshipScene extends Phaser.Scene {
 
     // Adjust ship properties based on custom settings
     const speedMultiplier = bgConfig ? bgConfig.speed / 0.5 : 1;
-    const shipMaxVelocity = 260 + 50 * (speedMultiplier - 1);
-    const shipDrag = 200 + 100 * (speedMultiplier - 1);
     this.shipAcceleration = 220 + 80 * (speedMultiplier - 1);
 
     // --- Create Ship ---
@@ -190,6 +291,9 @@ export class StarshipScene extends Phaser.Scene {
     // Groups (use resolved keys)
     this.bullets = this.physics.add.group({ defaultKey: this.tex.bullet, maxSize: 60 });
     this.enemies = this.physics.add.group({ defaultKey: this.tex.enemy });
+    this.powerUps = this.physics.add.group({
+      runChildUpdate: true,
+    });
 
     // UI
     this.scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '20px', color: '#ffffff' });
@@ -200,36 +304,47 @@ export class StarshipScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // Overlaps
-    this.physics.add.overlap(
-      this.bullets,
-      this.enemies,
-      (b, e) =>
-        this.onBulletHitEnemy(b as Phaser.Physics.Arcade.Image, e as Phaser.Physics.Arcade.Sprite),
-      undefined,
-      this
-    );
+    // Setup power-up UI
+    this.setupPowerUpUI();
 
-    // Add collision between ship and enemies
-    this.physics.add.overlap(this.ship, this.enemies, () => this.onPlayerHit(), undefined, this);
+    // Set up collisions after all groups and sprites are created
+    this.setupCollisions();
 
     // Enemy spawn with difficulty ramp
-    if (this.spawnTimer) this.spawnTimer.remove();
+    console.log('[StarshipScene] Setting up enemy spawn timer');
+    if (this.spawnTimer) {
+      console.log('[StarshipScene] Removing existing spawn timer');
+      this.spawnTimer.remove();
+    }
+
     this.spawnTimer = this.time.addEvent({
       delay: 1200,
       loop: true,
-      callback: () => this.spawnEnemy(),
+      callback: () => {
+        console.log('[StarshipScene] Spawn timer triggered');
+        this.spawnEnemy();
+      },
     });
 
-    this.time.addEvent({
+    console.log('[StarshipScene] Setting up difficulty increase timer');
+    if (this.difficultyTimer) {
+      console.log('[StarshipScene] Removing existing difficulty timer');
+      this.difficultyTimer.remove();
+    }
+
+    this.difficultyTimer = this.time.addEvent({
       delay: 10000,
       loop: true,
       callback: () => {
+        console.log('[StarshipScene] Difficulty timer triggered, increasing difficulty');
         this.difficulty = Math.min(10, this.difficulty + 1);
         const newDelay = Math.max(400, this.spawnTimer.delay - 100);
+
         if (this.spawnTimer) {
+          console.log('[StarshipScene] Updating spawn timer with new delay:', newDelay);
           this.spawnTimer.remove();
         }
+
         this.spawnTimer = this.time.addEvent({
           delay: newDelay,
           loop: true,
@@ -249,6 +364,8 @@ export class StarshipScene extends Phaser.Scene {
     if (isPrimary) {
       // Set this as the main ship reference
       this.ship = ship;
+      // Also set it as the player for collision detection
+      this.player = ship;
 
       this.physics.world.enable(ship);
       ship.setCollideWorldBounds(true);
@@ -271,20 +388,73 @@ export class StarshipScene extends Phaser.Scene {
       body.allowRotation = false;
       ship.setAngularVelocity(0);
       ship.setRotation(Phaser.Math.DegToRad(-90));
-
-      // Overlaps should only be for the primary ship
-      this.physics.add.overlap(ship, this.enemies, () => this.onPlayerHit(), undefined, this);
     }
   }
 
+  // New method to set up collisions separately
+  private setupCollisions(): void {
+    console.log('[StarshipScene] Setting up collision handlers');
+
+    // Bullet-enemy collisions
+    this.physics.add.overlap(
+      this.bullets,
+      this.enemies,
+      (bullet, enemy) => {
+        // Only process collision if flag is active
+        if (!this.collisionsActive) return;
+
+        this.onBulletHitEnemy(
+          bullet as Phaser.Physics.Arcade.Image,
+          enemy as Phaser.Physics.Arcade.Sprite
+        );
+      },
+      undefined,
+      this
+    );
+
+    // Player-enemy collision
+    this.physics.add.overlap(
+      this.player,
+      this.enemies,
+      (_player, enemy) => {
+        if (!this.collisionsActive) return;
+        this.onPlayerHit(enemy as Phaser.Physics.Arcade.Sprite);
+      },
+      undefined,
+      this
+    );
+
+    // Power-up collection
+    this.physics.add.overlap(
+      this.player,
+      this.powerUps,
+      (_player, powerUp) => {
+        const powerUpObj = powerUp as Phaser.GameObjects.GameObject;
+        const powerUpType = powerUpObj.getData('powerUpType') as PowerUpType;
+        if (powerUpType !== undefined) {
+          this.activatePowerUp(powerUpType);
+        }
+        powerUpObj.destroy();
+      },
+      undefined,
+      this
+    );
+
+    // After everything is set up, enable collisions
+    this.collisionsActive = true;
+  }
+
   override update(time: number, delta: number): void {
+    // Check if ship exists and has a body before updating
     if (!this.ship?.body) return;
 
     // Parallax (frame-rate independent)
     const bgConfig = this.registry.get('backgroundConfig');
     const speed = bgConfig ? bgConfig.speed : 1;
     const d = delta / 16.6667;
-    this.starfield.tilePositionY += this.starScrollDir * (speed + 0.2 * this.difficulty) * d;
+    if (this.starfield) {
+      this.starfield.tilePositionY += this.starScrollDir * (speed + 0.2 * this.difficulty) * d;
+    }
 
     // WASD + arrows
     const left = this.cursors.left?.isDown || this.keys.A?.isDown;
@@ -343,6 +513,17 @@ export class StarshipScene extends Phaser.Scene {
     this.enemies
       .getChildren()
       .forEach((e) => this.wrapHorizontal(e as Phaser.GameObjects.GameObject));
+
+    // Update power-up timer if one is active
+    if (this.activePowerUps.size > 0) {
+      this.updatePowerUpTimerUI();
+
+      // Update shield position if it's active
+      if (this.isShieldActive && this.shieldObject && this.player) {
+        this.shieldObject.x = this.player.x;
+        this.shieldObject.y = this.player.y;
+      }
+    }
   }
 
   private wrap(obj: Phaser.GameObjects.GameObject): void {
@@ -402,27 +583,409 @@ export class StarshipScene extends Phaser.Scene {
     bullet: Phaser.Physics.Arcade.Image,
     enemy: Phaser.Physics.Arcade.Sprite
   ): void {
+    // Safety check - make sure both objects still exist and are active
+    if (!bullet.active || !enemy.active) return;
+
     bullet.destroy();
     enemy.destroy();
-    this.score += 10;
+    this.score += 10 * this.scoreMultiplier;
     this.scoreText.setText(`Score: ${this.score}`);
     this.cameras.main.shake(80, 0.005);
     this.boomSfx?.play();
+
+    // Chance to drop a power-up
+    if (Phaser.Math.Between(0, 10) > 5) {
+      // Randomly choose a power-up type
+      const rand = Phaser.Math.Between(0, 2);
+      let powerUpType: PowerUpType;
+      if (rand === 0) {
+        powerUpType = PowerUpType.SCORE_MULTIPLIER;
+      } else if (rand === 1) {
+        powerUpType = PowerUpType.SHIELD;
+      } else {
+        powerUpType = PowerUpType.RAPID_FIRE;
+      }
+
+      let textureKey = 'powerup_score';
+      if (powerUpType === PowerUpType.SHIELD) {
+        textureKey = 'powerup_shield';
+      } else if (powerUpType === PowerUpType.RAPID_FIRE) {
+        textureKey = 'powerup_rapidfire';
+      }
+
+      console.log(
+        `[StarshipScene] Dropping power-up of type: ${PowerUpType[powerUpType]} with texture key: ${textureKey}`
+      );
+
+      // Create the power-up drop with the correct texture
+      const powerUp = this.powerUps.create(
+        enemy.x,
+        enemy.y,
+        textureKey
+      ) as Phaser.Physics.Arcade.Sprite;
+
+      // Store the type on the power-up object itself
+      powerUp.setData('powerUpType', powerUpType);
+
+      // Use a fallback texture if needed
+      if (!powerUp.texture.key || powerUp.frame.name === '__MISSING') {
+        console.log(`[StarshipScene] Creating fallback for ${textureKey}`);
+        this.createPowerUpFallback(textureKey);
+        powerUp.setTexture(textureKey);
+      }
+
+      powerUp.setVelocityY(100);
+
+      // Make power-ups more visible and distinct based on type
+      let tint = 0xffdd00; // Yellow for score multiplier
+      if (powerUpType === PowerUpType.SHIELD) {
+        tint = 0x00ccff; // Blue for shield
+      } else if (powerUpType === PowerUpType.RAPID_FIRE) {
+        tint = 0x00ff00; // Green for rapid fire
+      }
+
+      powerUp.setTint(tint);
+
+      // Add a pulsing effect to make it more visible
+      this.tweens.add({
+        targets: powerUp,
+        scale: { from: 0.7, to: 1 },
+        alpha: { from: 0.7, to: 1 },
+        duration: 500,
+        yoyo: true,
+        repeat: -1,
+      });
+    }
   }
 
-  private onPlayerHit(): void {
-    this.physics.pause();
+  private onPlayerHit(enemy: Phaser.Physics.Arcade.Sprite): void {
+    console.log('[StarshipScene] Player hit!');
+
+    // Check for shield protection
+    if (this.isShieldActive) {
+      console.log('[StarshipScene] Shield absorbed the hit!');
+
+      // Destroy the enemy that hit the shield
+      if (enemy) {
+        enemy.destroy();
+      }
+
+      // Strong visual feedback for shield hit
+      this.cameras.main.flash(300, 0, 180, 255, true);
+      this.cameras.main.shake(200, 0.01);
+
+      // Special shield hit effect
+      if (this.shieldObject) {
+        this.tweens.add({
+          targets: this.shieldObject,
+          alpha: { from: 1, to: 0 },
+          scale: { from: 0.7, to: 0.1 },
+          duration: 300,
+          ease: 'Power2',
+          onComplete: () => {
+            if (this.shieldObject) {
+              this.shieldObject.destroy();
+              this.shieldObject = undefined;
+            }
+          },
+        });
+      }
+
+      // Deactivate shield immediately
+      this.isShieldActive = false;
+      this.deactivatePowerUp(PowerUpType.SHIELD);
+
+      return; // Player is protected by shield
+    }
+
+    console.log('[StarshipScene] No shield, starting game over sequence'); // Disable collision detection to prevent multiple hits
+    this.collisionsActive = false;
+
+    // Deactivate any active power-ups
+    this.deactivateAllPowerUps();
+
+    console.log('[StarshipScene] Stopping timers and starting game over scene');
+    // Stop enemies and bullets
+    console.log('[StarshipScene] Disabling enemies and bullets');
+    this.enemies.setActive(false);
+    this.bullets.setActive(false);
+
+    // Stop all timers
+    console.log('[StarshipScene] Removing all timers');
+    if (this.spawnTimer) {
+      console.log('[StarshipScene] Removing spawn timer');
+      this.spawnTimer.remove();
+      this.spawnTimer = null as unknown as Phaser.Time.TimerEvent;
+    }
+    if (this.difficultyTimer) {
+      console.log('[StarshipScene] Removing difficulty timer');
+      this.difficultyTimer.remove();
+      this.difficultyTimer = null as unknown as Phaser.Time.TimerEvent;
+    }
+    this.deactivateAllPowerUps();
+
+    // Visual feedback
     this.shipPrimary.setTint(0xff0000);
     this.cameras.main.shake(120, 0.01);
-    this.time.delayedCall(800, () => this.scene.start('GameOver', { score: this.score }));
+
+    console.log('[StarshipScene] Setting up delayed call to GameOver scene');
+    // Wait and then restart
+    this.time.delayedCall(800, () => {
+      console.log('[StarshipScene] Delayed call triggered, transitioning to GameOver scene');
+
+      // Store the score before stopping the scene
+      const finalScore = this.score;
+
+      // Stop this scene completely (forces a full shutdown)
+      console.log('[StarshipScene] Stopping StarshipScene');
+      this.scene.stop('StarshipScene');
+
+      // Start the GameOver scene with the stored score
+      console.log('[StarshipScene] Starting GameOver scene with score:', finalScore);
+      this.scene.start('GameOver', { score: finalScore });
+    });
   }
 
-  private generateCustomBackground(config: { density: number }) {
-    const key = 'custom_stars';
-    if (this.textures.exists(key)) {
-      this.textures.remove(key);
+  /**
+   * Activates the score multiplier power-up with visual feedback
+   */
+  private activatePowerUp(type: PowerUpType): void {
+    // If power-up is already active, just reset its timer
+    if (this.activePowerUps.has(type)) {
+      this.activePowerUps.get(type)?.remove();
+    } else {
+      // Create new UI elements if this is a new power-up
+      this.createPowerUpUI(type);
     }
-    this.createStarsFallback(key, this.scale.width, this.scale.height, config.density);
+
+    let iconTexture = 'powerup_score';
+    let labelText = 'x2';
+
+    // Apply effect based on type
+    switch (type) {
+      case PowerUpType.SCORE_MULTIPLIER:
+        this.scoreMultiplier = 2;
+        iconTexture = 'powerup_score';
+        labelText = 'x2';
+        break;
+      case PowerUpType.RAPID_FIRE:
+        this.fireRate = 100; // Faster fire rate
+        iconTexture = 'powerup_rapidfire';
+        labelText = 'RAPID';
+        break;
+      case PowerUpType.SHIELD:
+        this.isShieldActive = true;
+        iconTexture = 'powerup_shield';
+        labelText = 'SHIELD';
+
+        // Create shield texture if it doesn't exist
+        if (!this.textures.exists('shield')) {
+          console.log('[StarshipScene] Shield texture not found, creating fallback');
+          this.createShieldFallback('shield');
+        }
+
+        // Clean up any existing shield object
+        if (this.shieldObject) {
+          this.shieldObject.destroy();
+          this.shieldObject = undefined;
+        }
+
+        // Create and show shield visual around player
+        if (this.player) {
+          this.shieldObject = this.add.sprite(this.player.x, this.player.y, 'shield');
+          this.shieldObject.setScale(0.4);
+          this.shieldObject.setAlpha(0.8);
+          this.shieldObject.setVisible(true);
+
+          // Add a pulse effect to the shield
+          this.tweens.add({
+            targets: this.shieldObject,
+            alpha: { from: 0.8, to: 0.6 },
+            scale: { from: 0.38, to: 0.42 },
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+          });
+        }
+        break;
+    }
+
+    // Update the UI for this specific power-up
+    const ui = this.powerUpUIs.get(type);
+    if (ui) {
+      this.ensurePowerUpTexture(iconTexture);
+      ui.icon.setTexture(iconTexture);
+      ui.label.setText(labelText);
+
+      // Add a "pop" scale animation
+      this.tweens.add({
+        targets: ui.icon,
+        scale: { from: 0.7, to: 0.5 },
+        duration: 300,
+        ease: 'Bounce.Out',
+      });
+    }
+
+    // Set up the timer to deactivate power-up
+    const timer = this.time.addEvent({
+      delay: this.powerUpDuration,
+      callback: () => this.deactivatePowerUp(type),
+    });
+    this.activePowerUps.set(type, timer);
+
+    // Redraw all UI elements to position them correctly
+    this.updatePowerUpTimerUI();
+  }
+
+  /**
+   * Deactivates the currently active power-up.
+   */
+  private deactivatePowerUp(type: PowerUpType): void {
+    if (!this.activePowerUps.has(type)) return;
+
+    // Revert effect based on type
+    if (type === PowerUpType.SCORE_MULTIPLIER) {
+      this.scoreMultiplier = 1;
+    } else if (type === PowerUpType.RAPID_FIRE) {
+      this.fireRate = 200; // Reset fire rate
+    } else if (type === PowerUpType.SHIELD) {
+      this.isShieldActive = false;
+      if (this.shieldObject) {
+        // Optional: add a fade-out tween
+        this.shieldObject.setVisible(false);
+      }
+    }
+
+    // remove timer and from map
+    this.activePowerUps.get(type)?.remove();
+    this.activePowerUps.delete(type);
+
+    // Destroy UI elements
+    const ui = this.powerUpUIs.get(type);
+    if (ui) {
+      ui.icon.destroy();
+      ui.label.destroy();
+      ui.timerCircle.destroy();
+      this.powerUpUIs.delete(type);
+    }
+
+    // Redraw remaining UI elements
+    this.updatePowerUpTimerUI();
+  }
+
+  private deactivateAllPowerUps(): void {
+    const typesToDeactivate = Array.from(this.activePowerUps.keys());
+    typesToDeactivate.forEach((type) => this.deactivatePowerUp(type));
+  }
+
+  private createGenericTexture(key: string, color: number, w = 32, h = 32): void {
+    const g = this.add.graphics();
+    g.fillStyle(color, 1);
+    g.fillRect(0, 0, w, h);
+    g.generateTexture(key, w, h);
+    g.destroy();
+  }
+
+  /**
+   * Ensures a texture exists, creating a fallback if needed.
+   */
+  private ensurePowerUpTexture(key: string): void {
+    if (this.textures.exists(key)) {
+      return;
+    }
+    // Simple fallback for now, we can make this more specific later
+    this.createPowerUpFallback(key);
+  }
+
+  /**
+   * Creates a star-shaped power-up icon as fallback
+   */
+  private createPowerUpFallback(key: string): void {
+    console.log(`[StarshipScene] Creating fallback texture for ${key}`);
+
+    const g = this.add.graphics();
+    g.clear();
+
+    if (key === 'powerup_shield') {
+      // Blue circle for shield
+      g.fillStyle(0x00ccff, 0.3);
+      g.fillCircle(16, 16, 16);
+      g.lineStyle(2, 0x0088cc);
+      g.fillStyle(0x00aaff, 0.8);
+      g.fillCircle(16, 16, 14);
+      g.strokeCircle(16, 16, 14);
+    } else if (key === 'powerup_rapidfire') {
+      // Green triangles for rapid fire
+      g.fillStyle(0x00ff00, 0.8);
+      g.beginPath();
+      // Triangle 1
+      g.moveTo(16, 4);
+      g.lineTo(22, 14);
+      g.lineTo(10, 14);
+      g.closePath();
+      // Triangle 2
+      g.moveTo(16, 12);
+      g.lineTo(22, 22);
+      g.lineTo(10, 22);
+      g.closePath();
+      // Triangle 3
+      g.moveTo(16, 20);
+      g.lineTo(22, 30);
+      g.lineTo(10, 30);
+      g.closePath();
+      g.fillPath();
+    } else {
+      // default for score and others
+      // Create a glowing background
+      g.fillStyle(0xffcc00, 0.3);
+      g.fillCircle(16, 16, 16);
+
+      // Draw the outer circle
+      g.lineStyle(2, 0x000000);
+      g.fillStyle(0xffdd00, 1);
+      g.fillCircle(16, 16, 14);
+      g.strokeCircle(16, 16, 14);
+
+      // Create a star shape
+      const starPoints = 5;
+      const outerRadius = 12;
+      const innerRadius = 5;
+      const cx = 16;
+      const cy = 16;
+
+      // Draw the star
+      g.fillStyle(0xff6600, 1);
+      g.lineStyle(1, 0x000000);
+      g.beginPath();
+
+      for (let i = 0; i < starPoints * 2; i++) {
+        const radius = i % 2 === 0 ? outerRadius : innerRadius;
+        const angle = (Math.PI * 2 * i) / (starPoints * 2) - Math.PI / 2;
+        const x = cx + radius * Math.cos(angle);
+        const y = cy + radius * Math.sin(angle);
+
+        if (i === 0) {
+          g.moveTo(x, y);
+        } else {
+          g.lineTo(x, y);
+        }
+      }
+
+      g.closePath();
+      g.fillPath();
+      g.strokePath();
+
+      // Add highlight dots for sparkle effect
+      g.fillStyle(0xffffff, 0.8);
+      g.fillCircle(cx - 5, cy - 5, 2);
+      g.fillCircle(cx + 4, cy - 2, 1);
+    }
+
+    // Generate the texture and clean up
+    g.generateTexture(key, 32, 32);
+    g.destroy();
+
+    console.log(`[StarshipScene] Created fallback texture with key: ${key}`);
   }
 
   // ---------- helpers: create fallbacks to avoid green boxes ----------
@@ -456,11 +1019,28 @@ export class StarshipScene extends Phaser.Scene {
     }
 
     // Stars background
+    // If the texture doesn't exist, create a fallback
     if (!this.textures.exists('stars')) {
-      this.createStarsFallback('stars_fallback', 256, 256, 120);
+      console.warn(`[StarshipScene] Default 'stars' texture not found. Creating fallback.`);
+      this.createGenericTexture('stars_fallback', 0x00001a, 256, 256);
       this.tex.stars = 'stars_fallback';
     } else {
       this.tex.stars = 'stars';
+    }
+
+    // Create the starfield if it doesn't exist or recreate it
+    if (!this.starfield) {
+      this.starfield = this.add
+        .tileSprite(
+          this.scale.width / 2,
+          this.scale.height / 2,
+          this.scale.width,
+          this.scale.height,
+          this.tex.stars
+        )
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(-10);
     }
   }
 
@@ -495,17 +1075,116 @@ export class StarshipScene extends Phaser.Scene {
     g.destroy();
   }
 
-  private createStarsFallback(key: string, w: number, h: number, count: number) {
+  /**
+   * Creates a shield visual fallback when shield texture doesn't exist
+   */
+  private createShieldFallback(key: string): void {
+    console.log(`[StarshipScene] Creating shield fallback texture for ${key}`);
+
     const g = this.add.graphics();
-    // transparent background; draw small white stars
-    g.fillStyle(0xffffff, 1);
-    for (let i = 0; i < count; i++) {
-      const x = Phaser.Math.Between(0, w - 1);
-      const y = Phaser.Math.Between(0, h - 1);
-      const r = Phaser.Math.Between(1, 2);
-      g.fillRect(x, y, r, r);
-    }
-    g.generateTexture(key, w, h);
+    g.clear();
+
+    // Create a circular blue shield with glow effect
+    // First draw a semi-transparent outer glow
+    g.fillStyle(0x00ccff, 0.3);
+    g.fillCircle(32, 32, 30);
+
+    // Draw main shield with gradient
+    g.lineStyle(2, 0x0088cc);
+    g.fillStyle(0x00aaff, 0.6);
+    g.fillCircle(32, 32, 25);
+    g.strokeCircle(32, 32, 25);
+
+    // Add inner highlight
+    g.fillStyle(0x99eeff, 0.7);
+    g.fillCircle(32 - 5, 32 - 5, 8);
+
+    // Generate the texture and clean up
+    g.generateTexture(key, 64, 64);
     g.destroy();
+
+    console.log(`[StarshipScene] Created shield fallback texture with key: ${key}`);
+  }
+
+  /**
+   * Sets up the power-up UI with icon and timer circle
+   */
+  private setupPowerUpUI(): void {
+    this.powerUpUIContainer = this.add.container(40, 50);
+    this.powerUpUIContainer.setDepth(100);
+  }
+
+  private createPowerUpUI(type: PowerUpType): void {
+    const icon = this.add.sprite(0, 0, 'powerup_score').setScale(0.5).setAlpha(1);
+    const timerCircle = this.add.graphics();
+    const label = this.add
+      .text(25, 0, '', {
+        fontSize: '20px',
+        color: '#ffcc00',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 2,
+      })
+      .setOrigin(0, 0.5);
+
+    this.powerUpUIContainer.add([icon, label, timerCircle]);
+    this.powerUpUIs.set(type, { icon, label, timerCircle });
+  }
+
+  private updatePowerUpTimerUI(): void {
+    let yPos = 0;
+    this.activePowerUps.forEach((timer, type) => {
+      const ui = this.powerUpUIs.get(type);
+      if (!ui) return;
+
+      // Position elements
+      ui.icon.setPosition(0, yPos);
+      ui.label.setPosition(25, yPos);
+
+      // We need to adjust the timer circle's position relative to the container
+      ui.timerCircle.setPosition(ui.icon.x, ui.icon.y);
+
+      const progress = timer.getRemaining() / this.powerUpDuration;
+
+      ui.timerCircle.clear();
+      ui.timerCircle.lineStyle(3, 0x333333, 0.5);
+      ui.timerCircle.strokeCircle(0, 0, 22);
+
+      if (progress > 0) {
+        ui.timerCircle.lineStyle(3, 0xffff00, 1);
+        const startAngle = -Math.PI / 2;
+        const endAngle = startAngle + Math.PI * 2 * progress;
+        ui.timerCircle.beginPath();
+        ui.timerCircle.arc(0, 0, 22, startAngle, endAngle, false);
+        ui.timerCircle.strokePath();
+      }
+
+      yPos += 50; // Stack them vertically
+    });
+  }
+
+  shutdown(): void {
+    console.log('[StarshipScene] shutdown method called');
+
+    // Disable collision detection first
+    this.collisionsActive = false;
+
+    // Deactivate any active power-up
+    this.deactivateAllPowerUps();
+
+    // Clean up timers to prevent them from running in the background
+    console.log('[StarshipScene] Cleaning up timers');
+    if (this.spawnTimer) {
+      console.log('[StarshipScene] Removing spawn timer in shutdown');
+      this.spawnTimer.remove();
+      this.spawnTimer = null as unknown as Phaser.Time.TimerEvent;
+    }
+    if (this.difficultyTimer) {
+      console.log('[StarshipScene] Removing difficulty timer in shutdown');
+      this.difficultyTimer.remove();
+      this.difficultyTimer = null as unknown as Phaser.Time.TimerEvent;
+    }
+    this.activePowerUps.forEach((timer) => timer.remove());
+    this.activePowerUps.clear();
   }
 }
