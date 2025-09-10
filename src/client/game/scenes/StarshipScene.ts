@@ -786,32 +786,34 @@ export class StarshipScene extends Phaser.Scene {
       switch (enemyType) {
         case EnemyType.CRUISER:
           tint = 0xff6600; // Orange
-          particleCount = 30;
-          speedMin = 70;
-          speedMax = 180;
-          scaleStart = 1.0;
-          lifespan = 1000;
+          particleCount = 40; // More particles for bigger enemies
+          speedMin = 80;
+          speedMax = 200;
+          scaleStart = 1.2;
+          lifespan = 800; // Shorter but more intense
           break;
         case EnemyType.GUNSHIP:
           tint = 0x8800ff; // Purple
-          particleCount = 25;
-          speedMin = 60;
-          speedMax = 160;
-          lifespan = 900;
+          particleCount = 35;
+          speedMin = 70;
+          speedMax = 180;
+          lifespan = 750;
           break;
         case EnemyType.SCOUT:
           tint = 0x00ffff; // Cyan
-          speedMin = 90;
-          speedMax = 200;
-          scaleStart = 0.7;
+          particleCount = 30;
+          speedMin = 100;
+          speedMax = 220;
+          scaleStart = 0.8;
           lifespan = 600;
           break;
         case EnemyType.SEEKER:
           tint = 0xff0000; // Red
-          speedMin = 60;
-          speedMax = 150;
-          scaleStart = 0.9;
-          lifespan = 700;
+          particleCount = 35;
+          speedMin = 70;
+          speedMax = 170;
+          scaleStart = 1.0;
+          lifespan = 650;
           break;
       }
     }
@@ -827,10 +829,8 @@ export class StarshipScene extends Phaser.Scene {
 
       // DUAL APPROACH: Try both particles and a simple explosion sprite
 
-      // 1. Try particles first
-      console.log(
-        `[StarshipScene] DEBUG - Adding particles at (${x},${y}) with texture 'particle'`
-      );
+      // 1. Create main explosion particles
+      console.log(`[StarshipScene] DEBUG - Adding main particles at (${x},${y})`);
       const particleEffect = this.add.particles(x, y, 'particle', {
         lifespan: lifespan,
         speed: { min: speedMin, max: speedMax },
@@ -844,23 +844,125 @@ export class StarshipScene extends Phaser.Scene {
         emitting: true,
       });
 
-      // 2. Also create a simple circular explosion as a fallback
-      const explosionSize = 50; // Big enough to be visible
-      const explosion = this.add.circle(x, y, explosionSize, tint, 0.8);
+      // 2. Add secondary debris particles with different properties
+      console.log(`[StarshipScene] DEBUG - Adding secondary particles at (${x},${y})`);
+      const debrisEffect = this.add.particles(x, y, 'particle', {
+        lifespan: lifespan * 0.8,
+        speed: { min: speedMin * 0.5, max: speedMax * 0.6 },
+        angle: { min: 0, max: 360 },
+        scale: { start: scaleStart * 0.6, end: 0 },
+        alpha: { start: 0.8, end: 0 },
+        blendMode: Phaser.BlendModes.SCREEN,
+        tint: 0xffffff, // White for contrast
+        quantity: Math.floor(particleCount * 0.6),
+        frequency: -1,
+        emitting: true,
+        gravityY: 20, // Small gravity effect for falling debris
+      });
 
-      console.log(`[StarshipScene] DEBUG - Added fallback explosion circle at (${x},${y})`);
+      // 3. Add bright center flash particles
+      const flashEffect = this.add.particles(x, y, 'particle', {
+        lifespan: lifespan * 0.3, // Short duration
+        speed: { min: 10, max: 50 },
+        scale: { start: scaleStart * 1.5, end: 0.2 },
+        alpha: { start: 1, end: 0 },
+        blendMode: Phaser.BlendModes.ADD,
+        tint: 0xffffff,
+        quantity: 10,
+        frequency: -1,
+        emitting: true,
+      });
 
-      // Animate the explosion circle to fade out
+      // Clean up all particle effects after they're done
+      this.time.delayedCall(lifespan + 100, () => {
+        particleEffect.destroy();
+        debrisEffect.destroy();
+        flashEffect.destroy();
+      });
+
+      // 4. Create an enhanced explosion effect with multiple waves
+
+      // Initial flash effect at the center - slightly larger but still quick
+      const flash = this.add.circle(x, y, 15, 0xffffff, 1); // Medium radius
       this.tweens.add({
-        targets: explosion,
-        scale: { from: 0.5, to: 2 },
-        alpha: { from: 0.8, to: 0 },
-        duration: 500,
+        targets: flash,
+        scale: { from: 1, to: 2.5 }, // Increased max scale
+        alpha: { from: 1, to: 0 },
+        duration: 180, // Moderate duration
         ease: 'Cubic.easeOut',
         onComplete: () => {
-          explosion.destroy();
+          flash.destroy();
         },
       });
+
+      // Create multiple explosion waves with different sizes, speeds and opacities
+      const waveCount = enemyType ? Math.min(2 + enemyType, 5) : 3; // More waves for better effect
+
+      // Enhanced color patterns based on enemy type
+      let waveColors: number[] = [];
+      if (enemyType) {
+        switch (enemyType) {
+          case EnemyType.CRUISER:
+            waveColors = [0xffffff, 0xff9933, tint]; // White, orange, base color
+            break;
+          case EnemyType.GUNSHIP:
+            waveColors = [0xffffff, 0xcc99ff, tint]; // White, light purple, base color
+            break;
+          case EnemyType.SCOUT:
+            waveColors = [0xffffff, 0x99ffff, tint]; // White, light cyan, base color
+            break;
+          case EnemyType.SEEKER:
+            waveColors = [0xffffff, 0xff9999, tint]; // White, light red, base color
+            break;
+          default:
+            waveColors = [0xffffff, tint]; // White, base color
+        }
+      } else {
+        waveColors = [0xffffff, tint]; // White, base color
+      }
+
+      for (let i = 0; i < waveCount; i++) {
+        // Vary the wave sizes and colors - medium size
+        const waveSize = 16 + i * 10; // Increased size
+        const waveColor = i < waveColors.length ? waveColors[i] : tint;
+        const waveAlpha = 0.8 - i * 0.15; // Each wave is more transparent
+        const waveDuration = 220 + i * 70; // Moderate animation speed
+        const waveDelay = i * 60; // Moderate delay between waves
+
+        // Create the wave
+        const wave = this.add.circle(x, y, waveSize, waveColor, waveAlpha);
+        wave.setScale(0.1);
+
+        // Animate the wave - smaller max scale
+        this.tweens.add({
+          targets: wave,
+          scale: { from: 0.1, to: 1.0 + i * 0.3 }, // Reduced max scale
+          alpha: { from: waveAlpha, to: 0 },
+          duration: waveDuration,
+          delay: waveDelay,
+          ease: 'Cubic.easeOut',
+          onComplete: () => {
+            wave.destroy();
+          },
+        });
+      }
+
+      // Add subtle pulsing inner circle for boss-type enemies - smaller and faster
+      if (enemyType && enemyType >= EnemyType.CRUISER) {
+        const innerCircle = this.add.circle(x, y, 8, tint, 0.7); // Smaller radius
+        this.tweens.add({
+          targets: innerCircle,
+          scale: { from: 0.8, to: 2 }, // Reduced max scale
+          alpha: { from: 0.7, to: 0 },
+          duration: 500, // Shorter duration
+          ease: 'Cubic.easeOut', // Changed from Bounce for faster effect
+          onComplete: () => {
+            innerCircle.destroy();
+          },
+        });
+      }
+
+      console.log(`[StarshipScene] Enhanced explosion effect created at (${x},${y})`);
 
       console.log(
         `[StarshipScene] Explosion created with ${particleCount} particles and tint 0x${tint.toString(16)}`
@@ -875,18 +977,58 @@ export class StarshipScene extends Phaser.Scene {
     } catch (error) {
       console.error('[StarshipScene] Error creating explosion effects:', error);
 
-      // If everything else fails, at least create a simple flash effect
-      const flash = this.add.rectangle(x, y, 100, 100, 0xffffff, 0.8);
-      this.tweens.add({
-        targets: flash,
-        alpha: { from: 0.8, to: 0 },
-        duration: 300,
-        onComplete: () => flash.destroy(),
-      });
+      // Create a fallback explosion with simple shapes
+      try {
+        // Create a cross of rectangles that expand outward - smaller and faster
+        const colors = [0xffffff, tint];
+
+        for (let i = 0; i < 2; i++) {
+          // Horizontal rectangle - smaller
+          const hRect = this.add.rectangle(x, y, 40, 6, colors[i], 0.8);
+
+          // Vertical rectangle - smaller
+          const vRect = this.add.rectangle(x, y, 6, 40, colors[i], 0.8);
+
+          // Animate them - faster and smaller scale
+          this.tweens.add({
+            targets: [hRect, vRect],
+            scaleX: { from: 0.2, to: 1.5 },
+            scaleY: { from: 0.2, to: 1.5 },
+            alpha: { from: 0.8, to: 0 },
+            duration: 250 + i * 100, // Shorter duration
+            delay: i * 50, // Less delay
+            onComplete: () => {
+              hRect.destroy();
+              vRect.destroy();
+            },
+          });
+        }
+
+        // Add a pulsing center - smaller and faster
+        const center = this.add.circle(x, y, 10, tint, 1); // Smaller radius
+        this.tweens.add({
+          targets: center,
+          scale: { from: 0.5, to: 1.5 }, // Reduced max scale
+          alpha: { from: 1, to: 0 },
+          duration: 200, // Shorter duration
+          ease: 'Cubic.easeOut',
+          onComplete: () => center.destroy(),
+        });
+      } catch (fallbackError) {
+        // Absolute last resort - simple flash - smaller and faster
+        console.error('[StarshipScene] Even fallback explosion failed:', fallbackError);
+        const flash = this.add.rectangle(x, y, 50, 50, 0xffffff, 0.8); // Smaller size
+        this.tweens.add({
+          targets: flash,
+          alpha: { from: 0.8, to: 0 },
+          duration: 200, // Shorter duration
+          onComplete: () => flash.destroy(),
+        });
+      }
     }
 
     // Add a camera shake effect for feedback (this works even if particles fail)
-    this.cameras.main.shake(80, 0.01);
+    this.cameras.main.shake(50, 0.008); // Reduced duration and intensity
   } /**
    * Create a particle texture for explosion effects
    * This is simpler now since we're loading the particle.png in preload
