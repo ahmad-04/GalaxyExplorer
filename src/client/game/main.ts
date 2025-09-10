@@ -4,6 +4,7 @@ import { MainMenu } from './scenes/MainMenu';
 import { CustomizationScene } from './scenes/CustomizationScene';
 import { GameOver } from './scenes/GameOver';
 import { StarshipScene } from './scenes/StarshipScene';
+import { EnemyTest } from './scenes/EnemyTest';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -22,7 +23,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: true, // Enable debug mode to show hitboxes
     },
   },
-  scene: [Boot, MainMenu, StarshipScene, GameOver, CustomizationScene],
+  scene: [Boot, MainMenu, StarshipScene, GameOver, CustomizationScene, EnemyTest],
 };
 
 const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {

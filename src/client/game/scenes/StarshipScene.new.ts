@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { EnemyManager } from '../entities/EnemyManager';
-import { Enemy, EnemyType } from '../entities/Enemy';
+import { Enemy } from '../entities/Enemy';
 
 // Add an enum for power-up types
 enum PowerUpType {
@@ -139,20 +139,6 @@ export class StarshipScene extends Phaser.Scene {
     this.load.image('ShipClassic', '/assets/ShipClassic.png');
     this.load.image('bullet', '/assets/bullet.png');
     this.load.image('enemy', '/assets/enemy.png');
-
-    // Load particle texture with debug logging
-    console.log('[StarshipScene] DEBUG - Loading particle texture from assets');
-    this.load
-      .image('particle', '/assets/particle.png')
-      .on('filecomplete', (key: string) => {
-        if (key === 'particle') {
-          console.log('[StarshipScene] DEBUG - Particle texture loaded successfully');
-        }
-      })
-      .on('fileerror', () => {
-        console.error('[StarshipScene] DEBUG - Failed to load particle texture');
-      });
-
     this.load.image('stars', '/assets/stars.png'); // optional
 
     // Load the power-up icon with error handler
@@ -166,14 +152,6 @@ export class StarshipScene extends Phaser.Scene {
 
     this.load.audio('shoot', '/assets/SpaceShipClassicShootingSFX.wav'); // optional
     this.load.audio('boom', '/assets/Boom.wav'); // optional
-
-    // Create a particle texture if it doesn't exist yet
-    this.load.on('complete', () => {
-      if (!this.textures.exists('particle')) {
-        console.log('[StarshipScene] Creating particle texture on load complete');
-        this.createParticleTexture();
-      }
-    });
 
     this.load.on('loaderror', (file: Phaser.Loader.File) =>
       console.error('Asset failed:', file.key)
@@ -573,42 +551,19 @@ export class StarshipScene extends Phaser.Scene {
       destroyed = enemy.hit();
 
       // Get points if destroyed
-      if (destroyed) {
-        if ('getPoints' in enemy && typeof enemy.getPoints === 'function') {
-          points = enemy.getPoints();
-        }
-
-        // Actually destroy the enemy if hit returns true
-        console.log('[StarshipScene] Enemy destroyed after hit');
-        enemySprite.destroy();
+      if (destroyed && 'getPoints' in enemy && typeof enemy.getPoints === 'function') {
+        points = enemy.getPoints();
       }
     } else {
       // Legacy enemy - destroy immediately
       enemySprite.destroy();
-    } // Only add points and show effects if the enemy was destroyed
+    }
+
+    // Only add points and show effects if the enemy was destroyed
     if (destroyed) {
       this.score += points * this.scoreMultiplier;
       this.scoreText.setText(`Score: ${this.score}`);
-
-      // Create explosion effect based on enemy type
-      let enemyTypeValue: number | undefined;
-
-      // Try to get enemy type through different methods
-      if ('getType' in enemy && typeof enemy.getType === 'function') {
-        enemyTypeValue = enemy.getType();
-        console.log(`[StarshipScene] Found enemy type: ${enemyTypeValue}`);
-      } else if ('type' in enemy) {
-        // Check if enemy has a type property (using type assertion)
-        enemyTypeValue = (enemy as unknown as { type: number }).type;
-        console.log(`[StarshipScene] Found enemy type from property: ${enemyTypeValue}`);
-      }
-
-      // Create explosion at the enemy's position
-      console.log(
-        `[StarshipScene] DEBUG - Creating explosion at (${enemySprite.x}, ${enemySprite.y}) with type ${enemyTypeValue}`
-      );
-      console.log('[StarshipScene] DEBUG - Current texture keys:', this.textures.getTextureKeys());
-      this.createExplosionEffect(enemySprite.x, enemySprite.y, enemyTypeValue);
+      this.cameras.main.shake(80, 0.005);
       this.boomSfx?.play();
     }
 
@@ -680,18 +635,12 @@ export class StarshipScene extends Phaser.Scene {
   private onPlayerHit(enemy: Phaser.Physics.Arcade.Sprite): void {
     console.log('[StarshipScene] Player hit!');
 
-    // Safety check - make sure the enemy still exists and is active
-    if (enemy && !enemy.active) {
-      console.log('[StarshipScene] Ignoring hit from inactive enemy');
-      return;
-    }
-
     // Check for shield protection
     if (this.isShieldActive) {
       console.log('[StarshipScene] Shield absorbed the hit!');
 
       // Destroy the enemy that hit the shield
-      if (enemy && enemy.active) {
+      if (enemy) {
         enemy.destroy();
       }
 
@@ -764,160 +713,6 @@ export class StarshipScene extends Phaser.Scene {
       console.log('[StarshipScene] Starting GameOver scene with score:', finalScore);
       this.scene.start('GameOver', { score: finalScore });
     });
-  }
-
-  /**
-   * Creates an explosion effect at the specified position
-   * @param x - X position for explosion
-   * @param y - Y position for explosion
-   * @param enemyType - Optional enemy type for specialized effects
-   */
-  private createExplosionEffect(x: number, y: number, enemyType?: number): void {
-    console.log(`[StarshipScene] Creating explosion at (${x}, ${y}) for enemy type ${enemyType}`);
-
-    // Determine particle color based on enemy type
-    let tint = 0xffffff; // Default white
-    let particleCount = 50; // Increased particle count for better visibility
-    let speedMin = 50;
-    let speedMax = 150;
-    let scaleStart = 1.2; // Increased scale for better visibility
-    let lifespan = 1000; // Longer lifespan    // Customize based on enemy type
-    if (enemyType !== undefined) {
-      switch (enemyType) {
-        case EnemyType.CRUISER:
-          tint = 0xff6600; // Orange
-          particleCount = 30;
-          speedMin = 70;
-          speedMax = 180;
-          scaleStart = 1.0;
-          lifespan = 1000;
-          break;
-        case EnemyType.GUNSHIP:
-          tint = 0x8800ff; // Purple
-          particleCount = 25;
-          speedMin = 60;
-          speedMax = 160;
-          lifespan = 900;
-          break;
-        case EnemyType.SCOUT:
-          tint = 0x00ffff; // Cyan
-          speedMin = 90;
-          speedMax = 200;
-          scaleStart = 0.7;
-          lifespan = 600;
-          break;
-        case EnemyType.SEEKER:
-          tint = 0xff0000; // Red
-          speedMin = 60;
-          speedMax = 150;
-          scaleStart = 0.9;
-          lifespan = 700;
-          break;
-      }
-    }
-
-    try {
-      // Debug texture existence
-      console.log(
-        `[StarshipScene] DEBUG - Particle texture exists: ${this.textures.exists('particle')}`
-      );
-
-      // List all available textures
-      console.log('[StarshipScene] DEBUG - Available textures:', this.textures.getTextureKeys());
-
-      // DUAL APPROACH: Try both particles and a simple explosion sprite
-
-      // 1. Try particles first
-      console.log(
-        `[StarshipScene] DEBUG - Adding particles at (${x},${y}) with texture 'particle'`
-      );
-      const particleEffect = this.add.particles(x, y, 'particle', {
-        lifespan: lifespan,
-        speed: { min: speedMin, max: speedMax },
-        angle: { min: 0, max: 360 },
-        scale: { start: scaleStart, end: 0 },
-        alpha: { start: 1, end: 0 },
-        blendMode: Phaser.BlendModes.ADD,
-        tint: tint,
-        quantity: particleCount,
-        frequency: -1, // Emit all at once
-        emitting: true,
-      });
-
-      // 2. Also create a simple circular explosion as a fallback
-      const explosionSize = 50; // Big enough to be visible
-      const explosion = this.add.circle(x, y, explosionSize, tint, 0.8);
-
-      console.log(`[StarshipScene] DEBUG - Added fallback explosion circle at (${x},${y})`);
-
-      // Animate the explosion circle to fade out
-      this.tweens.add({
-        targets: explosion,
-        scale: { from: 0.5, to: 2 },
-        alpha: { from: 0.8, to: 0 },
-        duration: 500,
-        ease: 'Cubic.easeOut',
-        onComplete: () => {
-          explosion.destroy();
-        },
-      });
-
-      console.log(
-        `[StarshipScene] Explosion created with ${particleCount} particles and tint 0x${tint.toString(16)}`
-      );
-
-      // Auto-destroy the particle effect after animation completes
-      this.time.delayedCall(lifespan + 100, () => {
-        if (particleEffect) {
-          particleEffect.destroy();
-        }
-      });
-    } catch (error) {
-      console.error('[StarshipScene] Error creating explosion effects:', error);
-
-      // If everything else fails, at least create a simple flash effect
-      const flash = this.add.rectangle(x, y, 100, 100, 0xffffff, 0.8);
-      this.tweens.add({
-        targets: flash,
-        alpha: { from: 0.8, to: 0 },
-        duration: 300,
-        onComplete: () => flash.destroy(),
-      });
-    }
-
-    // Add a camera shake effect for feedback (this works even if particles fail)
-    this.cameras.main.shake(80, 0.01);
-  } /**
-   * Create a particle texture for explosion effects
-   * This is simpler now since we're loading the particle.png in preload
-   */
-  private createParticleTexture(): void {
-    console.log('[StarshipScene] Creating fallback particle texture');
-
-    // Skip if texture already exists
-    if (this.textures.exists('particle')) {
-      console.log('[StarshipScene] Particle texture already exists, skipping creation');
-      return;
-    }
-
-    // Create a fallback particle texture
-    const g = this.add.graphics();
-    const size = 16; // Larger size for better visibility
-    const center = size / 2;
-
-    // Create a bright, visible particle with concentric circles
-    g.fillStyle(0xffffff, 1);
-    g.fillCircle(center, center, center); // Full size white circle
-
-    // Add a brighter center
-    g.fillStyle(0xffffaa, 1);
-    g.fillCircle(center, center, center * 0.6);
-
-    // Generate the texture
-    g.generateTexture('particle', size, size);
-    g.destroy();
-
-    console.log('[StarshipScene] Fallback particle texture created');
   }
 
   // ---------- helpers: create fallbacks to avoid green boxes ----------
