@@ -23,4 +23,5 @@ export type Score = {
 
 export type LeaderboardResponse = {
   scores: Score[];
+  error?: string; // Optional error message
 };

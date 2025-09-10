@@ -128,6 +128,13 @@ router.post('/api/submit-score', async (req: Request, res: Response): Promise<vo
   try {
     const { score } = req.body;
     console.log('Received score submission with score:', score);
+    const { postId } = context;
+
+    if (!postId) {
+      console.error('Missing postId in context');
+      res.status(400).json({ error: 'Missing postId' });
+      return;
+    }
 
     if (typeof score !== 'number') {
       console.error('Invalid score:', { score });
@@ -167,15 +174,18 @@ router.post('/api/submit-score', async (req: Request, res: Response): Promise<vo
       username = `Guest_${Date.now().toString().slice(-6)}`;
     }
 
-    console.log(`Processing score ${score} for user ${username}.`);
+    console.log(`Processing score ${score} for user ${username} on post ${postId}.`);
 
     // Use optimized Redis operations for better performance
     try {
       // Store individual user score with TTL for performance
-      await redis.set(`score:${username}`, score.toString());
+      await redis.set(`score:${postId}:${username}`, score.toString());
+
+      // Use a post-specific leaderboard key
+      const leaderboardKey = `leaderboard_json:${postId}`;
 
       // Maintain JSON leaderboard for fast retrieval (recommended pattern)
-      const leaderboardStr = await redis.get('leaderboard_json');
+      const leaderboardStr = await redis.get(leaderboardKey);
       let leaderboard: Score[] = [];
       if (leaderboardStr) {
         try {
@@ -186,30 +196,28 @@ router.post('/api/submit-score', async (req: Request, res: Response): Promise<vo
         }
       }
 
-      // Update or add the user's score
-      const existingIndex = leaderboard.findIndex((entry) => entry.username === username);
-      if (existingIndex >= 0 && leaderboard[existingIndex]) {
-        // Update existing score if it's higher
-        if (leaderboard[existingIndex]!.score < score) {
-          leaderboard[existingIndex]!.score = score;
-          console.log(`Updated high score for ${username}: ${score}`);
-        } else {
-          console.log(
-            `Score ${score} not higher than existing ${leaderboard[existingIndex]!.score} for ${username}`
-          );
-        }
-      } else {
-        // Add new score
-        leaderboard.push({ username, score });
-        console.log(`Added new score for ${username}: ${score}`);
-      }
+      // Generate a unique identifier for this specific score entry
+      // This allows multiple scores from the same user to be displayed
+      const timestamp = Date.now();
+      const uniqueUsername = `${username}_${timestamp}`;
+
+      // Always add the new score as a fresh entry
+      leaderboard.push({ username, score });
+      console.log(`Added new score for ${username}: ${score}`);
+
+      // Also store this score with the timestamp for reference
+      await redis.set(`score:${postId}:${uniqueUsername}`, score.toString());
 
       // Sort by score descending and keep top 50 for performance
       leaderboard.sort((a, b) => b.score - a.score);
       const trimmedLeaderboard = leaderboard.slice(0, 50);
 
       // Save optimized leaderboard back to Redis
+      await redis.set(leaderboardKey, JSON.stringify(trimmedLeaderboard));
+
+      // Also update the global leaderboard for backward compatibility
       await redis.set('leaderboard_json', JSON.stringify(trimmedLeaderboard));
+
       console.log('Leaderboard updated successfully with', trimmedLeaderboard.length, 'entries');
     } catch (redisError) {
       console.error('Error updating leaderboard in Redis:', redisError);
@@ -225,21 +233,45 @@ router.post('/api/submit-score', async (req: Request, res: Response): Promise<vo
 
 router.get<Record<string, never>, LeaderboardResponse>(
   '/api/leaderboard',
-  async (_req, res): Promise<void> => {
+  async (req, res): Promise<void> => {
     try {
-      console.log('Fetching leaderboard...');
-      const leaderboardStr = await redis.get('leaderboard_json');
+      const { postId } = context; // Get the current post ID from context
 
-      if (!leaderboardStr) {
-        console.log('No leaderboard found.');
-        res.json({ scores: [] });
+      if (!postId) {
+        console.error('Missing postId in context');
+        res.status(400).json({ scores: [], error: 'Missing postId' });
         return;
       }
 
-      const leaderboard: Score[] = JSON.parse(leaderboardStr);
-      const topScores = leaderboard.slice(0, 3);
+      console.log(`Fetching leaderboard for post ${postId}...`);
 
-      console.log('Top leaderboard scores:', topScores);
+      // Use the post-specific leaderboard key
+      const leaderboardKey = `leaderboard_json:${postId}`;
+      let leaderboardStr = await redis.get(leaderboardKey);
+
+      // If no post-specific leaderboard exists, try the global one as fallback
+      if (!leaderboardStr) {
+        console.log(
+          `No post-specific leaderboard found for ${postId}, checking global leaderboard...`
+        );
+        leaderboardStr = await redis.get('leaderboard_json');
+
+        if (!leaderboardStr) {
+          console.log('No leaderboard found at all.');
+          res.json({ scores: [] });
+          return;
+        }
+      }
+
+      const leaderboard: Score[] = JSON.parse(leaderboardStr);
+
+      // Parse query parameters for limit (default to 10)
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+      // Get the top scores based on limit - we're already sorting by score in the submit endpoints
+      const topScores = leaderboard.slice(0, limit);
+
+      console.log(`Returning top ${limit} score(s) for post ${postId}:`, topScores);
       res.json({ scores: topScores });
     } catch (error) {
       console.error('Error in /api/leaderboard:', error);
@@ -247,6 +279,83 @@ router.get<Record<string, never>, LeaderboardResponse>(
     }
   }
 );
+
+// Development-only endpoint for adding test scores to the leaderboard
+router.post('/api/submit-test-score', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { username, score } = req.body;
+    console.log('[DEV] Received test score submission:', { username, score });
+
+    if (!username || typeof username !== 'string' || typeof score !== 'number') {
+      console.error('[DEV] Invalid test score submission:', { username, score });
+      res.status(400).json({ error: 'Invalid username or score' });
+      return;
+    }
+
+    const { postId } = context;
+    if (!postId) {
+      console.error('[DEV] Missing postId in context');
+      res.status(400).json({ error: 'Missing postId' });
+      return;
+    }
+
+    console.log(`[DEV] Processing test score ${score} for user ${username} on post ${postId}`);
+
+    // Use optimized Redis operations for better performance
+    try {
+      // Store individual user score
+      await redis.set(`score:${postId}:${username}`, score.toString());
+
+      // Use a post-specific leaderboard key
+      const leaderboardKey = `leaderboard_json:${postId}`;
+
+      // Maintain JSON leaderboard for fast retrieval
+      const leaderboardStr = await redis.get(leaderboardKey);
+      let leaderboard: Score[] = [];
+      if (leaderboardStr) {
+        try {
+          leaderboard = JSON.parse(leaderboardStr);
+        } catch (e) {
+          console.error('[DEV] Failed to parse leaderboard, starting fresh.', e);
+          leaderboard = [];
+        }
+      }
+
+      // Generate a unique identifier for this specific test score
+      const timestamp = Date.now();
+      const uniqueUsername = `${username}_${timestamp}`;
+
+      // Always add the new score as a fresh entry for test data
+      leaderboard.push({ username, score });
+      console.log(`[DEV] Added new score for ${username}: ${score}`);
+
+      // Also store this score with timestamp for reference
+      await redis.set(`score:${postId}:${uniqueUsername}`, score.toString()); // Sort by score descending and keep top 50 for performance
+      leaderboard.sort((a, b) => b.score - a.score);
+      const trimmedLeaderboard = leaderboard.slice(0, 50);
+
+      // Save optimized leaderboard back to Redis
+      await redis.set(leaderboardKey, JSON.stringify(trimmedLeaderboard));
+
+      // Also update the global leaderboard for backward compatibility
+      await redis.set('leaderboard_json', JSON.stringify(trimmedLeaderboard));
+
+      console.log(
+        '[DEV] Leaderboard updated successfully with',
+        trimmedLeaderboard.length,
+        'entries'
+      );
+    } catch (redisError) {
+      console.error('[DEV] Error updating leaderboard in Redis:', redisError);
+      throw redisError;
+    }
+
+    res.status(200).send();
+  } catch (error) {
+    console.error('[DEV] Error in /api/submit-test-score:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.post('/api/share-background', async (req: Request, res: Response): Promise<void> => {
   console.log('[API] Received /api/share-background request');
