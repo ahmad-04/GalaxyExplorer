@@ -994,41 +994,36 @@ export class MainMenu extends Phaser.Scene {
           const rowBg = this.add.rectangle(0, 0, 460, 36, rowBgColor, 0.3);
           rowContainer.add(rowBg);
 
-          // Rank medal for top 3, number for others
+          // Consistent rank display for all positions
           let rankDisplay;
+          // For all ranks, use the same position but with different styling
           if (index === 0) {
             // Gold medal
-            const medalBg = this.add.circle(-200, 0, 18, 0xffcc00, 0.8);
-            const medalText = this.add.text(-200, 0, '1', {
+            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
               fontFamily: 'Arial, sans-serif',
-              fontSize: '22px',
-              color: '#ffffff',
+              fontSize: '20px',
+              color: '#ffcc00', // Gold color
               fontStyle: 'bold',
               align: 'center',
             }).setOrigin(0.5);
-            rankDisplay = this.add.container(-200, 0, [medalBg, medalText]);
           } else if (index === 1) {
             // Silver medal
-            const medalBg = this.add.circle(-200, 0, 18, 0xcccccc, 0.8);
-            const medalText = this.add.text(-200, 0, '2', {
+            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
               fontFamily: 'Arial, sans-serif',
-              fontSize: '22px',
-              color: '#ffffff',
+              fontSize: '20px',
+              color: '#cccccc', // Silver color
               fontStyle: 'bold',
               align: 'center',
             }).setOrigin(0.5);
-            rankDisplay = this.add.container(-200, 0, [medalBg, medalText]);
           } else if (index === 2) {
             // Bronze medal
-            const medalBg = this.add.circle(-200, 0, 18, 0xcc8844, 0.8);
-            const medalText = this.add.text(-200, 0, '3', {
+            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
               fontFamily: 'Arial, sans-serif',
-              fontSize: '22px',
-              color: '#ffffff',
+              fontSize: '20px',
+              color: '#cc8844', // Bronze color
               fontStyle: 'bold',
               align: 'center',
             }).setOrigin(0.5);
-            rankDisplay = this.add.container(-200, 0, [medalBg, medalText]);
           } else {
             // Regular number
             rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
