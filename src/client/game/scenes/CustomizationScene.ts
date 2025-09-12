@@ -4,15 +4,12 @@ export class CustomizationScene extends Phaser.Scene {
   private background!: Phaser.GameObjects.TileSprite;
   private generatedTextureKey = 'generated_stars';
 
-  // Default configuration for the starfield
+  // Fixed configuration for the starfield - not customizable
   private currentConfig = {
     density: 200,
     speed: 0.5,
-    color: '#000000', // Default to black
+    color: '#000000', 
   };
-
-  private densityText!: Phaser.GameObjects.Text;
-  private speedText!: Phaser.GameObjects.Text;
 
   private shipPrimary!: Phaser.GameObjects.Image;
   private shipSecondary!: Phaser.GameObjects.Image;
@@ -39,11 +36,8 @@ export class CustomizationScene extends Phaser.Scene {
   }
 
   create() {
-    // Load config from registry if it exists, otherwise use defaults
-    const existingConfig = this.registry.get('backgroundConfig');
-    if (existingConfig) {
-      this.currentConfig = { ...existingConfig };
-    }
+    // No longer loading background config since it's not customizable
+    // Fixed values are used instead
 
     // Load ship config from registry if it exists
     const existingShipConfig = this.registry.get('shipConfig');
@@ -159,56 +153,9 @@ export class CustomizationScene extends Phaser.Scene {
     });
 
     // --- Background Customization Section ---
-    this.add
-      .text(this.scale.width / 2, 320, 'Customize The Cosmos', {
-        fontSize: '28px',
-        color: '#dddddd',
-      })
-      .setOrigin(0.5);
-
-    // Density
-    this.createSlider(
-      150,
-      370,
-      'Star Density',
-      () => this.updateDensity(-50),
-      () => this.updateDensity(50)
-    );
-    this.densityText = this.add
-      .text(400, 370, this.currentConfig.density.toString(), {
-        fontSize: '24px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    // Speed
-    this.createSlider(
-      150,
-      420,
-      'Scroll Speed',
-      () => this.updateSpeed(-0.5),
-      () => this.updateSpeed(0.5)
-    );
-    this.speedText = this.add
-      .text(400, 420, this.currentConfig.speed.toFixed(1), {
-        fontSize: '24px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    // Color
-    this.add
-      .text(230, 470, 'Background Color:', { fontSize: '24px', color: '#ffffff' })
-      .setOrigin(0.5);
-    const bgColors = ['#000000', '#0d1b2a', '#2c0735', '#4a0404'];
-    let colorX = 380;
-    bgColors.forEach((color) => {
-      this.add
-        .rectangle(colorX, 470, 30, 30, parseInt(color.slice(1), 16))
-        .setInteractive()
-        .on('pointerdown', () => this.updateColor(color));
-      colorX += 40;
-    });
+    // Section title removed since we're removing background customization
+    
+    // Background customization options completely removed
 
     // --- Action Buttons ---
     const backButton = this.add
@@ -236,8 +183,7 @@ export class CustomizationScene extends Phaser.Scene {
       .setInteractive();
 
     saveButton.on('pointerdown', () => {
-      // Save background config
-      this.registry.set('backgroundConfig', this.currentConfig);
+      // No longer saving background config as it's not customizable
 
       // Create a ship config object with the correct type
       const shipConfig: typeof this.shipConfigType = {
@@ -257,9 +203,9 @@ export class CustomizationScene extends Phaser.Scene {
 
       // Also save to localStorage for persistence between sessions
       try {
-        localStorage.setItem('galaxyExplorer_backgroundConfig', JSON.stringify(this.currentConfig));
+        // No longer saving background config
         localStorage.setItem('galaxyExplorer_shipConfig', JSON.stringify(shipConfig));
-        console.log('Saved configurations to localStorage');
+        console.log('Saved ship configuration to localStorage');
       } catch (e) {
         console.error('Error saving to localStorage:', e);
       }
@@ -441,64 +387,18 @@ export class CustomizationScene extends Phaser.Scene {
     }
   }
 
-  private createSlider(
-    x: number,
-    y: number,
-    label: string,
-    onMinus: () => void,
-    onPlus: () => void
-  ) {
-    this.add.text(x, y, label, { fontSize: '24px', color: '#ffffff' }).setOrigin(0.5);
-    this.add
-      .text(x + 150, y, '-', {
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 8, y: 2 },
-      })
-      .setOrigin(0.5)
-      .setInteractive()
-      .on('pointerdown', onMinus);
-
-    this.add
-      .text(x + 290, y, '+', {
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 8, y: 2 },
-      })
-      .setOrigin(0.5)
-      .setInteractive()
-      .on('pointerdown', onPlus);
-  }
+  // createSlider method removed as background customization is no longer needed
 
   override update() {
-    // Scroll the background
-    this.background.tilePositionY -= this.currentConfig.speed;
+    // Scroll the background at fixed speed
+    this.background.tilePositionY -= 0.5; // Using fixed value for simplicity
   }
 
-  private updateDensity(change: number) {
-    // Update the density, ensuring it stays within a reasonable range
-    this.currentConfig.density = Phaser.Math.Clamp(this.currentConfig.density + change, 0, 1000);
-    this.densityText.setText(this.currentConfig.density.toString());
+  // updateDensity method removed as background customization is no longer needed
+  
+  // updateSpeed method removed as background customization is no longer needed
 
-    // Regenerate the background with the new density
-    this.generateStarfieldTexture();
-    this.background.setTexture(this.generatedTextureKey);
-  }
-
-  private updateSpeed(change: number) {
-    // Update the speed, ensuring it stays within a reasonable range
-    this.currentConfig.speed = parseFloat(
-      Phaser.Math.Clamp(this.currentConfig.speed + change, 0.5, 3.0).toFixed(1)
-    );
-    this.speedText.setText(this.currentConfig.speed.toFixed(1));
-  }
-
-  private updateColor(color: string) {
-    this.currentConfig.color = color;
-    this.cameras.main.setBackgroundColor(color);
-  }
+  // updateColor method removed as background customization is no longer needed
 
   private generateStarfieldTexture() {
     const w = this.scale.width;

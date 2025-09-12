@@ -211,15 +211,9 @@ export class StarshipScene extends Phaser.Scene {
     const KC = Phaser.Input.Keyboard.KeyCodes;
     this.input.keyboard?.addCapture([KC.LEFT, KC.RIGHT, KC.UP, KC.DOWN, KC.SPACE]);
 
-    // Apply background color from config if available
-    const bgConfig = this.registry.get('backgroundConfig');
-    if (bgConfig && bgConfig.color) {
-      console.log('[StarshipScene] Setting background color from config:', bgConfig.color);
-      this.cameras.main.setBackgroundColor(bgConfig.color);
-    } else {
-      // Default background color
-      this.cameras.main.setBackgroundColor(0x000020);
-    }
+    // Always use black background, ignore any customization
+    console.log('[StarshipScene] Setting fixed black background');
+    this.cameras.main.setBackgroundColor(0x000000);
 
     // Create a generic starfield texture if we don't have one already
     if (!this.textures.exists('stars_fallback')) {
@@ -266,9 +260,9 @@ export class StarshipScene extends Phaser.Scene {
     const { width: w, height: h } = this.scale;
     this.physics.world.setBounds(0, 0, w, h);
 
-    // Adjust ship properties based on custom settings
-    const speedMultiplier = bgConfig ? bgConfig.speed / 0.5 : 1;
-    this.shipAcceleration = 220 + 80 * (speedMultiplier - 1);
+    // Use default ship properties, no custom background settings
+    const speedMultiplier = 1; // Fixed value since we're not using custom background config
+    this.shipAcceleration = 220;
 
     // --- Create Ship ---
     const shipX = w / 2;
@@ -359,8 +353,8 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   setupShip(ship: Phaser.Physics.Arcade.Sprite, isPrimary = true): void {
-    const bgConfig = this.registry.get('backgroundConfig');
-    const speedMultiplier = bgConfig ? bgConfig.speed / 0.5 : 1;
+    // Use default speed values
+    const speedMultiplier = 1;
 
     ship.setOrigin(0.5).setAngle(-90);
     ship.setDisplaySize(128, 128);
@@ -466,9 +460,8 @@ export class StarshipScene extends Phaser.Scene {
     // Update enemy manager
     this.enemyManager.update(time, delta, this.ship, this.bullets);
 
-    // Parallax (frame-rate independent)
-    const bgConfig = this.registry.get('backgroundConfig');
-    const speed = bgConfig ? bgConfig.speed : 1;
+    // Parallax (frame-rate independent) - using fixed speed value
+    const speed = 1; // Fixed speed, no customization
     const d = delta / 16.6667;
     if (this.starfield) {
       this.starfield.tilePositionY += this.starScrollDir * (speed + 0.2 * this.difficulty) * d;

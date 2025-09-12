@@ -59,49 +59,186 @@ export class MainMenu extends Phaser.Scene {
       }
     });
 
-    this.add
-      .text(this.scale.width / 2, this.scale.height / 2 - 100, 'Galaxy Explorer', {
-        fontFamily: 'Arial Black',
-        fontSize: '64px',
-        color: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 8,
+    // Create main UI container to organize all menu elements
+    const menuContainer = this.add.container(0, 0);
+
+    // Helper function to create stylized buttons
+    const createMenuButton = (
+      y: number, 
+      text: string
+    ) => {
+      // Create a container for the button and its effects positioned relative to (0,0)
+      const buttonContainer = this.add.container(0, y);
+      buttonContainer.setDepth(100); // Set very high depth to ensure buttons are on top
+      
+      // Button dimensions
+      const buttonWidth = 250;
+      const buttonHeight = 50;
+      
+      // Create simple button with blue frame to match mockup
+      const buttonBg = this.add.graphics();
+      
+      // Simple transparent background
+      buttonBg.fillStyle(0x000000, 0.2);
+      buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+      
+      // Blue border
+      buttonBg.lineStyle(2, 0x0088ff, 1);
+      buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+      
+      // Button text with soft shadow
+      const shadow = this.add.text(2, 2, text, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '28px',
+        fontStyle: 'bold',
+        color: '#000000',
         align: 'center',
-      })
-      .setOrigin(0.5);
-
-    const startButton = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, 'Start Game', {
-        fontFamily: 'Arial',
-        fontSize: '32px',
+      }).setOrigin(0.5);
+      
+      const buttonText = this.add.text(0, 0, text, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '28px',
+        fontStyle: 'bold',
         color: '#ffffff',
-        backgroundColor: '#00ff00',
-        padding: { x: 20, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive();
+        align: 'center',
+      }).setOrigin(0.5);
+      
+      // Add elements to container
+      buttonContainer.add([buttonBg, shadow, buttonText]);
+      
+      // Create hitbox for the button
+      const hitArea = new Phaser.Geom.Rectangle(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight);
+      buttonContainer.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+      
+      // Add simple hover effects
+      buttonContainer.on('pointerover', () => {
+        buttonBg.clear();
+        
+        // Slightly brighter background on hover
+        buttonBg.fillStyle(0x0044aa, 0.3);
+        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        
+        // Brighter blue border
+        buttonBg.lineStyle(2, 0x00aaff, 1);
+        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        
+        // Brighten text
+        buttonText.setTint(0xffffff);
+      });
+      
+      buttonContainer.on('pointerout', () => {
+        buttonBg.clear();
+        
+        // Restore normal appearance
+        buttonBg.fillStyle(0x000000, 0.2);
+        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        
+        // Blue border
+        buttonBg.lineStyle(2, 0x0088ff, 1);
+        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        
+        // Reset text tint
+        buttonText.clearTint();
+      });
+      
+      buttonContainer.on('pointerdown', () => {
+        // Simple pressed effect
+        buttonText.setY(1);
+        buttonBg.clear();
+        buttonBg.fillStyle(0x0066ff, 0.4);
+        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        buttonBg.lineStyle(2, 0x0088ff, 1);
+        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+      });
+      
+      buttonContainer.on('pointerup', () => {
+        // Restore hover state
+        buttonText.setY(0);
+        buttonBg.clear();
+        buttonBg.fillStyle(0x0044aa, 0.3);
+        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        buttonBg.lineStyle(2, 0x00aaff, 1);
+        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+      });
+      
+      return buttonContainer;
+    };
 
-    const customizeButton = this.add
-      .text(this.scale.width / 2, this.scale.height / 2 + 70, 'Customize', {
-        fontFamily: 'Arial',
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#0000ff',
-        padding: { x: 20, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive();
-
-    const leaderboardButton = this.add
-      .text(this.scale.width / 2, this.scale.height / 2 + 140, 'Top 10 Leaderboard', {
-        fontFamily: 'Arial',
-        fontSize: '32px',
-        color: '#ffffff',
-        backgroundColor: '#aa00aa',
-        padding: { x: 20, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive();
+    // Create a decorative blue frame around the menu area as shown in the mockup
+    const menuFrame = this.add.graphics();
+    
+    // Draw the frame with rounded corners
+    const frameWidth = this.scale.width * 0.8;
+    const originalFrameHeight = this.scale.height * 0.7;
+    
+    // Reduce frame height by making it smaller from the top
+    const topReduction = 50; // Reduce frame size from top by 50 pixels
+    const frameHeight = originalFrameHeight - topReduction;
+    
+    const frameX = this.scale.width / 2 - frameWidth / 2;
+    // Calculate frameY to keep the bottom edge at the same position
+    const originalFrameY = this.scale.height / 2 - originalFrameHeight / 2;
+    const frameY = originalFrameY + topReduction;
+    
+    // Add a translucent blue fill
+    menuFrame.fillStyle(0x0066ff, 0.15); // Light blue with low opacity (0.15 = 15%)
+    menuFrame.fillRoundedRect(frameX, frameY, frameWidth, frameHeight, 10);
+    
+    // Add a blue border on top of the fill
+    menuFrame.lineStyle(2, 0x0088ff, 0.8);
+    menuFrame.strokeRoundedRect(frameX, frameY, frameWidth, frameHeight, 10);
+    menuContainer.add(menuFrame);
+    
+    // Create a container for buttons positioned in the center
+    const buttonContainer = this.add.container(this.scale.width * 0.5, 250); // Moved up from 300 to 250
+    menuContainer.add(buttonContainer);
+    
+    // Create a simple title with blue glow to match mockup - ADDED AFTER THE MENU FRAME
+    const titleText = this.add.text(this.scale.width / 2, 100, 'GALAXY EXPLORER', {
+      fontFamily: 'Arial Black, sans-serif',
+      fontSize: '64px',
+      color: '#ffffff',
+      stroke: '#0066ff',
+      strokeThickness: 6,
+      align: 'center',
+      shadow: {
+        offsetX: 0,
+        offsetY: 0,
+        color: '#0088ff',
+        blur: 10,
+        fill: true
+      }
+    }).setOrigin(0.5);
+    titleText.setDepth(100); // Set very high depth to ensure it's on top
+    
+    // Add a simple space-themed tagline - ADDED AFTER THE MENU FRAME
+    const tagline = this.add.text(this.scale.width / 2, 170, 'CONQUER THE COSMOS', {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '24px',
+      color: '#88ccff',
+      align: 'center',
+    }).setOrigin(0.5);
+    tagline.setDepth(100); // Set very high depth to ensure it's on top
+    
+    // Create the simple buttons with blue frames
+    const startButton = createMenuButton(
+      0, 
+      'START GAME'
+    );
+    
+    const customizeButton = createMenuButton(
+      90, 
+      'CUSTOMIZE'
+    );
+    
+    const leaderboardButton = createMenuButton(
+      180, 
+      'LEADERBOARD'
+    );
+    
+    buttonContainer.add([startButton, customizeButton, leaderboardButton]);
+    
+    // Keep the design clean as shown in the mockup - no additional decorations
 
     // Test data button - commented out for production
     /* 
@@ -118,31 +255,96 @@ export class MainMenu extends Phaser.Scene {
       .setAlpha(0.7);
     */
 
-    // Add instruction text
-    this.add
-      .text(this.scale.width / 2, this.scale.height / 2 + 210, 'Press SPACE to start', {
-        fontFamily: 'Arial',
-        fontSize: '20px',
-        color: '#cccccc',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    // Add instruction text with better styling
+    const instructionContainer = this.add.container(this.scale.width / 2, 550); // Moved down from 520 to 550
+    menuContainer.add(instructionContainer);
+    
+    // Instruction background
+    const instructionBg = this.add.rectangle(0, 0, 400, 40, 0x000000, 0.3);
+    instructionBg.setStrokeStyle(1, 0x4466ff, 0.3);
+    instructionContainer.add(instructionBg);
+    
+    // Instruction text
+    const instructionText = this.add.text(0, 0, 'PRESS SPACE TO START', {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '18px',
+      color: '#aaccff',
+      align: 'center',
+    }).setOrigin(0.5);
+    instructionContainer.add(instructionText);
+    
+    // Animate the instruction text subtly
+    this.tweens.add({
+      targets: instructionText,
+      alpha: { from: 1, to: 0.6 },
+      duration: 1500,
+      ease: 'Sine.InOut',
+      yoyo: true,
+      repeat: -1
+    });
+    
+    // Add a version number/footer at the bottom
+    const versionText = this.add.text(
+      this.scale.width - 10, 
+      this.scale.height - 10, 
+      'v1.0', 
+      {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        color: '#666666',
+        align: 'right',
+      }
+    ).setOrigin(1, 1);
+    menuContainer.add(versionText);
 
     // Create but hide the leaderboard popup initially
     this.createLeaderboardPopup();
 
     startButton.on('pointerdown', () => {
-      this.startGame();
+      // Add a button press sound effect (if available)
+      // this.sound.play('button_click');
+      
+      // Add a flash effect
+      this.cameras.main.flash(300, 255, 255, 255, true);
+      
+      // Start the game with a slight delay for the visual effect
+      this.time.delayedCall(300, () => {
+        this.startGame();
+      });
     });
 
     customizeButton.on('pointerdown', () => {
+      // Add a button press sound effect (if available)
+      // this.sound.play('button_click');
+      
       // Reset leaderboard state before changing scenes
       this.resetLeaderboardState();
-      this.scene.start('CustomizationScene');
+      
+      // Add subtle camera effect
+      this.cameras.main.flash(300, 100, 100, 255, true);
+      
+      // Start scene with slight delay for visual effect
+      this.time.delayedCall(200, () => {
+        this.scene.start('CustomizationScene');
+      });
     });
 
     leaderboardButton.on('pointerdown', () => {
-      void this.showLeaderboard(); // Use void to explicitly mark promise as handled
+      // Add a button press sound effect (if available)
+      // this.sound.play('button_click');
+      
+      // Add subtle pulse effect
+      this.tweens.add({
+        targets: leaderboardButton,
+        scale: { from: 0.95, to: 1 },
+        duration: 300,
+        ease: 'Bounce.Out'
+      });
+      
+      // Show leaderboard with slight delay
+      this.time.delayedCall(100, () => {
+        void this.showLeaderboard(); // Use void to explicitly mark promise as handled
+      });
     });
 
     // Test data button event handler - commented out for production
@@ -168,6 +370,9 @@ export class MainMenu extends Phaser.Scene {
         console.error('Failed to load or apply server config:', error);
       });
     }
+    
+    // Add parallax elements to the background
+    this.addParallaxElements();
   }
 
   private async loadConfigFromServer(): Promise<void> {
@@ -186,17 +391,74 @@ export class MainMenu extends Phaser.Scene {
 
   private applyBackgroundConfig(config: { color: string; density: number }) {
     if (config && this.background) {
-      this.cameras.main.setBackgroundColor(config.color);
+      // Set a dark red background color regardless of the config
+      this.cameras.main.setBackgroundColor('#000000ff');
       this.generateCustomBackground(config);
       this.background.setTexture('custom_stars');
     }
   }
 
-  override update() {
-    const bgConfig = this.registry.get('backgroundConfig');
-    const speed = bgConfig ? bgConfig.speed : 0.5;
-    // Scroll the background
-    this.background.tilePositionY -= speed;
+  // Add parallax background elements for depth perception
+  private addParallaxElements() {
+    // Remove any existing parallax elements
+    this.children.getAll().forEach(child => {
+      if (child.getData('parallaxElement')) {
+        child.destroy();
+      }
+    });
+    
+    // Create some distant stars that move at a different speed than the main background
+    for (let i = 0; i < 20; i++) {
+      const x = Phaser.Math.Between(0, this.scale.width);
+      const y = Phaser.Math.Between(0, this.scale.height);
+      const size = Phaser.Math.FloatBetween(1.5, 3);
+      
+      const distantStar = this.add.circle(x, y, size, 0xffffff, 0.7);
+      distantStar.setData('parallaxElement', true);
+      distantStar.setData('parallaxSpeed', 0.4);
+      distantStar.setDepth(1);
+    }
+  }
+  
+  override update(_time: number, delta: number) {
+    // Use a fixed speed of 0.5 instead of getting it from the configuration
+    const fixedSpeed = 0.5;
+    const d = delta / 16.6667; // Make movement frame-rate independent
+    
+    // Scroll the background at the fixed speed
+    this.background.tilePositionY -= fixedSpeed * d;
+    
+    // Update parallax elements
+    this.children.getAll().forEach(child => {
+      if (child.getData('parallaxElement')) {
+        const parallaxSpeed = child.getData('parallaxSpeed') || 0.5;
+        
+        // If this element is orbiting something
+        const orbitData = child.getData('orbit');
+        if (orbitData) {
+          // Update orbit position
+          orbitData.angle += orbitData.speed * d;
+          const x = orbitData.center.x + Math.cos(orbitData.angle) * orbitData.radius;
+          const y = orbitData.center.y + Math.sin(orbitData.angle) * orbitData.radius;
+          
+          // Type safety - only call setPosition if the object has it
+          if ('setPosition' in child && typeof child.setPosition === 'function') {
+            child.setPosition(x, y);
+          }
+        } 
+        // Otherwise just move it vertically
+        else if ('y' in child) {
+          // Type safety - ensure we're updating a property that has 'y'
+          const gameObject = child as unknown as { y: number };
+          gameObject.y += parallaxSpeed * d;
+          
+          // Wrap around when off-screen
+          if (gameObject.y > this.scale.height + 50) {
+            gameObject.y = -50;
+          }
+        }
+      }
+    });
 
     // Check for spacebar press - use both methods for redundancy
     if (this.startEnabled && this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
@@ -294,14 +556,49 @@ export class MainMenu extends Phaser.Scene {
 
   private createStarsFallback(key: string, w: number, h: number, count: number) {
     const g = this.add.graphics();
-    // transparent background; draw small white stars
-    g.fillStyle(0xffffff, 1);
+    
+    // Create a dark red background as shown in the mockup
+    const gradientCanvas = document.createElement('canvas');
+    gradientCanvas.width = w;
+    gradientCanvas.height = h;
+    const ctx = gradientCanvas.getContext('2d');
+    if (ctx) {
+      // Create a dark red background
+      const gradient = ctx.createLinearGradient(0, 0, 0, h);
+      gradient.addColorStop(0, 'rgba(70, 0, 0, 1)');
+      gradient.addColorStop(1, 'rgba(50, 0, 0, 1)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, w, h);
+      
+      // No nebulas - keeping it simple as in the mockup
+      this.textures.addCanvas(key + '_background', gradientCanvas);
+    }
+
+    // Create a simple starfield with white stars, similar to the mockup
+    // Generate simple white stars of varying sizes
     for (let i = 0; i < count; i++) {
       const x = Phaser.Math.Between(0, w - 1);
       const y = Phaser.Math.Between(0, h - 1);
-      const r = Phaser.Math.Between(1, 2);
-      g.fillRect(x, y, r, r);
+      
+      // Simple star size variation
+      const starSize = Phaser.Math.FloatBetween(0.5, 2);
+      
+      // Use white stars only
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, starSize);
     }
+    
+    // Add just a few larger stars
+    for (let i = 0; i < Math.min(15, count / 30); i++) {
+      const x = Phaser.Math.Between(0, w - 1);
+      const y = Phaser.Math.Between(0, h - 1);
+      const size = Phaser.Math.Between(2, 3);
+      
+      // Simple white stars with no glow effect
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, size);
+    }
+    
     g.generateTexture(key, w, h);
     g.destroy();
   }
@@ -312,7 +609,12 @@ export class MainMenu extends Phaser.Scene {
       this.textures.remove(key);
     }
     this.createStarsFallback(key, this.scale.width, this.scale.height, config.density);
+    // No animated elements - keeping it simple as in the mockup
   }
+  
+
+  
+
 
   private createLeaderboardPopup(): void {
     console.log('[Leaderboard] Creating leaderboard popup');
@@ -327,25 +629,74 @@ export class MainMenu extends Phaser.Scene {
     // Create a container for the leaderboard popup
     this.leaderboardPopup = this.add.container(this.scale.width / 2, this.scale.height / 2);
 
-    // Create an invisible fullscreen backdrop to prevent clicks passing through
+    // Create a dimming overlay for the background
     const fullscreenBlock = this.add.rectangle(
       0,
       0,
       this.scale.width * 2,
       this.scale.height * 2,
       0x000000,
-      0.01
+      0.5
     );
     fullscreenBlock.setInteractive();
     fullscreenBlock.on('pointerdown', () => {
-      // Consume the click but do nothing
-      console.log('[Leaderboard] Blocked click on backdrop');
+      // Clicking the backdrop will close the leaderboard
+      console.log('[Leaderboard] Click on backdrop, closing leaderboard');
+      this.hideLeaderboard();
       return false;
     });
 
-    // Create a semi-transparent background - make it larger to accommodate more scores
-    const background = this.add.rectangle(0, 0, 500, 700, 0x000000, 0.8);
-    background.setStrokeStyle(2, 0x4466ff, 1);
+    // Create a space-themed panel for the leaderboard
+    // Main background
+    const background = this.add.rectangle(0, 0, 500, 550, 0x000022, 0.85);
+    background.setStrokeStyle(3, 0x4466ff, 1);
+    
+    // Add a decorative header
+    const headerBg = this.add.rectangle(0, -250, 500, 70, 0x0033aa, 0.8);
+    headerBg.setStrokeStyle(2, 0x88aaff, 1);
+    
+    // Add decorative elements
+    const decorGraphics = this.add.graphics();
+    // Top left corner decoration
+    decorGraphics.lineStyle(2, 0x4466ff, 0.7);
+    decorGraphics.beginPath();
+    decorGraphics.moveTo(-250, -230);
+    decorGraphics.lineTo(-210, -230);
+    decorGraphics.moveTo(-230, -250);
+    decorGraphics.lineTo(-230, -210);
+    decorGraphics.strokePath();
+    decorGraphics.fillStyle(0x4466ff, 0.8);
+    decorGraphics.fillCircle(-230, -230, 4);
+    
+    // Top right corner decoration
+    decorGraphics.beginPath();
+    decorGraphics.moveTo(250, -230);
+    decorGraphics.lineTo(210, -230);
+    decorGraphics.moveTo(230, -250);
+    decorGraphics.lineTo(230, -210);
+    decorGraphics.strokePath();
+    decorGraphics.fillStyle(0x4466ff, 0.8);
+    decorGraphics.fillCircle(230, -230, 4);
+    
+    // Bottom left corner decoration
+    decorGraphics.beginPath();
+    decorGraphics.moveTo(-250, 230);
+    decorGraphics.lineTo(-210, 230);
+    decorGraphics.moveTo(-230, 250);
+    decorGraphics.lineTo(-230, 210);
+    decorGraphics.strokePath();
+    decorGraphics.fillStyle(0x4466ff, 0.8);
+    decorGraphics.fillCircle(-230, 230, 4);
+    
+    // Bottom right corner decoration
+    decorGraphics.beginPath();
+    decorGraphics.moveTo(250, 230);
+    decorGraphics.lineTo(210, 230);
+    decorGraphics.moveTo(230, 250);
+    decorGraphics.lineTo(230, 210);
+    decorGraphics.strokePath();
+    decorGraphics.fillStyle(0x4466ff, 0.8);
+    decorGraphics.fillCircle(230, 230, 4);
 
     // Make the background interactive to capture clicks
     background.setInteractive();
@@ -355,28 +706,51 @@ export class MainMenu extends Phaser.Scene {
       return false;
     });
 
-    // Add title text
+    // Add title text with sci-fi style
     const titleText = this.add
-      .text(0, -250, 'Top 10 Leaderboard', {
-        fontFamily: 'Arial',
-        fontSize: '36px',
+      .text(0, -250, 'GALACTIC LEADERBOARD', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '32px',
         color: '#ffffff',
         fontStyle: 'bold',
         align: 'center',
       })
       .setOrigin(0.5);
+    
+    // Add subtitle
+    const subtitleText = this.add
+      .text(0, -215, 'TOP SPACE COMMANDERS', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        color: '#88ccff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
 
-    // Create a close button
+    // Create a styled close button
+    const closeButtonBg = this.add.circle(220, -250, 25, 0x000022, 0.8);
+    closeButtonBg.setStrokeStyle(2, 0x4466ff, 1);
+    
     const closeButton = this.add
       .text(220, -250, 'X', {
-        fontFamily: 'Arial',
-        fontSize: '36px',
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '24px',
         color: '#ffffff',
-        backgroundColor: '#aa0000',
-        padding: { x: 10, y: 5 },
+        align: 'center',
       })
       .setOrigin(0.5)
       .setInteractive();
+
+    // Handle close button hover effects
+    closeButton.on('pointerover', () => {
+      closeButtonBg.setFillStyle(0xaa0000, 0.8);
+      closeButtonBg.setStrokeStyle(2, 0xff6666, 1);
+    });
+    
+    closeButton.on('pointerout', () => {
+      closeButtonBg.setFillStyle(0x000022, 0.8);
+      closeButtonBg.setStrokeStyle(2, 0x4466ff, 1);
+    });
 
     // Handle close button click
     closeButton.on('pointerdown', () => {
@@ -386,18 +760,47 @@ export class MainMenu extends Phaser.Scene {
       return false;
     });
 
-    // Create a loading text initially
+    // Create a themed loading indicator
+    const loadingContainer = this.add.container(0, 0);
+    
     const loadingText = this.add
-      .text(0, 0, 'Loading scores...', {
-        fontFamily: 'Arial',
+      .text(0, -20, 'RETRIEVING DATA...', {
+        fontFamily: 'Arial, sans-serif',
         fontSize: '24px',
-        color: '#ffffff',
+        color: '#4466ff',
         align: 'center',
       })
       .setOrigin(0.5);
+    
+    // Create loading spinner animation
+    const spinner = this.add.graphics();
+    spinner.lineStyle(3, 0x4466ff, 1);
+    spinner.beginPath();
+    spinner.arc(0, 30, 25, 0, Math.PI * 1.5);
+    spinner.strokePath();
+    
+    // Animate spinner rotation
+    this.tweens.add({
+      targets: spinner,
+      angle: 360,
+      duration: 1500,
+      repeat: -1
+    });
+    
+    loadingContainer.add([loadingText, spinner]);
 
     // Add everything to the container
-    this.leaderboardPopup.add([fullscreenBlock, background, titleText, closeButton, loadingText]);
+    this.leaderboardPopup.add([
+      fullscreenBlock, 
+      background, 
+      headerBg,
+      decorGraphics,
+      titleText,
+      subtitleText, 
+      closeButtonBg,
+      closeButton, 
+      loadingContainer
+    ]);
 
     // Set initial visibility and depth
     this.leaderboardPopup.setVisible(false);
@@ -461,45 +864,107 @@ export class MainMenu extends Phaser.Scene {
 
       if (leaderboardData.scores.length === 0) {
         console.log('[Leaderboard] No scores available');
-        // Show no scores available message
+        
+        // Create an empty galaxy graphic
+        const emptyGraphic = this.add.graphics();
+        
+        // Create a small galaxy illustration
+        emptyGraphic.fillStyle(0x4466ff, 0.3);
+        emptyGraphic.fillCircle(0, -50, 40);
+        emptyGraphic.fillStyle(0x0033aa, 0.5);
+        emptyGraphic.fillCircle(0, -50, 25);
+        emptyGraphic.fillStyle(0xffffff, 0.8);
+        emptyGraphic.fillCircle(0, -50, 5);
+        
+        // Add some dots around to represent stars
+        for (let i = 0; i < 20; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const distance = 20 + Math.random() * 60;
+          const x = Math.cos(angle) * distance;
+          const y = Math.sin(angle) * distance - 50;
+          const size = Math.random() * 2 + 1;
+          emptyGraphic.fillStyle(0xffffff, 0.7);
+          emptyGraphic.fillCircle(x, y, size);
+        }
+        
+        // Create empty state container
+        const emptyContainer = this.add.container(0, 0);
+        
+        // Show no scores available message with better styling
         const noScoresText = this.add
-          .text(0, 0, 'No scores available yet.\nBe the first to score!', {
-            fontFamily: 'Arial',
-            fontSize: '24px',
+          .text(0, 20, 'NO COMMANDERS DETECTED', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '26px',
+            color: '#4466ff',
+            align: 'center',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0.5);
+          
+        const encourageText = this.add
+          .text(0, 60, 'Be the first to claim your place\nin the galactic rankings!', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '20px',
             color: '#ffffff',
             align: 'center',
           })
           .setOrigin(0.5);
-
-        this.leaderboardPopup.add(noScoresText);
+        
+        // Add pulsing animation to the galaxy
+        this.tweens.add({
+          targets: emptyGraphic,
+          alpha: { from: 0.7, to: 1 },
+          scale: { from: 0.9, to: 1.1 },
+          duration: 2000,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut'
+        });
+        
+        emptyContainer.add([emptyGraphic, noScoresText, encourageText]);
+        this.leaderboardPopup.add(emptyContainer);
+        
       } else {
         console.log('[Leaderboard] Creating leaderboard UI with scores');
-        // Create header row
-        const rankHeader = this.add.text(-200, -180, 'Rank', {
-          fontFamily: 'Arial',
-          fontSize: '24px',
-          color: '#ffff00',
-          align: 'left',
+        // Create styled header section with background
+        const headerBg = this.add.rectangle(0, -180, 460, 40, 0x0033aa, 0.6);
+        headerBg.setStrokeStyle(1, 0x4466ff, 0.7);
+        
+        // Create header row with better alignment and styling
+        const rankHeader = this.add.text(-200, -180, 'RANK', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '20px',
+          color: '#aaccff',
+          align: 'center',
           fontStyle: 'bold',
-        });
+        }).setOrigin(0.5, 0.5);
 
-        const nameHeader = this.add.text(-100, -180, 'Player', {
-          fontFamily: 'Arial',
-          fontSize: '24px',
-          color: '#ffff00',
-          align: 'left',
+        const nameHeader = this.add.text(0, -180, 'COMMANDER', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '20px',
+          color: '#aaccff',
+          align: 'center',
           fontStyle: 'bold',
-        });
+        }).setOrigin(0.5, 0.5);
 
-        const scoreHeader = this.add.text(120, -180, 'Score', {
-          fontFamily: 'Arial',
-          fontSize: '24px',
-          color: '#ffff00',
-          align: 'left',
+        const scoreHeader = this.add.text(180, -180, 'SCORE', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '20px',
+          color: '#aaccff',
+          align: 'center',
           fontStyle: 'bold',
-        });
+        }).setOrigin(0.5, 0.5);
 
-        this.leaderboardPopup.add([rankHeader, nameHeader, scoreHeader]);
+        this.leaderboardPopup.add([headerBg, rankHeader, nameHeader, scoreHeader]);
+
+        // Add a separator line
+        const separatorLine = this.add.graphics();
+        separatorLine.lineStyle(1, 0x4466ff, 0.7);
+        separatorLine.beginPath();
+        separatorLine.moveTo(-230, -160);
+        separatorLine.lineTo(230, -160);
+        separatorLine.strokePath();
+        this.leaderboardPopup.add(separatorLine);
 
         // Create a container for scrollable content
         const scrollContainer = this.add.container(0, -130);
@@ -513,14 +978,66 @@ export class MainMenu extends Phaser.Scene {
             `[Leaderboard] Adding score entry ${index + 1}: ${score.username} - ${score.score}`
           );
           const y = index * 40; // Position relative to scroll container
+          
+          // Create row container for each entry
+          const rowContainer = this.add.container(0, y);
+          
+          // Add alternating row background for better readability
+          let rowBgColor = index % 2 === 0 ? 0x223366 : 0x112244;
+          // Special styling for top 3
+          if (index < 3) {
+            const topColors = [0x664400, 0x555555, 0x553311];
+            const topColor = topColors[index] || 0x223366; // Fallback to default if undefined
+            rowBgColor = topColor;
+          }
+          
+          const rowBg = this.add.rectangle(0, 0, 460, 36, rowBgColor, 0.3);
+          rowContainer.add(rowBg);
 
-          // Rank number
-          const rankText = this.add.text(-200, y, `${index + 1}`, {
-            fontFamily: 'Arial',
-            fontSize: '20px',
-            color: '#ffffff',
-            align: 'left',
-          });
+          // Rank medal for top 3, number for others
+          let rankDisplay;
+          if (index === 0) {
+            // Gold medal
+            const medalBg = this.add.circle(-200, 0, 18, 0xffcc00, 0.8);
+            const medalText = this.add.text(-200, 0, '1', {
+              fontFamily: 'Arial, sans-serif',
+              fontSize: '22px',
+              color: '#ffffff',
+              fontStyle: 'bold',
+              align: 'center',
+            }).setOrigin(0.5);
+            rankDisplay = this.add.container(-200, 0, [medalBg, medalText]);
+          } else if (index === 1) {
+            // Silver medal
+            const medalBg = this.add.circle(-200, 0, 18, 0xcccccc, 0.8);
+            const medalText = this.add.text(-200, 0, '2', {
+              fontFamily: 'Arial, sans-serif',
+              fontSize: '22px',
+              color: '#ffffff',
+              fontStyle: 'bold',
+              align: 'center',
+            }).setOrigin(0.5);
+            rankDisplay = this.add.container(-200, 0, [medalBg, medalText]);
+          } else if (index === 2) {
+            // Bronze medal
+            const medalBg = this.add.circle(-200, 0, 18, 0xcc8844, 0.8);
+            const medalText = this.add.text(-200, 0, '3', {
+              fontFamily: 'Arial, sans-serif',
+              fontSize: '22px',
+              color: '#ffffff',
+              fontStyle: 'bold',
+              align: 'center',
+            }).setOrigin(0.5);
+            rankDisplay = this.add.container(-200, 0, [medalBg, medalText]);
+          } else {
+            // Regular number
+            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
+              fontFamily: 'Arial, sans-serif',
+              fontSize: '20px',
+              color: '#ffffff',
+              align: 'center',
+            }).setOrigin(0.5);
+          }
 
           // Username - truncate if too long
           let username = score.username;
@@ -529,30 +1046,53 @@ export class MainMenu extends Phaser.Scene {
             console.log(`[Leaderboard] Truncated username: ${score.username} -> ${username}`);
           }
 
-          const nameText = this.add.text(-100, y, username, {
-            fontFamily: 'Arial',
+          const nameText = this.add.text(0, 0, username, {
+            fontFamily: 'Arial, sans-serif',
             fontSize: '20px',
             color: '#ffffff',
-            align: 'left',
-          });
+            align: 'center',
+          }).setOrigin(0.5);
 
-          // Score
-          const scoreText = this.add.text(120, y, `${score.score}`, {
-            fontFamily: 'Arial',
+          // Score with formatting
+          const scoreText = this.add.text(180, 0, `${score.score.toLocaleString()}`, {
+            fontFamily: 'Arial, sans-serif',
             fontSize: '20px',
             color: '#ffffff',
-            align: 'left',
-          });
+            align: 'center',
+          }).setOrigin(0.5);
 
-          // Highlight the top score
-          if (index === 0) {
-            console.log('[Leaderboard] Highlighting top score');
-            rankText.setColor('#ffff00');
-            nameText.setColor('#ffff00');
-            scoreText.setColor('#ffff00');
+          // Add special effects for top scores
+          if (index < 3) {
+            const glowColor = [0xffdd00, 0xdddddd, 0xddaa66][index];
+            
+            // Add subtle glow effect
+            nameText.setTint(glowColor);
+            scoreText.setTint(glowColor);
+            
+            // Make text slightly larger for top scores
+            nameText.setFontSize(22);
+            scoreText.setFontSize(22);
           }
-
-          scrollContainer.add([rankText, nameText, scoreText]);
+          
+          // Add all elements to the row
+          rowContainer.add([rankDisplay, nameText, scoreText]);
+          
+          // Add row to scroll container with animation delay
+          scrollContainer.add(rowContainer);
+          
+          // Initial state - slide in from right with delay based on position
+          rowContainer.setX(500);
+          rowContainer.setAlpha(0);
+          
+          // Animate each row in sequence
+          this.tweens.add({
+            targets: rowContainer,
+            x: 0,
+            alpha: 1,
+            delay: index * 80,
+            duration: 300,
+            ease: 'Back.Out'
+          });
         });
       }
 
@@ -579,17 +1119,100 @@ export class MainMenu extends Phaser.Scene {
         loadingText.destroy();
       }
 
-      // Show error message
+      // Create an error display container
+      const errorContainer = this.add.container(0, 0);
+      
+      // Create warning icon
+      const warningGraphic = this.add.graphics();
+      warningGraphic.fillStyle(0xdd3333, 0.8);
+      warningGraphic.fillTriangle(0, -80, -40, -20, 40, -20);
+      warningGraphic.fillStyle(0x000000, 1);
+      warningGraphic.fillRect(-4, -70, 8, 30);
+      warningGraphic.fillCircle(0, -30, 4);
+      
+      // Show error message with better styling
       const errorText = this.add
-        .text(0, 0, 'Failed to load leaderboard.\nPlease try again later.', {
-          fontFamily: 'Arial',
-          fontSize: '24px',
-          color: '#ff0000',
+        .text(0, 20, 'COMMUNICATION ERROR', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '26px',
+          color: '#ff6666',
+          align: 'center',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+        
+      const errorDetailText = this.add
+        .text(0, 60, 'Unable to establish connection with\nthe galactic database.\nPlease try again later.', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '20px',
+          color: '#ffffff',
           align: 'center',
         })
         .setOrigin(0.5);
-
-      this.leaderboardPopup.add(errorText);
+        
+      // Add retry button
+      const retryButton = this.add.container(0, 120);
+      
+      const retryBg = this.add.rectangle(0, 0, 120, 40, 0x444444, 0.8);
+      retryBg.setStrokeStyle(2, 0xff6666);
+      
+      const retryText = this.add.text(0, 0, 'RETRY', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '18px',
+        color: '#ffffff',
+        align: 'center',
+      }).setOrigin(0.5);
+      
+      retryButton.add([retryBg, retryText]);
+      retryButton.setInteractive(
+        new Phaser.Geom.Rectangle(-60, -20, 120, 40),
+        Phaser.Geom.Rectangle.Contains
+      );
+      
+      // Add hover effects for retry button
+      retryButton.on('pointerover', () => {
+        retryBg.setFillStyle(0x666666, 0.8);
+        retryText.setTint(0xff9999);
+      });
+      
+      retryButton.on('pointerout', () => {
+        retryBg.setFillStyle(0x444444, 0.8);
+        retryText.setTint(0xffffff);
+      });
+      
+      // Add retry functionality
+      retryButton.on('pointerdown', () => {
+        errorContainer.destroy();
+        const loadingText = this.add
+          .text(0, 0, 'RETRIEVING DATA...', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '24px',
+            color: '#4466ff',
+            align: 'center',
+          })
+          .setOrigin(0.5);
+        this.leaderboardPopup.add(loadingText);
+        
+        // Retry getting the leaderboard after a short delay
+        this.time.delayedCall(500, () => {
+          this.hideLeaderboard();
+          this.time.delayedCall(300, () => {
+            void this.showLeaderboard();
+          });
+        });
+      });
+      
+      // Add flashing animation to warning icon
+      this.tweens.add({
+        targets: warningGraphic,
+        alpha: { from: 1, to: 0.5 },
+        duration: 500,
+        yoyo: true, 
+        repeat: -1
+      });
+      
+      errorContainer.add([warningGraphic, errorText, errorDetailText, retryButton]);
+      this.leaderboardPopup.add(errorContainer);
     }
   }
 
