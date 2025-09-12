@@ -23,7 +23,7 @@ export class StarshipScene extends Phaser.Scene {
   private scoreMultiplierTimer?: Phaser.Time.TimerEvent;
   private scoreText!: Phaser.GameObjects.Text;
   private lastFired = 0;
-  private fireRate = 200; // ms
+  private fireRate = 120; // ms - even faster fire rate for maximum fun
   private starfield!: Phaser.GameObjects.TileSprite;
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
@@ -260,9 +260,9 @@ export class StarshipScene extends Phaser.Scene {
     const { width: w, height: h } = this.scale;
     this.physics.world.setBounds(0, 0, w, h);
 
-    // Use default ship properties, no custom background settings
-    const speedMultiplier = 1; // Fixed value since we're not using custom background config
-    this.shipAcceleration = 220;
+    // Use enhanced ship properties for maximum fun gameplay
+    const speedMultiplier = 1.4; // Even higher speed multiplier
+    this.shipAcceleration = 320; // Much higher acceleration for super responsiveness
 
     // --- Create Ship ---
     const shipX = w / 2;
@@ -323,8 +323,8 @@ export class StarshipScene extends Phaser.Scene {
     // Apply speed multiplier from background config (reuse existing variables)
     this.enemyManager.setSpeedMultiplier(speedMultiplier);
 
-    // Start enemy spawning
-    this.enemyManager.startSpawning(1200);
+    // Start enemy spawning - faster initial spawn rate for immediate action
+    this.enemyManager.startSpawning(900);
 
     console.log('[StarshipScene] Setting up difficulty increase timer');
     if (this.difficultyTimer) {
@@ -342,8 +342,8 @@ export class StarshipScene extends Phaser.Scene {
         // Update enemy manager with new difficulty
         this.enemyManager.setDifficulty(this.difficulty);
 
-        // Calculate new spawn delay
-        const newDelay = Math.max(400, 1200 - this.difficulty * 80);
+        // Calculate new spawn delay - faster spawning for more action
+        const newDelay = Math.max(300, 1000 - this.difficulty * 80);
 
         // Update spawn rate in enemy manager
         this.enemyManager.stopSpawning();
@@ -368,9 +368,9 @@ export class StarshipScene extends Phaser.Scene {
       this.physics.world.enable(ship);
       ship.setCollideWorldBounds(true);
 
-      // Apply physics settings based on speed multiplier
-      const shipMaxVelocity = 260 + 50 * (speedMultiplier - 1);
-      const shipDrag = 200 + 100 * (speedMultiplier - 1);
+      // Apply enhanced physics settings for super responsive ship
+      const shipMaxVelocity = 320 + 60 * (speedMultiplier - 1); // Higher max velocity
+      const shipDrag = 180 + 90 * (speedMultiplier - 1); // Less drag for better responsiveness
       ship.setDrag(shipDrag).setAngularDrag(150).setMaxVelocity(shipMaxVelocity);
 
       const body = ship.body as Phaser.Physics.Arcade.Body;
@@ -496,9 +496,9 @@ export class StarshipScene extends Phaser.Scene {
     if (vx !== 0 || vy !== 0) {
       this.ship.setVelocity(vx, vy);
     } else {
-      // gentle damping when no input
+      // quick damping when no input for more responsive controls
       const body = this.ship.body as Phaser.Physics.Arcade.Body;
-      this.ship.setVelocity(body.velocity.x * 0.98, body.velocity.y * 0.98);
+      this.ship.setVelocity(body.velocity.x * 0.95, body.velocity.y * 0.95);
     }
 
     // Shooting (unchanged — bullets go up since ship is fixed at -90°)
@@ -512,8 +512,8 @@ export class StarshipScene extends Phaser.Scene {
         const body = bullet.body as Phaser.Physics.Arcade.Body;
         body.setAllowGravity(false);
         bullet.setRotation(this.ship.rotation); // stays -90
-        this.physics.velocityFromRotation(this.ship.rotation, 500, body.velocity);
-        this.time.delayedCall(1000, () => bullet.destroy());
+        this.physics.velocityFromRotation(this.ship.rotation, 750, body.velocity); // Super fast bullets
+        this.time.delayedCall(1400, () => bullet.destroy()); // Even longer bullet lifetime
         this.lastFired = time + this.fireRate;
         this.shootSfx?.play();
       }
