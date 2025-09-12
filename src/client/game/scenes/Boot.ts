@@ -23,7 +23,7 @@ export class Boot extends Phaser.Scene {
   create() {
     console.log('[Boot] Scene create() called.');
     // The logic to load config from props is now handled in main.ts.
-    // This scene now just needs to start the next one.
-    this.scene.start('MainMenu');
+    // Start the loading scene first for smooth UX.
+    this.scene.start('LoadingScene');
   }
 }

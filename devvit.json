@@ -13,9 +13,6 @@
     "dir": "dist/server",
     "entry": "index.cjs"
   },
-  "media": {
-    "dir": "assets"
-  },
   "menu": {
     "items": [
       {
