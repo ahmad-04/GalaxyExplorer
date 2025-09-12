@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { getLeaderboard } from '../api';
+import { isFeatureEnabled } from '../../../shared/config';
 
 export class MainMenu extends Phaser.Scene {
   private spaceKey!: Phaser.Input.Keyboard.Key;
@@ -236,7 +237,20 @@ export class MainMenu extends Phaser.Scene {
       'LEADERBOARD'
     );
     
-    buttonContainer.add([startButton, customizeButton, leaderboardButton]);
+    // Add buttons to the container
+    const buttons = [startButton, customizeButton, leaderboardButton];
+    
+    // Add Build Mode button when feature is enabled
+    let buildModeButton;
+    if (isFeatureEnabled('ENABLE_BUILD_MODE')) {
+      buildModeButton = createMenuButton(
+        270, 
+        'BUILD MODE'
+      );
+      buttons.push(buildModeButton);
+    }
+    
+    buttonContainer.add(buttons);
     
     // Keep the design clean as shown in the mockup - no additional decorations
 
@@ -346,6 +360,25 @@ export class MainMenu extends Phaser.Scene {
         void this.showLeaderboard(); // Use void to explicitly mark promise as handled
       });
     });
+    
+    // Add Build Mode button handler if it exists
+    if (buildModeButton && isFeatureEnabled('ENABLE_BUILD_MODE')) {
+      buildModeButton.on('pointerdown', () => {
+        // Add a button press sound effect (if available)
+        // this.sound.play('button_click');
+        
+        // Reset leaderboard state before changing scenes
+        this.resetLeaderboardState();
+        
+        // Add subtle camera effect
+        this.cameras.main.flash(300, 100, 200, 255, true);
+        
+        // Start Build Mode scene with slight delay for visual effect
+        this.time.delayedCall(200, () => {
+          this.scene.start('BuildModeScene', { action: 'browser' });
+        });
+      });
+    }
 
     // Test data button event handler - commented out for production
     /*

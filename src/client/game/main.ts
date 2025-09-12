@@ -6,6 +6,8 @@ import { CustomizationScene } from './scenes/CustomizationScene';
 import { GameOver } from './scenes/GameOver';
 import { StarshipScene } from './scenes/StarshipScene';
 import { EnemyTest } from './scenes/EnemyTest';
+import { BuildModeScene } from './scenes/BuildModeScene';
+import { isFeatureEnabled } from '../../shared/config';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -24,7 +26,16 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: true, // Enable debug mode to show hitboxes
     },
   },
-  scene: [Boot, LoadingScene, MainMenu, StarshipScene, GameOver, CustomizationScene, EnemyTest],
+  scene: [
+    Boot, 
+    LoadingScene, 
+    MainMenu, 
+    StarshipScene, 
+    GameOver, 
+    CustomizationScene, 
+    EnemyTest,
+    ...(isFeatureEnabled('ENABLE_BUILD_MODE') ? [BuildModeScene] : [])
+  ],
 };
 
 const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {

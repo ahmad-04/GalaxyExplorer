@@ -1,4 +1,6 @@
 import StartGame from './game/main';
+import './style.css';
+import './buildmode-ui.css';
 
 // It's important to declare the Devvit type for TypeScript
 interface DevvitClient {
