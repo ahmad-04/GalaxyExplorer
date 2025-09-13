@@ -18,13 +18,13 @@ import { LevelBrowser } from '../ui/LevelBrowser';
 export class BuildModeScene extends Phaser.Scene {
   // Service for data operations
   private buildModeService!: BuildModeService;
-  
+
   // Manager for editor state
   private buildModeManager!: BuildModeManager;
-  
+
   // Current step in the workflow
   private currentStep: string = 'setup';
-  
+
   // Step scenes
   private setupStep?: SetupStep;
   private designStep?: DesignStep;
@@ -34,7 +34,7 @@ export class BuildModeScene extends Phaser.Scene {
 
   // Current level ID (if any)
   private currentLevelId?: string;
-  
+
   constructor() {
     super({ key: 'BuildModeScene' });
   }
@@ -43,34 +43,138 @@ export class BuildModeScene extends Phaser.Scene {
     // Initialize services
     this.buildModeService = new BuildModeService();
     this.buildModeManager = new BuildModeManager(this);
-    
+
     // Check if we're loading an existing level
     if (data.levelId) {
       this.currentLevelId = data.levelId;
     }
-    
+
     // Handle startup action
     if (data.action === 'browse') {
       this.currentStep = 'browser';
     }
-    
-    console.log(`[BuildModeScene] Initialized with step: ${this.currentStep}, levelId: ${this.currentLevelId || 'none'}`);
+
+    console.log(
+      `[BuildModeScene] Initialized with step: ${this.currentStep}, levelId: ${this.currentLevelId || 'none'}`
+    );
   }
 
   create() {
     // Register key bindings
     this.input.keyboard.on('keydown-ESC', this.handleEscapeKey, this);
-    
+
     // Set up event handlers for step transitions
     this.events.on('step:change', this.changeStep, this);
-    
+
+    // Create placeholder textures for entities
+    this.createPlaceholderTextures();
+
     // Initialize the current step
     this.activateCurrentStep();
-    
+
     // Create common UI elements
     this.createCommonUI();
   }
-  
+
+  /**
+   * Create placeholder textures for entities
+   */
+  private createPlaceholderTextures(): void {
+    // Helper function to create texture
+    const createTexture = (name: string, drawFunc: (g: Phaser.GameObjects.Graphics) => void) => {
+      if (!this.textures.exists(name)) {
+        const graphics = this.add.graphics();
+        drawFunc(graphics);
+        graphics.generateTexture(name, 32, 32);
+        graphics.destroy();
+      }
+    };
+
+    // Fighter (red triangle)
+    createTexture('enemy_fighter', (g) => {
+      g.fillStyle(0xff3333, 1);
+      g.beginPath();
+      g.moveTo(16, 0);
+      g.lineTo(32, 32);
+      g.lineTo(0, 32);
+      g.closePath();
+      g.fillPath();
+    });
+
+    // Scout (cyan diamond)
+    createTexture('enemy_scout', (g) => {
+      g.fillStyle(0x00ffff, 1);
+      g.beginPath();
+      g.moveTo(16, 0);
+      g.lineTo(32, 16);
+      g.lineTo(16, 32);
+      g.lineTo(0, 16);
+      g.closePath();
+      g.fillPath();
+    });
+
+    // Cruiser (orange rectangle)
+    createTexture('enemy_cruiser', (g) => {
+      g.fillStyle(0xff6600, 1);
+      g.fillRect(0, 0, 32, 32);
+      g.lineStyle(2, 0xaa4400);
+      g.strokeRect(4, 4, 24, 24);
+    });
+
+    // Seeker (red circle)
+    createTexture('enemy_seeker', (g) => {
+      g.fillStyle(0xff0000, 1);
+      g.fillCircle(16, 16, 12);
+      g.lineStyle(2, 0xffffff);
+      g.strokeCircle(16, 16, 12);
+    });
+
+    // Gunship (purple square with guns)
+    createTexture('enemy_gunship', (g) => {
+      g.fillStyle(0x8800ff, 1);
+      g.fillRect(2, 2, 28, 28);
+      g.fillStyle(0x444444, 1);
+      g.fillRect(10, 0, 2, 8);
+      g.fillRect(20, 0, 2, 8);
+    });
+
+    // PowerUp (yellow star)
+    createTexture('powerup', (g) => {
+      g.fillStyle(0xffcc00, 1);
+      const centerX = 16;
+      const centerY = 16;
+      const outerRadius = 16;
+      const innerRadius = 8;
+      const spikes = 5;
+
+      let rot = (Math.PI / 2) * 3;
+      let x = centerX;
+      let y = centerY;
+      const step = Math.PI / spikes;
+
+      g.beginPath();
+      g.moveTo(centerX, centerY - outerRadius);
+
+      for (let i = 0; i < spikes; i++) {
+        x = centerX + Math.cos(rot) * outerRadius;
+        y = centerY + Math.sin(rot) * outerRadius;
+        g.lineTo(x, y);
+        rot += step;
+
+        x = centerX + Math.cos(rot) * innerRadius;
+        y = centerY + Math.sin(rot) * innerRadius;
+        g.lineTo(x, y);
+        rot += step;
+      }
+
+      g.lineTo(centerX, centerY - outerRadius);
+      g.closePath();
+      g.fillPath();
+    });
+
+    console.log('[BuildModeScene] Created placeholder textures for entities');
+  }
+
   /**
    * Create UI elements common to all steps
    */
@@ -78,43 +182,43 @@ export class BuildModeScene extends Phaser.Scene {
     // Header with title
     const header = this.add.rectangle(0, 0, this.scale.width, 60, 0x333333);
     header.setOrigin(0, 0);
-    
-    const title = this.add.text(20, 20, 'Galaxy Explorer Build Mode', { 
-      fontSize: '24px', 
+
+    const title = this.add.text(20, 20, 'Galaxy Explorer Build Mode', {
+      fontSize: '24px',
       color: '#ffffff',
-      fontStyle: 'bold'
+      fontStyle: 'bold',
     });
-    
+
     // Help button
     const helpButton = this.add.text(this.scale.width - 80, 20, 'Help', {
       fontSize: '18px',
       color: '#ffffff',
       backgroundColor: '#666666',
-      padding: { x: 10, y: 5 }
+      padding: { x: 10, y: 5 },
     });
     helpButton.setInteractive({ useHandCursor: true });
     helpButton.on('pointerdown', () => {
       this.showHelp();
     });
   }
-  
+
   /**
    * Change to a different step in the workflow
    * @param stepName The name of the step to change to
    */
   changeStep(stepName: string) {
     console.log(`[BuildModeScene] Changing step from ${this.currentStep} to ${stepName}`);
-    
+
     // Deactivate current step
     this.deactivateCurrentStep();
-    
+
     // Update current step
     this.currentStep = stepName;
-    
+
     // Activate new step
     this.activateCurrentStep();
   }
-  
+
   /**
    * Activate the current step
    */
@@ -126,42 +230,42 @@ export class BuildModeScene extends Phaser.Scene {
         }
         this.setupStep.activate(this.currentLevelId);
         break;
-        
+
       case 'design':
         if (!this.designStep) {
           this.designStep = new DesignStep(this, this.buildModeManager, this.buildModeService);
         }
         this.designStep.activate(this.currentLevelId);
         break;
-        
+
       case 'test':
         if (!this.testStep) {
           this.testStep = new TestStep(this, this.buildModeManager, this.buildModeService);
         }
         this.testStep.activate(this.currentLevelId);
         break;
-        
+
       case 'publish':
         if (!this.publishStep) {
           this.publishStep = new PublishStep(this, this.buildModeManager, this.buildModeService);
         }
         this.publishStep.activate(this.currentLevelId);
         break;
-        
+
       case 'browser':
         if (!this.levelBrowser) {
           this.levelBrowser = new LevelBrowser(this, this.buildModeService);
         }
         this.levelBrowser.activate();
         break;
-        
+
       default:
         console.error(`[BuildModeScene] Unknown step: ${this.currentStep}`);
         this.changeStep('setup');
         break;
     }
   }
-  
+
   /**
    * Deactivate the current step
    */
@@ -170,29 +274,29 @@ export class BuildModeScene extends Phaser.Scene {
       case 'setup':
         this.setupStep?.deactivate();
         break;
-        
+
       case 'design':
         this.designStep?.deactivate();
         break;
-        
+
       case 'test':
         this.testStep?.deactivate();
         break;
-        
+
       case 'publish':
         this.publishStep?.deactivate();
         break;
-        
+
       case 'browser':
         this.levelBrowser?.deactivate();
         break;
-        
+
       default:
         console.error(`[BuildModeScene] Unknown step when deactivating: ${this.currentStep}`);
         break;
     }
   }
-  
+
   /**
    * Handle ESC key press
    */
@@ -202,25 +306,25 @@ export class BuildModeScene extends Phaser.Scene {
       case 'setup':
         this.showExitConfirmation();
         break;
-        
+
       case 'design':
         this.changeStep('setup');
         break;
-        
+
       case 'test':
         this.changeStep('design');
         break;
-        
+
       case 'publish':
         this.changeStep('design');
         break;
-        
+
       case 'browser':
         this.showExitConfirmation();
         break;
     }
   }
-  
+
   /**
    * Show exit confirmation dialog
    */
@@ -230,7 +334,7 @@ export class BuildModeScene extends Phaser.Scene {
     console.log('[BuildModeScene] Exit confirmation shown');
     this.scene.start('MainMenu');
   }
-  
+
   /**
    * Show help dialog
    */
@@ -238,26 +342,26 @@ export class BuildModeScene extends Phaser.Scene {
     // In a real implementation, this would show context-sensitive help
     console.log(`[BuildModeScene] Showing help for step: ${this.currentStep}`);
   }
-  
+
   update(time: number, delta: number) {
     // Update the current step
     switch (this.currentStep) {
       case 'setup':
         this.setupStep?.update(time, delta);
         break;
-        
+
       case 'design':
         this.designStep?.update(time, delta);
         break;
-        
+
       case 'test':
         this.testStep?.update(time, delta);
         break;
-        
+
       case 'publish':
         this.publishStep?.update(time, delta);
         break;
-        
+
       case 'browser':
         this.levelBrowser?.update(time, delta);
         break;

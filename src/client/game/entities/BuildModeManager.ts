@@ -37,8 +37,8 @@ export interface BuildModeState {
 export class BuildModeManager {
   private scene: Phaser.Scene;
   private service: BuildModeService;
-  private events: Phaser.Events.EventEmitter;
-  
+  public events: Phaser.Events.EventEmitter;
+
   // Current state of the editor
   private state: BuildModeState = {
     currentTool: BuildModeTool.SELECT,
@@ -49,15 +49,15 @@ export class BuildModeManager {
     isDirty: false,
     cameraZoom: 1,
   };
-  
+
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.service = new BuildModeService();
     this.events = new Phaser.Events.EventEmitter();
-    
+
     console.log('[BuildModeManager] Initialized');
   }
-  
+
   /**
    * Set the current tool
    * @param tool The tool to set as current
@@ -67,7 +67,7 @@ export class BuildModeManager {
     this.events.emit('tool:change', tool);
     console.log(`[BuildModeManager] Tool changed to ${tool}`);
   }
-  
+
   /**
    * Get the current tool
    * @returns The current tool
@@ -75,7 +75,7 @@ export class BuildModeManager {
   getCurrentTool(): BuildModeTool {
     return this.state.currentTool;
   }
-  
+
   /**
    * Set the current entity type for placement
    * @param entityType The entity type to set
@@ -85,7 +85,7 @@ export class BuildModeManager {
     this.events.emit('entityType:change', entityType);
     console.log(`[BuildModeManager] Entity type changed to ${entityType}`);
   }
-  
+
   /**
    * Get the current entity type
    * @returns The current entity type
@@ -93,7 +93,7 @@ export class BuildModeManager {
   getCurrentEntityType(): string | undefined {
     return this.state.currentEntityType;
   }
-  
+
   /**
    * Set the grid visibility
    * @param visible Whether the grid should be visible
@@ -103,7 +103,7 @@ export class BuildModeManager {
     this.events.emit('grid:visibilityChange', visible);
     console.log(`[BuildModeManager] Grid visibility set to ${visible}`);
   }
-  
+
   /**
    * Get the grid visibility
    * @returns Whether the grid is visible
@@ -111,7 +111,7 @@ export class BuildModeManager {
   isGridVisible(): boolean {
     return this.state.isGridVisible;
   }
-  
+
   /**
    * Set the grid size
    * @param size The size of the grid cells
@@ -121,7 +121,7 @@ export class BuildModeManager {
     this.events.emit('grid:sizeChange', size);
     console.log(`[BuildModeManager] Grid size set to ${size}`);
   }
-  
+
   /**
    * Get the grid size
    * @returns The size of the grid cells
@@ -129,7 +129,7 @@ export class BuildModeManager {
   getGridSize(): number {
     return this.state.gridSize;
   }
-  
+
   /**
    * Set whether to snap to grid
    * @param snap Whether to snap to grid
@@ -139,7 +139,7 @@ export class BuildModeManager {
     this.events.emit('grid:snapChange', snap);
     console.log(`[BuildModeManager] Snap to grid set to ${snap}`);
   }
-  
+
   /**
    * Get whether to snap to grid
    * @returns Whether snapping to grid is enabled
@@ -147,7 +147,7 @@ export class BuildModeManager {
   isSnapToGrid(): boolean {
     return this.state.snapToGrid;
   }
-  
+
   /**
    * Set the current level ID
    * @param id The ID of the current level
@@ -158,7 +158,7 @@ export class BuildModeManager {
     this.events.emit('level:change', id);
     console.log(`[BuildModeManager] Current level ID set to ${id}`);
   }
-  
+
   /**
    * Get the current level ID
    * @returns The current level ID
@@ -166,7 +166,7 @@ export class BuildModeManager {
   getCurrentLevelId(): string | undefined {
     return this.state.currentLevelId;
   }
-  
+
   /**
    * Mark the level as having unsaved changes
    * @param isDirty Whether the level has unsaved changes
@@ -176,7 +176,7 @@ export class BuildModeManager {
     this.events.emit('level:dirtyChange', isDirty);
     console.log(`[BuildModeManager] Level dirty state set to ${isDirty}`);
   }
-  
+
   /**
    * Check if the level has unsaved changes
    * @returns Whether the level has unsaved changes
@@ -184,7 +184,7 @@ export class BuildModeManager {
   isDirty(): boolean {
     return this.state.isDirty;
   }
-  
+
   /**
    * Set the camera zoom level
    * @param zoom The zoom level
@@ -194,7 +194,7 @@ export class BuildModeManager {
     this.events.emit('camera:zoomChange', zoom);
     console.log(`[BuildModeManager] Camera zoom set to ${zoom}`);
   }
-  
+
   /**
    * Get the camera zoom level
    * @returns The camera zoom level
@@ -202,7 +202,7 @@ export class BuildModeManager {
   getCameraZoom(): number {
     return this.state.cameraZoom;
   }
-  
+
   /**
    * Select an entity
    * @param entityId The ID of the entity to select
@@ -216,21 +216,21 @@ export class BuildModeManager {
     } else {
       this.state.selectedEntityIds = [entityId];
     }
-    
+
     this.events.emit('selection:change', this.state.selectedEntityIds);
     console.log(`[BuildModeManager] Selected entities: ${this.state.selectedEntityIds.join(', ')}`);
   }
-  
+
   /**
    * Deselect an entity
    * @param entityId The ID of the entity to deselect
    */
   deselectEntity(entityId: string): void {
-    this.state.selectedEntityIds = this.state.selectedEntityIds.filter(id => id !== entityId);
+    this.state.selectedEntityIds = this.state.selectedEntityIds.filter((id) => id !== entityId);
     this.events.emit('selection:change', this.state.selectedEntityIds);
     console.log(`[BuildModeManager] Selected entities: ${this.state.selectedEntityIds.join(', ')}`);
   }
-  
+
   /**
    * Deselect all entities
    */
@@ -239,7 +239,7 @@ export class BuildModeManager {
     this.events.emit('selection:change', this.state.selectedEntityIds);
     console.log('[BuildModeManager] Selection cleared');
   }
-  
+
   /**
    * Get the currently selected entity IDs
    * @returns The currently selected entity IDs
@@ -247,25 +247,25 @@ export class BuildModeManager {
   getSelectedEntityIds(): string[] {
     return [...this.state.selectedEntityIds];
   }
-  
+
   /**
    * Subscribe to an event
    * @param event The event to subscribe to
    * @param callback The callback to call when the event is emitted
    */
-  on(event: string, callback: Function): void {
+  on(event: string, callback: (...args: any[]) => void): void {
     this.events.on(event, callback);
   }
-  
+
   /**
    * Unsubscribe from an event
    * @param event The event to unsubscribe from
    * @param callback The callback to remove
    */
-  off(event: string, callback: Function): void {
+  off(event: string, callback: (...args: any[]) => void): void {
     this.events.off(event, callback);
   }
-  
+
   /**
    * Get a reference to the service
    * @returns The BuildModeService instance
@@ -273,7 +273,7 @@ export class BuildModeManager {
   getService(): BuildModeService {
     return this.service;
   }
-  
+
   /**
    * Snap a position to the grid if enabled
    * @param position The position to snap
@@ -283,9 +283,9 @@ export class BuildModeManager {
     if (!this.state.snapToGrid) {
       return position;
     }
-    
+
     const gridSize = this.state.gridSize;
-    
+
     return {
       x: Math.round(position.x / gridSize) * gridSize,
       y: Math.round(position.y / gridSize) * gridSize,
