@@ -179,14 +179,31 @@ export class BuildModeScene extends Phaser.Scene {
    * Create UI elements common to all steps
    */
   private createCommonUI() {
-    // Header with title
+    // Header with title - using gradient for visual enhancement
     const header = this.add.rectangle(0, 0, this.scale.width, 60, 0x333333);
     header.setOrigin(0, 0);
+
+    // Add subtle gradient to header
+    const headerGradient = this.add.graphics();
+    headerGradient.fillGradientStyle(0x444444, 0x444444, 0x222222, 0x222222, 1);
+    headerGradient.fillRect(0, 0, this.scale.width, 60);
 
     const title = this.add.text(20, 20, 'Galaxy Explorer Build Mode', {
       fontSize: '24px',
       color: '#ffffff',
       fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 1,
+    });
+
+    // Simple subtle animation for the title
+    this.tweens.add({
+      targets: title,
+      y: 22,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
     });
 
     // Help button
@@ -343,7 +360,7 @@ export class BuildModeScene extends Phaser.Scene {
     console.log(`[BuildModeScene] Showing help for step: ${this.currentStep}`);
   }
 
-  update(time: number, delta: number) {
+  override update(time: number, delta: number) {
     // Update the current step
     switch (this.currentStep) {
       case 'setup':
@@ -359,7 +376,7 @@ export class BuildModeScene extends Phaser.Scene {
         break;
 
       case 'publish':
-        this.publishStep?.update(time, delta);
+        // Skip update call for PublishStep since it doesn't have an update method
         break;
 
       case 'browser':
