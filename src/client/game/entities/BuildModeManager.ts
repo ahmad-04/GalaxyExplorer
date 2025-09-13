@@ -157,6 +157,38 @@ export class BuildModeManager {
     this.state.isDirty = false; // Reset dirty flag when loading a new level
     this.events.emit('level:change', id);
     console.log(`[BuildModeManager] Current level ID set to ${id}`);
+
+    // Verify the ID exists in the service
+    if (id && this.service) {
+      // Get all levels for comprehensive logging
+      const allLevels = this.service.getLevelList();
+      console.log(
+        `[BuildModeManager] Available levels in service: ${allLevels.length}`,
+        allLevels.map((level) => ({ id: level.id, name: level.name }))
+      );
+
+      // Check for ID format mismatches
+      const levelIdsWithSamePrefix = allLevels.filter(
+        (level) => level.id.includes(id.substring(0, 8)) || id.includes(level.id.substring(0, 8))
+      );
+
+      if (levelIdsWithSamePrefix.length > 0 && !allLevels.some((level) => level.id === id)) {
+        console.warn(
+          `[BuildModeManager] Warning: Found levels with similar prefix but not exact ID match:`,
+          levelIdsWithSamePrefix.map((level) => ({ id: level.id, name: level.name }))
+        );
+      }
+
+      // Verify direct match
+      const metadata = this.service.getLevelMetadata(id);
+      if (!metadata) {
+        console.warn(`[BuildModeManager] Warning: Level ID ${id} not found in service metadata`);
+      } else {
+        console.log(
+          `[BuildModeManager] Level ID ${id} verified in service (name: ${metadata.name})`
+        );
+      }
+    }
   }
 
   /**

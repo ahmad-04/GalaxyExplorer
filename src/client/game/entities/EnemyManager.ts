@@ -97,6 +97,52 @@ export class EnemyManager {
   }
 
   /**
+   * Spawn an enemy at a specific position (for custom level design)
+   * @param enemyType The type of enemy to spawn
+   * @param x X coordinate
+   * @param y Y coordinate
+   * @returns The created enemy
+   */
+  spawnEnemyAtPosition(enemyType: number, x: number, y: number): Enemy {
+    console.log(`[EnemyManager] Spawning enemy of type ${enemyType} at position (${x}, ${y})`);
+
+    // Map enemy type enum to string for better logging
+    const enemyTypeMap: Record<number, string> = {
+      0: 'FIGHTER',
+      1: 'SCOUT',
+      2: 'CRUISER',
+      3: 'SEEKER',
+      4: 'GUNSHIP',
+    };
+    const enemyTypeName = enemyTypeMap[enemyType] || `UNKNOWN(${enemyType})`;
+    console.log(`[EnemyManager] Creating enemy of type: ${enemyTypeName}`);
+
+    try {
+      // Create the enemy
+      const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, y);
+      console.log(`[EnemyManager] Enemy created successfully:`, {
+        type: enemyTypeName,
+        position: { x, y },
+        active: enemy.active,
+        visible: enemy.visible,
+      });
+
+      // Add enemy to the group
+      this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
+      console.log(`[EnemyManager] Enemy added to group, total enemies:`, this.enemies.getLength());
+
+      // Setup movement based on enemy type
+      this.setupEnemyMovement(enemy);
+      console.log(`[EnemyManager] Enemy movement setup complete`);
+
+      return enemy;
+    } catch (error) {
+      console.error(`[EnemyManager] Error spawning enemy:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Set up enemy movement patterns based on type
    */
   private setupEnemyMovement(enemy: Enemy): void {

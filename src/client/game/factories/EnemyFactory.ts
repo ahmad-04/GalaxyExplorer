@@ -21,22 +21,48 @@ export class EnemyFactory {
   static createEnemy(scene: Phaser.Scene, type: EnemyType, x: number, y: number): Enemy {
     console.log(`[EnemyFactory] Creating enemy of type ${EnemyType[type]} at (${x}, ${y})`);
 
-    switch (type) {
-      case EnemyType.SCOUT:
-        return new ScoutInterceptor(scene, x, y);
+    let enemy: Enemy;
 
-      case EnemyType.CRUISER:
-        return new ArmoredCruiser(scene, x, y);
+    try {
+      switch (type) {
+        case EnemyType.SCOUT:
+          console.log(`[EnemyFactory] Creating ScoutInterceptor`);
+          enemy = new ScoutInterceptor(scene, x, y);
+          break;
 
-      case EnemyType.SEEKER:
-        return new SeekerDrone(scene, x, y);
+        case EnemyType.CRUISER:
+          console.log(`[EnemyFactory] Creating ArmoredCruiser`);
+          enemy = new ArmoredCruiser(scene, x, y);
+          break;
 
-      case EnemyType.GUNSHIP:
-        return new EliteGunship(scene, x, y);
+        case EnemyType.SEEKER:
+          console.log(`[EnemyFactory] Creating SeekerDrone`);
+          enemy = new SeekerDrone(scene, x, y);
+          break;
 
-      case EnemyType.FIGHTER:
-      default:
-        return new Fighter(scene, x, y);
+        case EnemyType.GUNSHIP:
+          console.log(`[EnemyFactory] Creating EliteGunship`);
+          enemy = new EliteGunship(scene, x, y);
+          break;
+
+        case EnemyType.FIGHTER:
+        default:
+          console.log(`[EnemyFactory] Creating Fighter (default)`);
+          enemy = new Fighter(scene, x, y);
+          break;
+      }
+
+      console.log(`[EnemyFactory] Enemy created successfully:`, {
+        type: EnemyType[type],
+        position: { x, y },
+        active: enemy.active,
+        visible: enemy.visible,
+      });
+
+      return enemy;
+    } catch (error) {
+      console.error(`[EnemyFactory] Error creating enemy of type ${EnemyType[type]}:`, error);
+      throw error;
     }
   }
 

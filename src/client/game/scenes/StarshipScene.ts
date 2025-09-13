@@ -70,8 +70,25 @@ export class StarshipScene extends Phaser.Scene {
     primaryTint?: number;
     secondaryTint?: number;
     combinedTextureKey?: string;
+    testMode?: boolean;
+    levelData?: {
+      settings: { name: string };
+      entities: Array<{
+        type: string;
+        position?: { x: number; y: number };
+        enemyType?: string;
+      }>;
+    };
+    buildModeTest?: boolean;
+    levelIdToTest?: string;
   }): void {
-    console.log('[StarshipScene] init called', data);
+    console.log('[StarshipScene] init called with data:', {
+      testMode: data?.testMode,
+      buildModeTest: data?.buildModeTest,
+      levelIdToTest: data?.levelIdToTest,
+      hasLevelData: !!data?.levelData,
+      entityCount: data?.levelData?.entities?.length || 0,
+    });
 
     // Reset all game state when scene starts/restarts
     this.score = 0;
@@ -81,6 +98,30 @@ export class StarshipScene extends Phaser.Scene {
     this.activePowerUps.clear();
     this.isShieldActive = false;
     this.collisionsActive = false; // Start with collisions disabled until setup is complete
+
+    // Log registry state at initialization
+    console.log('[StarshipScene] Registry state at init:', {
+      isBuildModeTest: this.registry.get('isBuildModeTest'),
+      hasTestLevelData: !!this.registry.get('testLevelData'),
+    });
+
+    // Store test mode flags if provided
+    if (data?.testMode) {
+      this.registry.set('testMode', true);
+      console.log('[StarshipScene] Running in test mode');
+    }
+
+    // Store build mode test flag if provided
+    if (data?.buildModeTest) {
+      this.registry.set('buildModeTest', true);
+      console.log('[StarshipScene] Running as Build Mode test');
+    }
+
+    // Store level data if provided for testing
+    if (data?.levelData) {
+      this.registry.set('testLevelData', data.levelData);
+      console.log('[StarshipScene] Test level data loaded:', data.levelData.settings.name);
+    }
 
     // Create power-up textures for fallback
     this.ensurePowerUpTexture('powerup_score');
@@ -186,6 +227,24 @@ export class StarshipScene extends Phaser.Scene {
       '[StarshipScene] Physics state:',
       this.physics.world.isPaused ? 'PAUSED' : 'ACTIVE'
     );
+
+    // Check if we're running in test mode
+    const isTestMode = this.registry.get('testMode') === true;
+    const isBuildModeTest = this.registry.get('buildModeTest') === true;
+
+    if (isTestMode) {
+      console.log('[StarshipScene] Running in test mode');
+
+      // Listen for test stop event
+      if (isBuildModeTest) {
+        this.events.on('test:stop', this.handleTestStop, this);
+
+        // Initialize test stats in registry
+        this.registry.set('enemiesDefeated', 0);
+        this.registry.set('playerDeaths', 0);
+        this.registry.set('powerupsCollected', 0);
+      }
+    }
 
     // Ensure physics is running
     if (this.physics.world.isPaused) {
@@ -323,33 +382,74 @@ export class StarshipScene extends Phaser.Scene {
     // Apply speed multiplier from background config (reuse existing variables)
     this.enemyManager.setSpeedMultiplier(speedMultiplier);
 
-    // Start enemy spawning - faster initial spawn rate for immediate action
-    this.enemyManager.startSpawning(900);
+    // Check if we have custom level data from build mode testing
+    console.log('[StarshipScene] Checking for custom level data...');
 
-    console.log('[StarshipScene] Setting up difficulty increase timer');
-    if (this.difficultyTimer) {
-      console.log('[StarshipScene] Removing existing difficulty timer');
-      this.difficultyTimer.remove();
+    const testLevelData = this.registry.get('testLevelData');
+    console.log(
+      '[StarshipScene] testLevelData from registry:',
+      testLevelData
+        ? {
+            id: testLevelData.id,
+            name: testLevelData.settings?.name,
+            hasEntities: !!testLevelData.entities,
+            entityCount: testLevelData.entities?.length || 0,
+          }
+        : 'NOT FOUND'
+    );
+
+    console.log('[StarshipScene] isBuildModeTest flag:', isBuildModeTest);
+
+    const usingCustomLevel = !!(testLevelData && isBuildModeTest);
+
+    if (usingCustomLevel) {
+      console.log(
+        '[StarshipScene] Using custom level data for enemy spawning:',
+        testLevelData.settings.name
+      );
+      this.setupCustomLevel(testLevelData);
+    } else {
+      // Log detailed reason why not using custom level
+      if (!testLevelData) {
+        console.warn('[StarshipScene] No test level data found in registry');
+      } else if (!isBuildModeTest) {
+        console.warn('[StarshipScene] isBuildModeTest flag is not set');
+      }
+
+      // Start enemy spawning - faster initial spawn rate for immediate action
+      console.log('[StarshipScene] Using default enemy spawning');
+      this.enemyManager.startSpawning(900);
     }
 
-    this.difficultyTimer = this.time.addEvent({
-      delay: 10000,
-      loop: true,
-      callback: () => {
-        console.log('[StarshipScene] Difficulty timer triggered, increasing difficulty');
-        this.difficulty = Math.min(10, this.difficulty + 1);
+    // In Build Mode test with custom level, skip the difficulty timer that re-enables random spawns
+    if (!usingCustomLevel) {
+      console.log('[StarshipScene] Setting up difficulty increase timer');
+      if (this.difficultyTimer) {
+        console.log('[StarshipScene] Removing existing difficulty timer');
+        this.difficultyTimer.remove();
+      }
 
-        // Update enemy manager with new difficulty
-        this.enemyManager.setDifficulty(this.difficulty);
+      this.difficultyTimer = this.time.addEvent({
+        delay: 10000,
+        loop: true,
+        callback: () => {
+          console.log('[StarshipScene] Difficulty timer triggered, increasing difficulty');
+          this.difficulty = Math.min(10, this.difficulty + 1);
 
-        // Calculate new spawn delay - faster spawning for more action
-        const newDelay = Math.max(300, 1000 - this.difficulty * 80);
+          // Update enemy manager with new difficulty
+          this.enemyManager.setDifficulty(this.difficulty);
 
-        // Update spawn rate in enemy manager
-        this.enemyManager.stopSpawning();
-        this.enemyManager.startSpawning(newDelay);
-      },
-    });
+          // Calculate new spawn delay - faster spawning for more action
+          const newDelay = Math.max(300, 1000 - this.difficulty * 80);
+
+          // Update spawn rate in enemy manager
+          this.enemyManager.stopSpawning();
+          this.enemyManager.startSpawning(newDelay);
+        },
+      });
+    } else {
+      console.log('[StarshipScene] Skipping difficulty timer in Build Mode test with custom level');
+    }
   }
 
   setupShip(ship: Phaser.Physics.Arcade.Sprite, isPrimary = true): void {
@@ -442,6 +542,15 @@ export class StarshipScene extends Phaser.Scene {
         const powerUpType = powerUpObj.getData('powerUpType') as PowerUpType;
         if (powerUpType !== undefined) {
           this.activatePowerUp(powerUpType);
+
+          // Track powerup collection for test mode
+          if (this.registry.get('buildModeTest') === true) {
+            const currentPowerups = this.registry.get('powerupsCollected') || 0;
+            this.registry.set('powerupsCollected', currentPowerups + 1);
+            console.log(
+              `[StarshipScene] Test mode: Powerup collected (total: ${currentPowerups + 1})`
+            );
+          }
         }
         powerUpObj.destroy();
       },
@@ -578,6 +687,13 @@ export class StarshipScene extends Phaser.Scene {
     } else {
       // Legacy enemy - destroy immediately
       enemySprite.destroy();
+    }
+
+    // Increment enemy defeat counter for test stats if the enemy was destroyed
+    if (destroyed && this.registry.get('buildModeTest') === true) {
+      const currentDefeats = this.registry.get('enemiesDefeated') || 0;
+      this.registry.set('enemiesDefeated', currentDefeats + 1);
+      console.log(`[StarshipScene] Test mode: Enemy defeated (total: ${currentDefeats + 1})`);
     } // Only add points and show effects if the enemy was destroyed
     if (destroyed) {
       this.score += points * this.scoreMultiplier;
@@ -717,6 +833,13 @@ export class StarshipScene extends Phaser.Scene {
     }
 
     console.log('[StarshipScene] No shield, starting game over sequence');
+
+    // Track player deaths for test mode
+    if (this.registry.get('buildModeTest') === true) {
+      const currentDeaths = this.registry.get('playerDeaths') || 0;
+      this.registry.set('playerDeaths', currentDeaths + 1);
+      console.log(`[StarshipScene] Test mode: Player death recorded (total: ${currentDeaths + 1})`);
+    }
 
     // Disable collision detection to prevent multiple hits
     this.collisionsActive = false;
@@ -1343,87 +1466,29 @@ export class StarshipScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.clear();
 
+    // Choose color based on power-up type
     if (key === 'powerup_shield') {
-      // Blue circle for shield
-      g.fillStyle(0x00ccff, 0.3);
-      g.fillCircle(16, 16, 16);
-      g.lineStyle(2, 0x0088cc);
-      g.fillStyle(0x00aaff, 0.8);
-      g.fillCircle(16, 16, 14);
-      g.strokeCircle(16, 16, 14);
+      g.fillStyle(0x00aaff);
+    } else if (key === 'powerup_score') {
+      g.fillStyle(0xffaa00);
     } else if (key === 'powerup_rapidfire') {
-      // Green triangles for rapid fire
-      g.fillStyle(0x00ff00, 0.8);
-      g.beginPath();
-      // Triangle 1
-      g.moveTo(16, 4);
-      g.lineTo(22, 14);
-      g.lineTo(10, 14);
-      g.closePath();
-      // Triangle 2
-      g.moveTo(16, 12);
-      g.lineTo(22, 22);
-      g.lineTo(10, 22);
-      g.closePath();
-      // Triangle 3
-      g.moveTo(16, 20);
-      g.lineTo(22, 30);
-      g.lineTo(10, 30);
-      g.closePath();
-      g.fillPath();
+      g.fillStyle(0xff5500);
     } else {
-      // default for score and others
-      // Create a glowing background
-      g.fillStyle(0xffcc00, 0.3);
-      g.fillCircle(16, 16, 16);
-
-      // Draw the outer circle
-      g.lineStyle(2, 0x000000);
-      g.fillStyle(0xffdd00, 1);
-      g.fillCircle(16, 16, 14);
-      g.strokeCircle(16, 16, 14);
-
-      // Create a star shape
-      const starPoints = 5;
-      const outerRadius = 12;
-      const innerRadius = 5;
-      const cx = 16;
-      const cy = 16;
-
-      // Draw the star
-      g.fillStyle(0xff6600, 1);
-      g.lineStyle(1, 0x000000);
-      g.beginPath();
-
-      for (let i = 0; i < starPoints * 2; i++) {
-        const radius = i % 2 === 0 ? outerRadius : innerRadius;
-        const angle = (Math.PI * 2 * i) / (starPoints * 2) - Math.PI / 2;
-        const x = cx + radius * Math.cos(angle);
-        const y = cy + radius * Math.sin(angle);
-
-        if (i === 0) {
-          g.moveTo(x, y);
-        } else {
-          g.lineTo(x, y);
-        }
-      }
-
-      g.closePath();
-      g.fillPath();
-      g.strokePath();
-
-      // Add highlight dots for sparkle effect
-      g.fillStyle(0xffffff, 0.8);
-      g.fillCircle(cx - 5, cy - 5, 2);
-      g.fillCircle(cx + 4, cy - 2, 1);
+      g.fillStyle(0xffffff);
     }
 
-    // Generate the texture and clean up
+    // Draw a simple shape
+    g.fillCircle(16, 16, 14);
+    g.lineStyle(3, 0xffffff, 0.8);
+    g.strokeCircle(16, 16, 14);
+
     g.generateTexture(key, 32, 32);
     g.destroy();
-
-    console.log(`[StarshipScene] Created fallback texture with key: ${key}`);
   }
+
+  /**
+   * Sets up the power-up UI elements
+   */
 
   /**
    * Sets up the power-up UI with icon and timer circle
@@ -1619,5 +1684,447 @@ export class StarshipScene extends Phaser.Scene {
     this.difficulty = 1;
 
     console.log('[StarshipScene] Shutdown completed, all resources cleaned up');
+  }
+
+  /**
+   * Handle test stop event from TestStep
+   */
+  private handleTestStop(): void {
+    console.log('[StarshipScene] Received test stop event');
+
+    // Send final statistics to the BuildMode scene
+    this.sendTestStats();
+
+    // Signal that the test is complete
+    this.events.emit('test:completed');
+  }
+
+  /**
+   * Send current test statistics back to the BuildMode scene
+   */
+  private sendTestStats(): void {
+    if (this.registry.get('buildModeTest') !== true) {
+      return;
+    }
+
+    // Compile statistics
+    const stats = {
+      score: this.score,
+      enemiesDefeated: this.registry.get('enemiesDefeated') || 0,
+      playerDeaths: this.registry.get('playerDeaths') || 0,
+      powerupsCollected: this.registry.get('powerupsCollected') || 0,
+    };
+
+    console.log('[StarshipScene] Sending test stats:', stats);
+
+    // Send stats to the parent scene
+    this.scene.get('BuildModeScene').events.emit('test:stats', stats);
+  }
+
+  /**
+   * Set up the scene with custom level data from the Build Mode
+   * @param levelData The level data to use
+   */
+  private setupCustomLevel(levelData: {
+    entities: Array<{
+      type: string;
+      position?: { x: number; y: number };
+      enemyType?: string;
+    }>;
+    settings: { name: string };
+  }): void {
+    console.log('[StarshipScene] Setting up custom level:', levelData.settings.name);
+
+    // Detailed log of what we're working with
+    console.log('[StarshipScene] Custom level details:', {
+      name: levelData.settings.name,
+      entitiesCount: levelData.entities?.length || 0,
+      validEntities: levelData.entities?.filter((e) => e.type && e.position).length || 0,
+      enemySpawners: levelData.entities?.filter((e) => e.type === 'ENEMY_SPAWNER').length || 0,
+    });
+
+    // Stop the default enemy spawning
+    console.log('[StarshipScene] Stopping default enemy spawning');
+    this.enemyManager.stopSpawning();
+
+    if (!levelData.entities || !Array.isArray(levelData.entities)) {
+      console.error('[StarshipScene] No entities found in level data, using default spawning');
+      this.enemyManager.startSpawning(1000);
+      return;
+    }
+
+    // Log entity types to help debug
+    const entityTypeCounts: Record<string, number> = {};
+    const enemyTypes: Record<string, number> = {};
+    levelData.entities.forEach((e) => {
+      if (e.type) {
+        entityTypeCounts[e.type] = (entityTypeCounts[e.type] || 0) + 1;
+
+        // Count enemy types for better debugging
+        if (e.type === 'ENEMY_SPAWNER' || String(e.type).includes('ENEMY_SPAWNER')) {
+          const enemyEntity = e as unknown as { enemyType?: string };
+          const enemyType = enemyEntity.enemyType || 'unknown';
+          enemyTypes[enemyType] = (enemyTypes[enemyType] || 0) + 1;
+        }
+      }
+    });
+    console.log('[StarshipScene] Entity types in level data:', entityTypeCounts);
+    console.log('[StarshipScene] Enemy types in level data:', enemyTypes);
+
+    // Set up custom entities from the level data
+    const { EntityType } = this.getEntityTypes();
+    const { EnemySpawnerType } = this.getEntityTypes();
+
+    // Log entity type mappings for debugging
+    console.log('[StarshipScene] Available EntityTypes:');
+    Object.entries(EntityType).forEach(([key, value]) => {
+      console.log(`[StarshipScene]   - ${key}: '${value}'`);
+    });
+
+    console.log('[StarshipScene] Available EnemySpawnerTypes:');
+    Object.entries(EnemySpawnerType).forEach(([key, value]) => {
+      console.log(`[StarshipScene]   - ${key}: '${value}'`);
+    });
+
+    let enemiesPlaced = 0;
+
+    // Process each entity in the level data
+    levelData.entities.forEach((entity, index) => {
+      console.log(`[StarshipScene] Processing entity ${index}:`, entity);
+
+      // Use a more flexible approach to entity type checking
+      const entityType = entity.type || '';
+      const isEnemySpawner =
+        entityType === EntityType.ENEMY_SPAWNER ||
+        entityType === 'ENEMY_SPAWNER' ||
+        entityType.includes('ENEMY_SPAWNER');
+
+      console.log(
+        `[StarshipScene] Entity type: '${entityType}', is enemy spawner: ${isEnemySpawner}`
+      );
+
+      // Check all properties to see what we're working with
+      const entityKeys = Object.keys(entity);
+      console.log('[StarshipScene] Entity keys:', entityKeys);
+
+      // Extract enemyType property using multiple approaches
+      let enemyType;
+
+      // Type assertion with a specific interface to avoid 'any'
+      interface EntityWithEnemyType {
+        enemyType?: string;
+        properties?: {
+          enemyType?: string;
+        };
+      }
+
+      const typedEntity = entity as EntityWithEnemyType & Record<string, unknown>;
+
+      // Try multiple approaches to find the enemy type
+      if (typedEntity.enemyType) {
+        enemyType = typedEntity.enemyType;
+      } else if (
+        entityKeys.includes('properties') &&
+        typedEntity.properties &&
+        typedEntity.properties.enemyType
+      ) {
+        enemyType = typedEntity.properties.enemyType;
+      } else if (typeof typedEntity === 'object') {
+        // Deep search for enemyType property at any level
+        const findEnemyType = (obj: Record<string, unknown>): string | undefined => {
+          for (const key in obj) {
+            if (key === 'enemyType' && typeof obj[key] === 'string') {
+              return obj[key];
+            } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+              const found = findEnemyType(obj[key] as Record<string, unknown>);
+              if (found) return found;
+            }
+          }
+          return undefined;
+        };
+
+        enemyType = findEnemyType(typedEntity);
+      }
+
+      console.log('[StarshipScene] Extracted enemyType:', enemyType);
+
+      // Process enemy spawner entities
+      if (isEnemySpawner && entity.position) {
+        console.log('[StarshipScene] Valid enemy spawner found:', {
+          type: entity.type,
+          position: entity.position,
+          enemyType: enemyType,
+        });
+
+        // Spawn enemy at the entity position
+        try {
+          if (enemyType) {
+            this.spawnEnemyFromEntity({
+              position: entity.position,
+              enemyType: enemyType,
+            });
+            enemiesPlaced++;
+            console.log(
+              `[StarshipScene] Enemy ${index} placed successfully at position:`,
+              entity.position
+            );
+          } else {
+            // If enemyType is still not found, try to use a default based on entity properties
+            console.log(`[StarshipScene] Attempting to use default enemy type for entity:`, entity);
+
+            // Use FIGHTER as a default type if nothing else is specified
+            const defaultEnemyType = 'FIGHTER';
+            this.spawnEnemyFromEntity({
+              position: entity.position,
+              enemyType: defaultEnemyType,
+            });
+            enemiesPlaced++;
+            console.log(
+              `[StarshipScene] Enemy ${index} placed with default type (${defaultEnemyType}) at position:`,
+              entity.position
+            );
+          }
+        } catch (error) {
+          console.error(`[StarshipScene] Failed to spawn enemy ${index}:`, error);
+        }
+      } else {
+        console.log(`[StarshipScene] Skipping entity ${index}, not a valid enemy spawner:`, {
+          type: entity.type,
+          expectedType: EntityType.ENEMY_SPAWNER,
+          hasPosition: !!entity.position,
+          hasEnemyType: !!entity.enemyType,
+        });
+      }
+      // We could also handle other entity types here (obstacles, powerups, etc.)
+    });
+
+    console.log(
+      `[StarshipScene] Placed ${enemiesPlaced} enemies from custom level. Expected: ${levelData.entities.filter((e) => e.type === EntityType.ENEMY_SPAWNER).length}`
+    );
+
+    // For Build Mode tests, do NOT auto-respawn or revert to default spawns.
+    // Designers expect only their placed enemies to appear.
+    if (this.registry.get('buildModeTest') === true) {
+      if (enemiesPlaced === 0) {
+        console.log(
+          '[StarshipScene] No enemy spawners found in custom level; staying idle in build test'
+        );
+      } else {
+        console.log('[StarshipScene] Build test: skipping auto-respawn timer');
+      }
+    } else {
+      // In normal play, keep screen from being empty
+      if (enemiesPlaced > 0) {
+        this.time.addEvent({
+          delay: 3000,
+          callback: () => this.respawnEnemiesIfNeeded(levelData),
+          loop: true,
+        });
+      } else {
+        console.log('[StarshipScene] No enemy spawners found; using default spawning');
+        this.enemyManager.startSpawning(1200);
+      }
+    }
+  }
+
+  /**
+   * Spawn an enemy from a level entity definition
+   * @param entity The enemy spawner entity
+   */
+  private spawnEnemyFromEntity(entity: {
+    position: { x: number; y: number };
+    enemyType: string;
+  }): void {
+    console.log('[StarshipScene] spawnEnemyFromEntity called with:', entity);
+
+    const { EnemySpawnerType } = this.getEntityTypes();
+    const { EnemyType } = this.getEnemyEnumValues();
+
+    console.log('[StarshipScene] Available EnemySpawnerTypes:', EnemySpawnerType);
+    console.log('[StarshipScene] Available EnemyTypes:', EnemyType);
+
+    // Get position from the entity
+    const { x, y } = entity.position;
+    console.log(`[StarshipScene] Entity position: x=${x}, y=${y}`);
+
+    // Determine enemy type
+    let enemyType: number = EnemyType.FIGHTER; // Default
+    console.log('[StarshipScene] Entity.enemyType:', entity.enemyType);
+
+    // Convert from BuildMode entity spawner type to game enemy type
+    console.log(`[StarshipScene] Converting entity type '${entity.enemyType}' to enemy type...`);
+
+    // Normalize the enemy type string for more robust matching
+    const normalizedType = entity.enemyType.toUpperCase();
+
+    // Map enemy types with fallback for variations in naming
+    if (normalizedType === EnemySpawnerType.FIGHTER || normalizedType.includes('FIGHTER')) {
+      enemyType = EnemyType.FIGHTER;
+      console.log('[StarshipScene] Mapped to FIGHTER');
+    } else if (normalizedType === EnemySpawnerType.SCOUT || normalizedType.includes('SCOUT')) {
+      enemyType = EnemyType.SCOUT;
+      console.log('[StarshipScene] Mapped to SCOUT');
+    } else if (normalizedType === EnemySpawnerType.CRUISER || normalizedType.includes('CRUISER')) {
+      enemyType = EnemyType.CRUISER;
+      console.log('[StarshipScene] Mapped to CRUISER');
+    } else if (normalizedType === EnemySpawnerType.SEEKER || normalizedType.includes('SEEKER')) {
+      enemyType = EnemyType.SEEKER;
+      console.log('[StarshipScene] Mapped to SEEKER');
+    } else if (normalizedType === EnemySpawnerType.GUNSHIP || normalizedType.includes('GUNSHIP')) {
+      enemyType = EnemyType.GUNSHIP;
+      console.log('[StarshipScene] Mapped to GUNSHIP');
+    } else if (normalizedType === EnemySpawnerType.RANDOM || normalizedType.includes('RANDOM')) {
+      // Pick a random enemy type based on difficulty
+      enemyType = this.getRandomEnemyType();
+      console.log('[StarshipScene] RANDOM type - selected:', enemyType);
+    } else {
+      // Default to fighter if we can't determine the type
+      enemyType = EnemyType.FIGHTER;
+      console.log(
+        `[StarshipScene] Unknown enemy type '${entity.enemyType}', defaulting to FIGHTER`
+      );
+    }
+
+    // Create the enemy
+    console.log(
+      `[StarshipScene] Calling enemyManager.spawnEnemyAtPosition with: type=${enemyType}, x=${x}, y=${y}`
+    );
+    this.enemyManager.spawnEnemyAtPosition(enemyType, x, y);
+
+    console.log(`[StarshipScene] Spawned enemy of type ${enemyType} at position (${x}, ${y})`);
+  }
+
+  /**
+   * Get a reference to the entity type enums used in BuildMode
+   */
+  private getEntityTypes(): {
+    EntityType: {
+      PLAYER_START: string;
+      ENEMY_SPAWNER: string;
+      OBSTACLE: string;
+      POWERUP_SPAWNER: string;
+      DECORATION: string;
+      TRIGGER: string;
+    };
+    EnemySpawnerType: {
+      RANDOM: string;
+      FIGHTER: string;
+      SCOUT: string;
+      CRUISER: string;
+      SEEKER: string;
+      GUNSHIP: string;
+    };
+  } {
+    return {
+      EntityType: {
+        PLAYER_START: 'PLAYER_START',
+        ENEMY_SPAWNER: 'ENEMY_SPAWNER',
+        OBSTACLE: 'OBSTACLE',
+        POWERUP_SPAWNER: 'POWERUP_SPAWNER',
+        DECORATION: 'DECORATION',
+        TRIGGER: 'TRIGGER',
+      },
+      EnemySpawnerType: {
+        RANDOM: 'RANDOM',
+        FIGHTER: 'FIGHTER',
+        SCOUT: 'SCOUT',
+        CRUISER: 'CRUISER',
+        SEEKER: 'SEEKER',
+        GUNSHIP: 'GUNSHIP',
+      },
+    };
+  }
+
+  /**
+   * Get the actual enemy type enum values
+   */
+  private getEnemyEnumValues(): {
+    EnemyType: {
+      FIGHTER: number;
+      SCOUT: number;
+      CRUISER: number;
+      SEEKER: number;
+      GUNSHIP: number;
+    };
+  } {
+    return {
+      EnemyType: {
+        FIGHTER: 0,
+        SCOUT: 1,
+        CRUISER: 2,
+        SEEKER: 3,
+        GUNSHIP: 4,
+      },
+    };
+  }
+
+  /**
+   * Get a random enemy type based on the current difficulty
+   */
+  private getRandomEnemyType(): number {
+    const { EnemyType } = this.getEnemyEnumValues();
+
+    // Probability distribution based on difficulty
+    const difficultyLevel = Math.min(this.difficulty, 10);
+
+    // Higher difficulty = chance for more advanced enemies
+    if (difficultyLevel >= 8) {
+      // Any enemy type possible
+      return Phaser.Math.Between(0, 4);
+    } else if (difficultyLevel >= 5) {
+      // No elite gunships at this level
+      return Phaser.Math.Between(0, 3);
+    } else if (difficultyLevel >= 3) {
+      // Basic enemies plus occasional scouts
+      return Phaser.Math.Between(0, 1);
+    } else {
+      // Just fighters at low difficulty
+      return EnemyType.FIGHTER;
+    }
+  }
+
+  /**
+   * Check if we need to respawn enemies and do so if the screen is empty
+   */
+  private respawnEnemiesIfNeeded(levelData: {
+    entities: Array<{
+      type: string;
+      position?: { x: number; y: number };
+      enemyType?: string;
+    }>;
+  }): void {
+    // Skip in Build Mode custom-level tests
+    if (this.registry.get('buildModeTest') === true) {
+      return;
+    }
+
+    // Only respawn if there are few enemies on screen
+    if (this.enemies.countActive() < 2) {
+      console.log('[StarshipScene] Respawning enemies from level data');
+
+      // Find an enemy spawner entity to use
+      const { EntityType } = this.getEntityTypes();
+      const spawners = levelData.entities.filter(
+        (e) => e.type === EntityType.ENEMY_SPAWNER && e.position && e.enemyType
+      ) as Array<{
+        type: string;
+        position: { x: number; y: number };
+        enemyType: string;
+      }>;
+
+      if (spawners.length > 0) {
+        // Pick a random spawner
+        const index = Phaser.Math.Between(0, spawners.length - 1);
+        const spawner = spawners[index];
+
+        if (spawner) {
+          // Spawn 1-3 enemies
+          const count = Phaser.Math.Between(1, 3);
+          for (let i = 0; i < count; i++) {
+            this.spawnEnemyFromEntity(spawner);
+          }
+        }
+      }
+    }
   }
 }

@@ -35,7 +35,6 @@ export class DesignStep {
 
   // Entity management
   private entities: Phaser.GameObjects.Container[] = [];
-  private selectedEntity: Phaser.GameObjects.Container | undefined;
 
   // Level ID
   private levelId: string | undefined;
@@ -139,6 +138,9 @@ export class DesignStep {
 
     // Add step navigation buttons
     this.createStepNavigation();
+
+    // Add save button
+    this.createSaveButton();
   }
 
   /**
@@ -630,7 +632,7 @@ export class DesignStep {
     tabsContainer.add(separatorLine);
 
     // Create tabs with better visibility and spacing
-    const tabWidth = 220 / categories.length;
+    const tabWidth = 300 / categories.length;
     categories.forEach((category, index) => {
       // Tab background with improved colors
       const tabBg = this.scene.add.rectangle(
@@ -1622,7 +1624,7 @@ export class DesignStep {
         }
 
         // Store the reference to the currently selected entity
-        this.selectedEntity = entity;
+        // selection reference removed
       } else {
         // Remove selection visual
         if (sprite instanceof Phaser.GameObjects.Shape) {
@@ -1643,7 +1645,7 @@ export class DesignStep {
 
     // If nothing is selected, clear the selected entity reference
     if (selectedIds.length === 0) {
-      this.selectedEntity = undefined;
+      // selection reference removed
 
       // Hide properties panel when nothing is selected
       if (this.propertiesContainer) {
@@ -2187,7 +2189,7 @@ export class DesignStep {
     this.entities = [];
 
     // Clear selected entity
-    this.selectedEntity = undefined;
+    // selection reference removed
   }
 
   /**
@@ -2302,10 +2304,26 @@ export class DesignStep {
    * Save current progress
    */
   private saveProgress(): void {
-    // Skip saving if we don't have a level ID
+    // If we don't have a level ID, create a new one
     if (!this.levelId) {
-      console.warn('[DesignStep] Cannot save progress: No level ID');
-      return;
+      // Create a new level with default settings
+      const newLevel = this.service.createEmptyLevel({
+        name: 'My Custom Level',
+        author: 'Player',
+        difficulty: 1,
+        backgroundSpeed: 1,
+        backgroundTexture: 'stars',
+        musicTrack: 'default',
+        version: '1.0.0',
+      });
+
+      // Save the new level to get an ID
+      this.levelId = this.service.saveLevel(newLevel);
+
+      // Update the manager with the new level ID
+      this.manager.setCurrentLevelId(this.levelId);
+
+      console.log(`[DesignStep] Created new level with ID: ${this.levelId}`);
     }
 
     console.log(`[DesignStep] Saving level: ${this.levelId}`);
@@ -2329,23 +2347,59 @@ export class DesignStep {
       }
     });
 
-    // Get the current level data
-    const levelData = this.service.loadLevel(this.levelId);
+    // Get the current level data or create a new one
+    let levelData = this.service.loadLevel(this.levelId);
 
     if (!levelData) {
-      console.error(`[DesignStep] Failed to load level ${this.levelId} for saving`);
-      return;
+      console.log(`[DesignStep] Creating new level data for ID: ${this.levelId}`);
+      // Create new level data
+      levelData = this.service.createEmptyLevel({
+        name: 'My Custom Level',
+        author: 'Player',
+        difficulty: 1,
+      });
+      levelData.id = this.levelId;
     }
 
     // Update entities and metadata
     levelData.entities = entities;
-    levelData.metadata.lastModified = Date.now();
+    if (levelData.metadata) {
+      levelData.metadata.lastModified = Date.now();
+    } else {
+      levelData.metadata = {
+        lastModified: Date.now(),
+        createdAt: Date.now(),
+        version: '1.0.0',
+      };
+    }
 
-    // Save the level
-    this.service.saveLevel(levelData);
+    // Add a player start position if not present
+    const hasPlayerStart = entities.some((entity) => entity.type === EntityType.PLAYER_START);
+    if (!hasPlayerStart) {
+      console.log('[DesignStep] Adding default player start position');
+      // Add a default player start at the bottom center
+      const playerStartEntity: BaseEntity = {
+        id: `player_start_${Date.now().toString(36)}`,
+        type: EntityType.PLAYER_START,
+        position: { x: 400, y: 500 },
+        rotation: 0,
+        scale: 1,
+      };
+      levelData.entities.push(playerStartEntity);
+    }
+
+    // Save the level and capture the stable ID
+    const savedId = this.service.saveLevel(levelData);
+
+    // Sync IDs in case the service resolved/assigned a different one
+    this.levelId = savedId;
+    this.manager.setCurrentLevelId(savedId);
 
     // Reset dirty flag
     this.manager.setDirty(false);
+
+    // Show a confirmation message to the user
+    this.showSavedMessage();
 
     console.log(`[DesignStep] Level saved: ${this.levelId} with ${entities.length} entities`);
   }
@@ -2366,5 +2420,76 @@ export class DesignStep {
         this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
       }
     }
+  }
+
+  /**
+   * Shows a message to confirm the level was saved
+   */
+  private showSavedMessage(): void {
+    // Get scene references
+    const scene = this.scene as Phaser.Scene;
+
+    // Create a text message
+    const text = scene.add
+      .text(scene.cameras.main.centerX, scene.cameras.main.centerY - 100, 'Level Saved!', {
+        fontFamily: 'Arial',
+        fontSize: '24px',
+        color: '#FFFFFF',
+        stroke: '#000000',
+        strokeThickness: 3,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    // Add a simple animation
+    scene.tweens.add({
+      targets: text,
+      y: text.y - 50,
+      alpha: 0,
+      duration: 2000,
+      ease: 'Power2',
+      onComplete: () => {
+        text.destroy();
+      },
+    });
+  }
+
+  /**
+   * Creates a save button in the top toolbar
+   */
+  private createSaveButton(): void {
+    // Get scene reference
+    const scene = this.scene as Phaser.Scene;
+
+    // Create a save button in the top-right corner
+    const saveButton = scene.add.text(scene.scale.width - 160, 20, 'Save Level', {
+      fontSize: '18px',
+      color: '#ffffff',
+      backgroundColor: '#4c7edb',
+      padding: { x: 12, y: 8 },
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 1,
+    });
+
+    // Make the button interactive
+    saveButton.setInteractive({ useHandCursor: true });
+
+    // Add hover effect
+    saveButton.on('pointerover', () => {
+      saveButton.setStyle({ backgroundColor: '#6497ff' });
+    });
+
+    saveButton.on('pointerout', () => {
+      saveButton.setStyle({ backgroundColor: '#4c7edb' });
+    });
+
+    // Add click handler
+    saveButton.on('pointerdown', () => {
+      this.saveProgress();
+    });
+
+    // Button should be above the step UI
+    saveButton.setDepth(100);
   }
 }

@@ -4,7 +4,12 @@
  */
 
 import * as Phaser from 'phaser';
-import { LevelData, LevelSettings, BaseEntity, EntityType, LevelMetadata } from '../../../shared/types/buildMode';
+import {
+  LevelData,
+  LevelSettings,
+  EntityType,
+  LevelMetadata,
+} from '../../../shared/types/buildMode';
 
 /**
  * Service that handles the backbone logic for Build Mode
@@ -72,7 +77,7 @@ export class BuildModeService {
       return null;
     }
   }
-  
+
   /**
    * Get metadata for a level by ID
    * @param id The level ID
@@ -81,10 +86,10 @@ export class BuildModeService {
     try {
       // Get the level list
       const levels = this.getLevelList();
-      
+
       // Find the level with the given ID
-      const level = levels.find(level => level.id === id);
-      
+      const level = levels.find((level) => level.id === id);
+
       if (!level) return null;
       return level;
     } catch (error) {
@@ -101,47 +106,70 @@ export class BuildModeService {
    */
   saveLevel(levelData: LevelData, metadata?: Partial<LevelMetadata>): string {
     try {
-      // Generate or use existing ID
-      const id = metadata?.id || this.generateId();
-      
+      // Preserve existing IDs: prefer levelData.id, then metadata.id, else generate
+      const id = levelData.id || metadata?.id || this.generateId();
+
+      // Ensure the stored level object has the resolved id
+      levelData.id = id;
+
       // Save level data
       localStorage.setItem(this.KEYS.LEVEL_DATA(id), JSON.stringify(levelData));
-      
+
       // Update level list
       const levels = this.getLevelList();
       const now = Date.now();
-      
+
       // Find existing metadata or create new
-      const existingIndex = levels.findIndex(level => level.id === id);
-      const levelMeta: LevelMetadata = existingIndex >= 0 
-        ? { ...levels[existingIndex], lastModified: now, ...metadata }
-        : {
-            id,
-            name: levelData.settings.name,
-            author: levelData.settings.author,
-            difficulty: levelData.settings.difficulty,
-            description: levelData.settings.description,
-            createdAt: now,
-            lastModified: now,
-            isPublished: false,
-            ...metadata
-          };
-      
+      const existingIndex = levels.findIndex((level) => level.id === id);
+      const levelMeta: LevelMetadata =
+        existingIndex >= 0
+          ? (() => {
+              const existing = levels[existingIndex]!;
+              const description =
+                levelData.settings.description !== undefined
+                  ? levelData.settings.description
+                  : existing.description !== undefined
+                    ? existing.description
+                    : '';
+              return {
+                id: existing.id,
+                name: levelData.settings.name || existing.name,
+                author: levelData.settings.author || existing.author,
+                difficulty: levelData.settings.difficulty ?? existing.difficulty,
+                description,
+                createdAt: existing.createdAt,
+                lastModified: now,
+                isPublished: existing.isPublished,
+                publishId: existing.publishId ?? '',
+              };
+            })()
+          : {
+              id,
+              name: levelData.settings.name,
+              author: levelData.settings.author,
+              difficulty: levelData.settings.difficulty,
+              description: levelData.settings.description ?? '',
+              createdAt: now,
+              lastModified: now,
+              isPublished: false,
+              publishId: metadata?.publishId ?? '',
+            };
+
       // Update level list
       if (existingIndex >= 0) {
         levels[existingIndex] = levelMeta;
       } else {
         levels.push(levelMeta);
       }
-      
+
       localStorage.setItem(this.KEYS.LEVEL_LIST, JSON.stringify(levels));
-      
+
       // Clear autosave if this was a proper save
       localStorage.removeItem(this.KEYS.AUTOSAVE);
-      
+
       // Emit event
       this.events.emit('level-saved', id);
-      
+
       return id;
     } catch (error) {
       console.error('[BuildModeService] Error saving level:', error);
@@ -157,14 +185,14 @@ export class BuildModeService {
     try {
       // Remove level data
       localStorage.removeItem(this.KEYS.LEVEL_DATA(id));
-      
+
       // Update level list
-      const levels = this.getLevelList().filter(level => level.id !== id);
+      const levels = this.getLevelList().filter((level) => level.id !== id);
       localStorage.setItem(this.KEYS.LEVEL_LIST, JSON.stringify(levels));
-      
+
       // Emit event
       this.events.emit('level-deleted', id);
-      
+
       return true;
     } catch (error) {
       console.error(`[BuildModeService] Error deleting level ${id}:`, error);
@@ -178,10 +206,13 @@ export class BuildModeService {
    */
   autoSave(levelData: LevelData): void {
     try {
-      localStorage.setItem(this.KEYS.AUTOSAVE, JSON.stringify({
-        data: levelData,
-        timestamp: Date.now()
-      }));
+      localStorage.setItem(
+        this.KEYS.AUTOSAVE,
+        JSON.stringify({
+          data: levelData,
+          timestamp: Date.now(),
+        })
+      );
     } catch (error) {
       console.error('[BuildModeService] Error autosaving level:', error);
     }
@@ -236,7 +267,7 @@ export class BuildModeService {
    */
   validateLevel(levelData: LevelData): string[] {
     const issues: string[] = [];
-    
+
     // Check for required fields
     if (!levelData.settings) {
       issues.push('Missing level settings');
@@ -244,26 +275,29 @@ export class BuildModeService {
       if (!levelData.settings.name) issues.push('Missing level name');
       if (!levelData.settings.author) issues.push('Missing level author');
     }
-    
+
     // Check for player start position
     const hasPlayerStart = levelData.entities?.some(
-      entity => entity.type === EntityType.PLAYER_START
+      (entity) => entity.type === EntityType.PLAYER_START
     );
-    
+
     if (!hasPlayerStart) {
       issues.push('Level must have a player start position');
     }
-    
+
     // Check for entities outside of bounds
     const outOfBoundsEntities = levelData.entities?.filter(
-      entity => entity.position.x < 0 || entity.position.x > 3000 || 
-                entity.position.y < 0 || entity.position.y > 3000
+      (entity) =>
+        entity.position.x < 0 ||
+        entity.position.x > 3000 ||
+        entity.position.y < 0 ||
+        entity.position.y > 3000
     );
-    
+
     if (outOfBoundsEntities && outOfBoundsEntities.length > 0) {
       issues.push(`${outOfBoundsEntities.length} entities are outside the level bounds`);
     }
-    
+
     return issues;
   }
 
@@ -275,7 +309,7 @@ export class BuildModeService {
   createEmptyLevel(settings: Partial<LevelSettings> = {}): LevelData {
     const now = Date.now();
     const id = `level_${now.toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
-    
+
     return {
       id,
       settings: {
@@ -286,14 +320,14 @@ export class BuildModeService {
         backgroundTexture: 'stars',
         musicTrack: 'default',
         version: '1.0.0',
-        ...settings
+        ...settings,
       },
       entities: [],
       metadata: {
         createdAt: now,
         lastModified: now,
-        version: '1.0.0'
-      }
+        version: '1.0.0',
+      },
     };
   }
 
@@ -307,7 +341,7 @@ export class BuildModeService {
     // In a real implementation, we would load templates from a predefined set
     // For now, just create an empty level with some entities
     const level = this.createEmptyLevel(settings);
-    
+
     // Add some starter entities based on template
     if (templateName === 'basic') {
       level.entities.push({
@@ -315,10 +349,10 @@ export class BuildModeService {
         type: EntityType.PLAYER_START,
         position: { x: 400, y: 500 },
         rotation: 0,
-        scale: 1
+        scale: 1,
       });
     }
-    
+
     return level;
   }
 
@@ -335,8 +369,8 @@ export class BuildModeService {
    * @param event The event name
    * @param callback The callback function
    */
-  on(event: string, callback: Function): void {
-    this.events.on(event, callback);
+  on(event: string, callback: (...args: unknown[]) => void): void {
+    this.events.on(event, callback as (...args: unknown[]) => void);
   }
 
   /**
@@ -344,12 +378,12 @@ export class BuildModeService {
    * @param event The event name
    * @param callback The callback function
    */
-  off(event: string, callback: Function): void {
-    this.events.off(event, callback);
+  off(event: string, callback: (...args: unknown[]) => void): void {
+    this.events.off(event, callback as (...args: unknown[]) => void);
   }
 
   // Server-side methods (to be implemented when backend is ready)
-  
+
   /**
    * Publish a level to the server
    * @param levelId The ID of the level to publish
@@ -357,35 +391,35 @@ export class BuildModeService {
    */
   async publishLevel(levelId: string): Promise<string> {
     console.log(`[BuildModeService] Publishing level ${levelId}`);
-    
+
     // Mark the level as published in metadata
     const levels = this.getLevelList();
-    const levelIndex = levels.findIndex(level => level.id === levelId);
-    
+    const levelIndex = levels.findIndex((level) => level.id === levelId);
+
     if (levelIndex === -1) {
       throw new Error(`Level with ID ${levelId} not found`);
     }
-    
+
     // Update the metadata
     const level = levels[levelIndex];
     if (!level) {
       throw new Error(`Level with ID ${levelId} not found`);
     }
-    
+
     level.isPublished = true;
-    
+
     // Generate a publish ID if one doesn't exist
     if (!level.publishId) {
       level.publishId = `pub_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     }
-    
+
     // Save updated metadata
     localStorage.setItem(this.KEYS.LEVEL_LIST, JSON.stringify(levels));
-    
+
     // Return the publish ID
     return level.publishId || '';
   }
-  
+
   /**
    * Get published levels from the server
    * @returns An array of level metadata

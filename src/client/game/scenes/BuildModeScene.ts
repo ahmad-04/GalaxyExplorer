@@ -33,7 +33,7 @@ export class BuildModeScene extends Phaser.Scene {
   private levelBrowser?: LevelBrowser;
 
   // Current level ID (if any)
-  private currentLevelId?: string;
+  private currentLevelId?: string | undefined;
 
   constructor() {
     super({ key: 'BuildModeScene' });
@@ -222,8 +222,9 @@ export class BuildModeScene extends Phaser.Scene {
   /**
    * Change to a different step in the workflow
    * @param stepName The name of the step to change to
+   * @param levelId Optional level ID to pass to the next step
    */
-  changeStep(stepName: string) {
+  changeStep(stepName: string, levelId?: string) {
     console.log(`[BuildModeScene] Changing step from ${this.currentStep} to ${stepName}`);
 
     // Deactivate current step
@@ -231,6 +232,14 @@ export class BuildModeScene extends Phaser.Scene {
 
     // Update current step
     this.currentStep = stepName;
+
+    // Update current level ID if provided
+    if (levelId) {
+      this.currentLevelId = levelId;
+    } else {
+      // If no level ID is provided, get the current one from the manager
+      this.currentLevelId = this.buildModeManager.getCurrentLevelId();
+    }
 
     // Activate new step
     this.activateCurrentStep();
