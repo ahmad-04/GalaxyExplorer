@@ -102,6 +102,9 @@ export class StarshipScene extends Phaser.Scene {
     this.activePowerUps.clear();
     this.isShieldActive = false;
     this.collisionsActive = false; // Start with collisions disabled until setup is complete
+    // Ensure test state resets on every init
+    this.testCompleted = false;
+    this.expectedEnemiesToDefeat = 0;
 
     // Log registry state at initialization
     console.log('[StarshipScene] Registry state at init:', {
@@ -1729,6 +1732,20 @@ export class StarshipScene extends Phaser.Scene {
     this.fireRate = 200;
     this.lastFired = 0;
     this.difficulty = 1;
+
+    // Clear test-related registry flags and counters to avoid stale state on next run
+    try {
+      this.registry.set('testMode', false);
+      this.registry.set('buildModeTest', false);
+      this.registry.set('isBuildModeTest', false);
+      this.registry.set('enemiesDefeated', 0);
+      this.registry.set('playerDeaths', 0);
+      this.registry.set('powerupsCollected', 0);
+      // Clear test level data reference
+      this.registry.set('testLevelData', undefined);
+    } catch (e) {
+      console.warn('[StarshipScene] Failed to clear registry test flags:', e);
+    }
 
     console.log('[StarshipScene] Shutdown completed, all resources cleaned up');
   }

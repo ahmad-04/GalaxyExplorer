@@ -945,6 +945,23 @@ export class TestStep {
    * Launch the game scene in test mode
    */
   private launchTestGame(): void {
+    // Ensure any previous StarshipScene instance is stopped for a clean start
+    if (this.scene.scene.isActive('StarshipScene')) {
+      console.log('[TestStep] StarshipScene already active; stopping before relaunch');
+      // Emit stop to the StarshipScene to allow graceful shutdown and stats flush
+      const starship = this.scene.scene.get('StarshipScene') as Phaser.Scene | undefined;
+      if (starship) {
+        starship.events.emit('test:stop');
+      }
+      this.scene.scene.stop('StarshipScene');
+    }
+
+    // Reset per-test registry counters/flags to avoid leakage between runs
+    this.scene.registry.set('enemiesDefeated', 0);
+    this.scene.registry.set('playerDeaths', 0);
+    this.scene.registry.set('powerupsCollected', 0);
+    this.scene.registry.set('isBuildModeTest', true);
+
     // First make sure we've tried to set up the test environment
     this.setupTestEnvironment();
 
@@ -1013,9 +1030,8 @@ export class TestStep {
     this.scene.events.once('test:completed', this.handleTestCompleted, this);
     this.scene.events.once('test:stats', this.handleTestStats, this);
 
-    // Add flag for build mode test to registry to make it accessible across scenes
-    this.scene.registry.set('isBuildModeTest', true);
-    console.log('[TestStep] Set isBuildModeTest flag in registry');
+    // Add flag for build mode test to registry to make it accessible across scenes (already set above)
+    console.log('[TestStep] isBuildModeTest flag set in registry');
 
     // Ensure level data is in registry
     this.scene.registry.set('testLevelData', levelData);
@@ -1240,11 +1256,12 @@ export class TestStep {
     // Stop the game scene if it's running
     if (this.scene.scene.isActive('StarshipScene')) {
       // Signal to the game scene that we're stopping the test
-      this.scene.events.emit('test:stop');
-
+      const starship = this.scene.scene.get('StarshipScene') as Phaser.Scene | undefined;
+      if (starship) {
+        starship.events.emit('test:stop');
+      }
       // Stop and remove the game scene
       this.scene.scene.stop('StarshipScene');
-
       console.log('[TestStep] Game scene stopped');
     }
 
