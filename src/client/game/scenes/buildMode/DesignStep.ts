@@ -1493,8 +1493,8 @@ export class DesignStep {
       }
     });
 
-    // Set rotation if specified
-    if (entityData.rotation) {
+    // Set rotation if specified (allow 0)
+    if (typeof entityData.rotation === 'number') {
       entityContainer.setRotation(entityData.rotation);
     }
 
@@ -1714,14 +1714,14 @@ export class DesignStep {
     // Rotation (numeric input)
     const rotationControl = this.addNumericProperty(
       'Rotation',
-      entityData.rotation,
+      Phaser.Math.RadToDeg(entityData.rotation ?? 0),
       currentY,
       0,
       360,
       (value) => {
-        // Update entity rotation
-        entityData.rotation = value;
-        entity.setRotation(Phaser.Math.DegToRad(value));
+        // Update entity rotation (store in radians, display in degrees)
+        entityData.rotation = Phaser.Math.DegToRad(value);
+        entity.setRotation(entityData.rotation);
         this.manager.setDirty(true);
       }
     );

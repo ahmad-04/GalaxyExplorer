@@ -60,6 +60,10 @@ export class StarshipScene extends Phaser.Scene {
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
+  // Build Mode test completion state
+  private testCompleted = false;
+  private testCompletionMonitor: Phaser.Time.TimerEvent | undefined;
+  private expectedEnemiesToDefeat = 0;
 
   constructor() {
     super({ key: 'StarshipScene' });
@@ -239,6 +243,9 @@ export class StarshipScene extends Phaser.Scene {
       if (isBuildModeTest) {
         this.events.on('test:stop', this.handleTestStop, this);
 
+        // React to generic enemy removal notifications (e.g., off-screen culls)
+        this.events.on('enemy:removed', this.checkForTestCompletion, this);
+
         // Initialize test stats in registry
         this.registry.set('enemiesDefeated', 0);
         this.registry.set('playerDeaths', 0);
@@ -408,6 +415,8 @@ export class StarshipScene extends Phaser.Scene {
         testLevelData.settings.name
       );
       this.setupCustomLevel(testLevelData);
+      // Start monitoring for completion when all custom enemies are cleared
+      this.startTestCompletionMonitor();
     } else {
       // Log detailed reason why not using custom level
       if (!testLevelData) {
@@ -784,6 +793,9 @@ export class StarshipScene extends Phaser.Scene {
         repeat: -1,
       });
     }
+
+    // In Build Mode tests, check for completion when enemies are cleared
+    this.checkForTestCompletion();
   }
 
   private onPlayerHit(enemy: Phaser.Physics.Arcade.Sprite): void {
@@ -801,7 +813,18 @@ export class StarshipScene extends Phaser.Scene {
 
       // Destroy the enemy that hit the shield
       if (enemy && enemy.active) {
+        // Count shield-based enemy destruction in Build Mode tests
+        if (this.registry.get('buildModeTest') === true) {
+          const currentDefeats = this.registry.get('enemiesDefeated') || 0;
+          this.registry.set('enemiesDefeated', currentDefeats + 1);
+          console.log(
+            `[StarshipScene] Test mode: Enemy destroyed by shield (total: ${currentDefeats + 1})`
+          );
+        }
         enemy.destroy();
+
+        // After destroying by shield, check for test completion
+        this.checkForTestCompletion();
       }
 
       // Strong visual feedback for shield hit
@@ -833,6 +856,20 @@ export class StarshipScene extends Phaser.Scene {
     }
 
     console.log('[StarshipScene] No shield, starting game over sequence');
+
+    // If the enemy is still present and active at collision, count as destroyed-by-crash
+    if (enemy && enemy.active) {
+      if (this.registry.get('buildModeTest') === true) {
+        const currentDefeats = this.registry.get('enemiesDefeated') || 0;
+        this.registry.set('enemiesDefeated', currentDefeats + 1);
+        console.log(
+          `[StarshipScene] Test mode: Enemy destroyed by crash (total: ${currentDefeats + 1})`
+        );
+      }
+      enemy.destroy();
+      // Check completion after crash-based destruction
+      this.checkForTestCompletion();
+    }
 
     // Track player deaths for test mode
     if (this.registry.get('buildModeTest') === true) {
@@ -1585,6 +1622,16 @@ export class StarshipScene extends Phaser.Scene {
     }
 
     // 1. Clean up all timers
+    if (this.testCompletionMonitor) {
+      this.testCompletionMonitor.remove();
+      this.testCompletionMonitor = undefined;
+    }
+    this.testCompleted = false;
+    this.expectedEnemiesToDefeat = 0;
+
+    // Remove test-related listeners
+    this.events.off('test:stop', this.handleTestStop, this);
+    this.events.off('enemy:removed', this.checkForTestCompletion, this);
     // Deactivate any active power-up and their timers
     this.deactivateAllPowerUps();
 
@@ -1902,6 +1949,16 @@ export class StarshipScene extends Phaser.Scene {
       `[StarshipScene] Placed ${enemiesPlaced} enemies from custom level. Expected: ${levelData.entities.filter((e) => e.type === EntityType.ENEMY_SPAWNER).length}`
     );
 
+    // Track expected kills for Build Mode auto-completion: only count placed enemies
+    if (this.registry.get('buildModeTest') === true) {
+      this.expectedEnemiesToDefeat = enemiesPlaced;
+      // Reset defeated count at start of a test just in case
+      this.registry.set('enemiesDefeated', 0);
+      console.log(
+        `[StarshipScene] Build test: expecting ${this.expectedEnemiesToDefeat} enemies to be defeated by fire`
+      );
+    }
+
     // For Build Mode tests, do NOT auto-respawn or revert to default spawns.
     // Designers expect only their placed enemies to appear.
     if (this.registry.get('buildModeTest') === true) {
@@ -2125,6 +2182,69 @@ export class StarshipScene extends Phaser.Scene {
           }
         }
       }
+    }
+  }
+
+  // ===== Build Mode Test Completion Helpers =====
+  private startTestCompletionMonitor(): void {
+    if (this.registry.get('buildModeTest') !== true) return;
+    if (this.testCompletionMonitor) this.testCompletionMonitor.remove();
+    this.testCompletionMonitor = this.time.addEvent({
+      delay: 300,
+      loop: true,
+      callback: () => this.checkForTestCompletion(),
+    });
+  }
+
+  private checkForTestCompletion(): void {
+    if (this.registry.get('buildModeTest') === true && !this.testCompleted) {
+      const expected = this.expectedEnemiesToDefeat || 0;
+      if (expected <= 0) return; // Do not auto-complete when nothing was placed
+      const defeated = this.registry.get('enemiesDefeated') || 0;
+      if (defeated >= expected) {
+        console.log('[StarshipScene] All placed enemies defeated; completing build test');
+        this.completeBuildTest();
+        return;
+      }
+
+      // Fallback/secondary: coordinate-based approach — no active enemies in bounds
+      const inBoundsActive = this.getActiveEnemiesInBounds();
+      if (inBoundsActive === 0) {
+        console.log('[StarshipScene] No active enemies within bounds; completing build test');
+        this.completeBuildTest();
+      }
+    }
+  }
+
+  // Counts active enemies within an expanded playfield bounding box
+  private getActiveEnemiesInBounds(marginX = 50, marginY = 100): number {
+    if (!this.enemies) return 0;
+    const width = this.scale.width;
+    const height = this.scale.height;
+    let count = 0;
+    this.enemies.getChildren().forEach((child) => {
+      const s = child as Phaser.Physics.Arcade.Sprite;
+      if (!s || !s.active) return;
+      const x = s.x;
+      const y = s.y;
+      const inX = x >= -marginX && x <= width + marginX;
+      const inY = y >= -marginY && y <= height + marginY;
+      if (inX && inY) count++;
+    });
+    return count;
+  }
+
+  private completeBuildTest(): void {
+    if (this.testCompleted) return;
+    this.testCompleted = true;
+    // Send stats back first
+    this.sendTestStats();
+    // Notify BuildModeScene so TestStep can stop the test
+    const buildModeScene = this.scene.get('BuildModeScene');
+    if (buildModeScene) {
+      buildModeScene.events.emit('test:completed');
+    } else {
+      this.events.emit('test:completed');
     }
   }
 }

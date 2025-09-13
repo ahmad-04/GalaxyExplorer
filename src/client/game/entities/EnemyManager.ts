@@ -236,6 +236,16 @@ export class EnemyManager {
       // Clean up enemies that are way off screen
       const y = (enemySprite as Phaser.Physics.Arcade.Sprite).y;
       if (y > this.scene.scale.height + 100) {
+        // In Build Mode tests, count off-screen removals toward completion
+        if (this.scene.registry.get('buildModeTest') === true) {
+          const current = this.scene.registry.get('enemiesDefeated') || 0;
+          this.scene.registry.set('enemiesDefeated', current + 1);
+          console.log(
+            `[EnemyManager] Build test: Enemy removed off-screen (total: ${current + 1})`
+          );
+          // Notify scene so it can check completion immediately
+          this.scene.events.emit('enemy:removed');
+        }
         enemySprite.destroy();
       }
     });
