@@ -15,11 +15,7 @@ export class SetupStep {
   private container!: Phaser.GameObjects.Container;
   private templateButtons: Phaser.GameObjects.Container[] = [];
 
-  // HTML form (Phaser DOMElement)
-  private formDom: Phaser.GameObjects.DOMElement | undefined;
-  private nameInput!: HTMLInputElement;
-  private descriptionInput!: HTMLTextAreaElement;
-  private difficultySlider!: HTMLInputElement;
+  // Removed level settings popup/form
 
   // State
   private selectedTemplate = 'empty';
@@ -66,11 +62,7 @@ export class SetupStep {
 
   /** Deactivate and cleanup */
   public deactivate() {
-    const realign = this.container?.getData('formRealign') as (() => void) | undefined;
-    if (realign) {
-      this.scene.scale.off('resize', realign);
-      window.removeEventListener('resize', realign as EventListener);
-    }
+    // Cleanup resize handlers
     if (this.resizeHandler) {
       this.scene.scale.off('resize', this.resizeHandler);
       this.resizeHandler = undefined;
@@ -79,7 +71,6 @@ export class SetupStep {
       this.scene.scale.off('resize', this.footerResizeHandler);
       this.footerResizeHandler = undefined;
     }
-    this.removeInputElements();
     if (this.container) {
       this.container.destroy(true);
       // @ts-expect-error allow cleanup
@@ -103,10 +94,7 @@ export class SetupStep {
     this.container.add(bg);
 
     // Template grid
-    const rows = this.createTemplateGrid(84);
-
-    // DOM form as a Phaser DOMElement inside the container
-    this.mountDomForm(rows, 84);
+    this.createTemplateGrid(84);
 
     // Footer navigation
     this.createNavigationButtons();
@@ -116,10 +104,6 @@ export class SetupStep {
       // Limit bg to canvas width (Phaser scale reflects canvas width)
       bg.width = this.scene.scale.width;
       bg.height = this.scene.scale.height - 60;
-
-      // Realign DOM form to new canvas size
-      const realign = this.container.getData('formRealign') as (() => void) | undefined;
-      if (realign) realign();
 
       // Rebuild template grid for new width
       this.templateButtons.forEach((c) => c.destroy());
@@ -190,81 +174,7 @@ export class SetupStep {
     return rows;
   }
 
-  private mountDomForm(gridRows: number, gridStartY: number) {
-    // Remove old DOMElement if exists
-    if (this.formDom) {
-      this.formDom.destroy();
-      this.formDom = undefined;
-    }
-
-    const html = `
-      <div id="build-mode-form-container" style="width:100%;max-width:520px;padding:16px;background:rgba(18,20,25,0.95);border:1px solid #2f3646;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.35)">
-        <div class="build-below-header" style="margin-bottom:10px">Level Settings</div>
-        <label class="build-mode-label">Level Name</label>
-        <input id="bm-name" class="build-mode-input" type="text" placeholder="Enter a level name" />
-        <label class="build-mode-label" style="margin-top:12px">Description</label>
-        <textarea id="bm-desc" class="build-mode-input build-mode-textarea" placeholder="Describe your level"></textarea>
-        <label class="build-mode-label" style="margin-top:12px">Difficulty <span id="bm-diff-val" class="bm-pill" style="margin-left:8px">1</span></label>
-        <input id="bm-diff" class="build-mode-slider" type="range" min="1" max="10" />
-      </div>`;
-
-    // Compute target position under the grid
-    const padding = 16;
-    const cardH = 110;
-    const gap = 14;
-    const gridHeight = gridStartY + gridRows * (cardH + gap) + 16;
-
-    // Create DOMElement
-    const dom = this.scene.add.dom(padding, gridHeight).createFromHTML(html);
-    dom.setOrigin(0, 0);
-    this.container.add(dom);
-    this.formDom = dom;
-
-    const root = dom.node as HTMLElement;
-    this.nameInput = root.querySelector('#bm-name') as HTMLInputElement;
-    this.descriptionInput = root.querySelector('#bm-desc') as HTMLTextAreaElement;
-    this.difficultySlider = root.querySelector('#bm-diff') as HTMLInputElement;
-    const diffVal = root.querySelector('#bm-diff-val') as HTMLSpanElement;
-
-    this.nameInput.value = this.levelSettings.name || '';
-    this.descriptionInput.value = this.levelSettings.description || '';
-    this.difficultySlider.value = String(this.levelSettings.difficulty ?? 1);
-    diffVal.textContent = this.difficultySlider.value;
-
-    const setDiffColor = (n: number) => {
-      if (n <= 3) diffVal.style.color = '#4aff4a';
-      else if (n <= 7) diffVal.style.color = '#ffff4a';
-      else diffVal.style.color = '#ff4a4a';
-    };
-    setDiffColor(parseInt(this.difficultySlider.value));
-    this.difficultySlider.addEventListener('input', () => {
-      const n = parseInt(this.difficultySlider.value);
-      diffVal.textContent = String(n);
-      setDiffColor(n);
-    });
-
-    // Position relative to canvas and template grid height
-    const realign = () => {
-      const maxW = Math.min(520, Math.max(280, this.scene.scale.width - padding * 2));
-      dom.setPosition(padding, gridStartY + gridRows * (cardH + gap) + 16);
-      (root.firstElementChild as HTMLElement).style.maxWidth = `${maxW}px`;
-      (root.firstElementChild as HTMLElement).style.width = `${maxW}px`;
-    };
-    realign();
-    this.container.setData('formRealign', realign);
-    this.scene.scale.on('resize', realign);
-    // No window listener needed; Phaser scale handles canvas changes
-  }
-
-  /**
-   * Create HTML input elements for the form
-   */
-  private removeInputElements() {
-    if (this.formDom) {
-      this.formDom.destroy();
-      this.formDom = undefined;
-    }
-  }
+  // Removed form mounting and inputs
 
   /**
    * Create simple navigation buttons
@@ -403,11 +313,6 @@ export class SetupStep {
    * Proceed to the design step
    */
   private proceedToDesign() {
-    // Update level settings from form
-    this.levelSettings.name = this.nameInput.value;
-    this.levelSettings.description = this.descriptionInput.value;
-    this.levelSettings.difficulty = parseInt(this.difficultySlider.value);
-
     console.log('[SetupStep] Proceeding to design with settings:', this.levelSettings);
 
     // Create or update level
