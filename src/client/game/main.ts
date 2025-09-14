@@ -26,15 +26,16 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: true, // Enable debug mode to show hitboxes
     },
   },
+  dom: { createContainer: true },
   scene: [
-    Boot, 
-    LoadingScene, 
-    MainMenu, 
-    StarshipScene, 
-    GameOver, 
-    CustomizationScene, 
+    Boot,
+    LoadingScene,
+    MainMenu,
+    StarshipScene,
+    GameOver,
+    CustomizationScene,
     EnemyTest,
-    ...(isFeatureEnabled('ENABLE_BUILD_MODE') ? [BuildModeScene] : [])
+    ...(isFeatureEnabled('ENABLE_BUILD_MODE') ? [BuildModeScene] : []),
   ],
 };
 

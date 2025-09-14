@@ -1,110 +1,161 @@
 /* Build Mode UI Styles */
 
+:root {
+  /* Theme tokens */
+  --bm-bg: #121419;
+  --bm-surface: #1b1f27;
+  --bm-surface-2: #222736;
+  --bm-border: #2f3646;
+  --bm-text: #e7ecf3;
+  --bm-text-muted: #b8c0cc;
+  --bm-primary: #4a90e2;
+  --bm-primary-600: #3570b2;
+  --bm-primary-400: #5aa0ef;
+  --bm-success: #2ecc71;
+  --bm-warning: #ffcc00;
+  --bm-danger: #ff4a4a;
+  --bm-shadow: rgba(0, 0, 0, 0.35);
+  --bm-radius: 8px;
+  --bm-radius-sm: 6px;
+  --bm-radius-xs: 4px;
+  --bm-space-1: 6px;
+  --bm-space-2: 10px;
+  --bm-space-3: 14px;
+  --bm-space-4: 20px;
+  --bm-space-5: 28px;
+  --bm-input-height: 36px;
+}
+
 /* General Form Elements */
 .build-mode-input {
-  font-family: 'Arial', sans-serif;
-  background-color: #2a2a2a;
-  border: 1px solid #555;
-  color: #eee;
-  border-radius: 4px;
+  font-family: 'Inter', system-ui, Arial, sans-serif;
+  background-color: var(--bm-surface);
+  border: 1px solid var(--bm-border);
+  color: var(--bm-text);
+  border-radius: var(--bm-radius-xs);
   padding: 8px 12px;
   width: 100%;
-  font-size: 16px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: border-color 0.3s, box-shadow 0.3s;
+  font-size: 15px;
+  height: var(--bm-input-height);
+  line-height: calc(var(--bm-input-height) - 12px);
+  box-shadow: 0 2px 6px var(--bm-shadow);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.build-mode-input::placeholder {
+  color: var(--bm-text-muted);
+  opacity: 0.9;
 }
 
 .build-mode-input:focus {
-  border-color: #4a90e2;
+  border-color: var(--bm-primary);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.3);
+  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.25);
+  background-color: #212636;
+}
+
+.build-mode-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .build-mode-label {
-  font-family: 'Arial', sans-serif;
-  color: #eee;
-  font-size: 16px;
-  margin-bottom: 6px;
-  font-weight: 500;
+  font-family: 'Inter', system-ui, Arial, sans-serif;
+  color: var(--bm-text);
+  font-size: 14px;
+  margin-bottom: var(--bm-space-1);
+  font-weight: 600;
   display: block;
 }
 
 .build-mode-textarea {
-  min-height: 100px;
+  min-height: 120px;
   resize: vertical;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 /* Button Styles */
 .build-mode-btn {
-  font-family: 'Arial', sans-serif;
-  background: linear-gradient(to bottom, #4a90e2, #3570b2);
+  font-family: 'Inter', system-ui, Arial, sans-serif;
+  background: linear-gradient(to bottom, var(--bm-primary), var(--bm-primary-600));
   color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 10px 20px;
-  font-size: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--bm-radius);
+  padding: 10px 16px;
+  font-size: 15px;
   cursor: pointer;
-  font-weight: 500;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease;
+  font-weight: 600;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px var(--bm-shadow);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.2s ease;
   display: inline-block;
   text-align: center;
 }
 
 .build-mode-btn:hover {
-  background: linear-gradient(to bottom, #5a9de2, #4580c2);
+  background: linear-gradient(to bottom, var(--bm-primary-400), var(--bm-primary));
   transform: translateY(-1px);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 10px var(--bm-shadow);
 }
 
 .build-mode-btn:active {
-  transform: translateY(1px);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transform: translateY(0);
+  box-shadow: 0 1px 3px var(--bm-shadow);
 }
 
 .build-mode-btn-secondary {
-  background: linear-gradient(to bottom, #666, #555);
+  background: linear-gradient(to bottom, #6b7280, #4b5563);
 }
 
 .build-mode-btn-secondary:hover {
-  background: linear-gradient(to bottom, #777, #666);
+  background: linear-gradient(to bottom, #818896, #6b7280);
 }
 
 /* Template Selection */
 .template-card {
-  background-color: #2a2a2a;
-  border: 2px solid #444;
-  border-radius: 6px;
-  padding: 15px;
-  margin-bottom: 15px;
-  transition: all 0.2s ease;
+  background-color: var(--bm-surface);
+  border: 1px solid var(--bm-border);
+  border-radius: var(--bm-radius);
+  padding: var(--bm-space-4);
+  margin-bottom: var(--bm-space-3);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.2s ease;
   cursor: pointer;
+  box-shadow: 0 2px 8px var(--bm-shadow);
 }
 
 .template-card:hover {
-  background-color: #333;
-  border-color: #555;
+  background-color: var(--bm-surface-2);
+  border-color: #3a4762;
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 16px var(--bm-shadow);
 }
 
 .template-card.selected {
-  border-color: #4a90e2;
-  background-color: rgba(74, 144, 226, 0.1);
+  border-color: var(--bm-primary);
+  box-shadow:
+    0 0 0 2px rgba(74, 144, 226, 0.25),
+    0 6px 16px var(--bm-shadow);
 }
 
 .template-title {
-  font-size: 20px;
-  font-weight: bold;
-  color: #fff;
-  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--bm-text);
+  margin-bottom: var(--bm-space-2);
 }
 
 .template-desc {
-  color: #bbb;
-  font-size: 14px;
+  color: var(--bm-text-muted);
+  font-size: 13px;
 }
 
 /* Slider Styling */
@@ -113,78 +164,89 @@
   appearance: none;
   width: 100%;
   height: 6px;
-  background: #444;
-  border-radius: 3px;
+  background: #3a4154;
+  border-radius: 999px;
   outline: none;
 }
 
 .build-mode-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #4a90e2;
+  background: var(--bm-primary);
   cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px var(--bm-shadow);
 }
 
 .build-mode-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #4a90e2;
+  background: var(--bm-primary);
   cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px var(--bm-shadow);
 }
 
 /* Container styles */
 .build-mode-container {
-  background-color: rgba(30, 30, 30, 0.9);
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  background-color: rgba(18, 20, 25, 0.9);
+  border-radius: var(--bm-radius);
+  padding: var(--bm-space-4);
+  box-shadow: 0 6px 18px var(--bm-shadow);
 }
 
 .build-mode-header {
-  font-family: 'Arial', sans-serif;
-  color: #fff;
-  font-size: 28px;
-  margin-bottom: 20px;
-  font-weight: bold;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  border-bottom: 1px solid #444;
-  padding-bottom: 10px;
+  font-family: 'Inter', system-ui, Arial, sans-serif;
+  color: var(--bm-text);
+  font-size: 26px;
+  margin-bottom: var(--bm-space-4);
+  font-weight: 800;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid var(--bm-border);
+  padding-bottom: var(--bm-space-2);
 }
 
 .build-mode-subheader {
-  font-family: 'Arial', sans-serif;
-  color: #ccc;
-  font-size: 20px;
-  margin: 20px 0 15px;
-  font-weight: 500;
+  font-family: 'Inter', system-ui, Arial, sans-serif;
+  color: var(--bm-text-muted);
+  font-size: 18px;
+  margin: var(--bm-space-4) 0 var(--bm-space-3);
+  font-weight: 600;
 }
 
 /* Form Group */
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: var(--bm-space-4);
 }
 
 /* Difficulty indicator */
 .difficulty-indicator {
   display: inline-block;
-  margin-left: 10px;
-  color: #fff;
-  font-weight: bold;
+  margin-left: var(--bm-space-2);
+  color: var(--bm-text);
+  font-weight: 700;
 }
 
 /* Navigation area */
 .nav-buttons {
   display: flex;
   justify-content: space-between;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid #444;
+  margin-top: var(--bm-space-5);
+  padding-top: var(--bm-space-3);
+  border-top: 1px solid var(--bm-border);
+}
+
+/* Utility: floating pill value */
+.bm-pill {
+  background: var(--bm-surface-2);
+  border: 1px solid var(--bm-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--bm-text);
+  box-shadow: 0 2px 6px var(--bm-shadow);
 }
