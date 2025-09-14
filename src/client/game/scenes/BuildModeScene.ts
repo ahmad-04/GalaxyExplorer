@@ -35,6 +35,9 @@ export class BuildModeScene extends Phaser.Scene {
   // Current level ID (if any)
   private currentLevelId?: string | undefined;
 
+  // Header collapse state (start collapsed to maximize grid area)
+  private headerCollapsed: boolean = true;
+
   constructor() {
     super({ key: 'BuildModeScene' });
   }
@@ -180,16 +183,18 @@ export class BuildModeScene extends Phaser.Scene {
    */
   private createCommonUI() {
     // Header with title - using gradient for visual enhancement
-    const header = this.add.rectangle(0, 0, this.scale.width, 60, 0x333333);
+    const expandedHeaderHeight = 12;
+    const initialHeaderHeight = this.headerCollapsed ? 0 : expandedHeaderHeight;
+    const header = this.add.rectangle(0, 0, this.scale.width, initialHeaderHeight, 0x333333);
     header.setOrigin(0, 0);
 
     // Add subtle gradient to header
     const headerGradient = this.add.graphics();
     headerGradient.fillGradientStyle(0x444444, 0x444444, 0x222222, 0x222222, 1);
-    headerGradient.fillRect(0, 0, this.scale.width, 60);
+    headerGradient.fillRect(0, 0, this.scale.width, expandedHeaderHeight);
 
-    const title = this.add.text(20, 20, 'Galaxy Explorer Build Mode', {
-      fontSize: '24px',
+    const title = this.add.text(8, 1, 'Build Mode', {
+      fontSize: '12px',
       color: '#ffffff',
       fontStyle: 'bold',
       stroke: '#000000',
@@ -199,7 +204,7 @@ export class BuildModeScene extends Phaser.Scene {
     // Simple subtle animation for the title
     this.tweens.add({
       targets: title,
-      y: 22,
+      y: 2,
       duration: 1500,
       yoyo: true,
       repeat: -1,
@@ -207,8 +212,8 @@ export class BuildModeScene extends Phaser.Scene {
     });
 
     // Help button
-    const helpButton = this.add.text(this.scale.width - 80, 20, 'Help', {
-      fontSize: '18px',
+    const helpButton = this.add.text(this.scale.width - 48, 1, 'Help', {
+      fontSize: '10px',
       color: '#ffffff',
       backgroundColor: '#666666',
       padding: { x: 10, y: 5 },
@@ -216,6 +221,40 @@ export class BuildModeScene extends Phaser.Scene {
     helpButton.setInteractive({ useHandCursor: true });
     helpButton.on('pointerdown', () => {
       this.showHelp();
+    });
+
+    // Persist header height for steps to use
+    this.data.set('headerHeight', initialHeaderHeight);
+
+    // Set initial visibility for collapsed state
+    const visible = !this.headerCollapsed;
+    header.setVisible(visible);
+    headerGradient.setVisible(visible);
+    title.setVisible(visible);
+    helpButton.setVisible(visible);
+
+    // Collapse/expand toggle
+    const toggle = this.add.text(this.scale.width - 20, 1, this.headerCollapsed ? '▼' : '▲', {
+      fontSize: '10px',
+      color: '#ffffff',
+      backgroundColor: '#444444',
+      padding: { x: 4, y: 2 },
+    });
+    toggle.setInteractive({ useHandCursor: true });
+    toggle.on('pointerdown', () => {
+      this.headerCollapsed = !this.headerCollapsed;
+      const newHeight = this.headerCollapsed ? 0 : expandedHeaderHeight;
+
+      // Update visibility
+      header.setVisible(!this.headerCollapsed);
+      headerGradient.setVisible(!this.headerCollapsed);
+      title.setVisible(!this.headerCollapsed);
+      helpButton.setVisible(!this.headerCollapsed);
+      toggle.setText(this.headerCollapsed ? '▼' : '▲');
+
+      // Publish new height for steps
+      this.data.set('headerHeight', newHeight);
+      this.events.emit('ui:header:heightChanged', newHeight);
     });
   }
 

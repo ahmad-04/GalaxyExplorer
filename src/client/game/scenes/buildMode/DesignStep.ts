@@ -22,12 +22,18 @@ export class DesignStep {
   private scene: Phaser.Scene;
   private manager: BuildModeManager;
   private service: BuildModeService;
+  // Reduced top offset to give grid more vertical space
+  private readonly topUiOffset: number = 0;
 
   // UI elements
   private container!: Phaser.GameObjects.Container;
   private toolbarContainer!: Phaser.GameObjects.Container;
   private entityPaletteContainer!: Phaser.GameObjects.Container;
   private propertiesContainer!: Phaser.GameObjects.Container;
+  private bgRect!: Phaser.GameObjects.Rectangle;
+  private backNavText!: Phaser.GameObjects.Text;
+  private nextNavText!: Phaser.GameObjects.Text;
+  private saveButtonText!: Phaser.GameObjects.Text;
 
   // Grid and camera
   // private grid!: Phaser.GameObjects.Grid; // Keeping for future use
@@ -38,6 +44,19 @@ export class DesignStep {
 
   // Level ID
   private levelId: string | undefined;
+
+  // Resize handler
+  private resizeHandler: (() => void) | undefined;
+  private headerHeightHandler: ((height: number) => void) | undefined;
+
+  // Keeps origin near bottom to maximize upward grid space
+  private adjustCameraForUpwardSpace(): void {
+    const cam = this.scene.cameras.main;
+    const viewportHeight = this.scene.scale.height - (this.container ? this.container.y : 0);
+    const margin = this.manager.getGridSize() * 2;
+    const desiredScrollY = -viewportHeight + margin;
+    cam.setScroll(cam.scrollX, desiredScrollY);
+  }
 
   constructor(scene: Phaser.Scene, manager: BuildModeManager, service: BuildModeService) {
     this.scene = scene;
@@ -95,6 +114,18 @@ export class DesignStep {
     // Clean up events
     this.cleanupEvents();
 
+    // Remove resize listener
+    if (this.resizeHandler) {
+      this.scene.scale.off('resize', this.resizeHandler);
+      this.resizeHandler = undefined;
+    }
+
+    // Remove header height listener
+    if (this.headerHeightHandler) {
+      this.scene.events.off('ui:header:heightChanged', this.headerHeightHandler);
+      this.headerHeightHandler = undefined;
+    }
+
     // Remove any active tool listeners
     this.removeDeleteListener();
 
@@ -107,19 +138,23 @@ export class DesignStep {
    * Create the UI for this step
    */
   private createUI(): void {
-    // Main container
-    this.container = this.scene.add.container(0, 60);
+    // Determine header height from the parent scene if available
+    const headerHeight =
+      (this.scene.data && this.scene.data.get('headerHeight')) || this.topUiOffset;
+
+    // Main container sits below header
+    this.container = this.scene.add.container(0, headerHeight);
 
     // Background
-    const bg = this.scene.add.rectangle(
+    this.bgRect = this.scene.add.rectangle(
       0,
       0,
       this.scene.scale.width,
-      this.scene.scale.height - 60,
+      this.scene.scale.height - this.topUiOffset,
       0x222222
     );
-    bg.setOrigin(0, 0);
-    this.container.add(bg);
+    this.bgRect.setOrigin(0, 0);
+    this.container.add(this.bgRect);
 
     // Create grid
     this.createGrid();
@@ -141,6 +176,72 @@ export class DesignStep {
 
     // Add save button
     this.createSaveButton();
+
+    // Handle viewport resize to keep UI anchored and fill screen
+    this.resizeHandler = () => {
+      // Background fills available space
+      this.bgRect.width = this.scene.scale.width;
+      this.bgRect.height = this.scene.scale.height - this.container.y;
+
+      // Reposition right-side UI panels
+      if (this.entityPaletteContainer) {
+        this.entityPaletteContainer.x = this.scene.scale.width - 150;
+      }
+      if (this.propertiesContainer) {
+        this.propertiesContainer.x = this.scene.scale.width - 160;
+        this.propertiesContainer.y = this.scene.scale.height - 220;
+      }
+
+      // Reposition navigation buttons at the bottom-right
+      if (this.backNavText) {
+        this.backNavText.x = this.scene.scale.width - 200;
+        this.backNavText.y = this.scene.scale.height - 40;
+      }
+      if (this.nextNavText) {
+        this.nextNavText.x = this.scene.scale.width - 80;
+        this.nextNavText.y = this.scene.scale.height - 40;
+      }
+
+      // Reposition save button in top-right (align with header)
+      if (this.saveButtonText) {
+        this.saveButtonText.x = this.scene.scale.width - 160;
+        // Keep button near the header area
+        const currentHeader = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        this.saveButtonText.y = Math.max(8, Math.floor(currentHeader / 2));
+      }
+
+      // Redraw grid for new viewport size
+      const gridGraphics = this.container.getData('gridGraphics') as
+        | Phaser.GameObjects.Graphics
+        | undefined;
+      if (gridGraphics && this.manager.isGridVisible()) {
+        this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
+      }
+    };
+    this.scene.scale.on('resize', this.resizeHandler);
+
+    // Listen for header height changes to adjust our layout
+    this.headerHeightHandler = (newHeight: number) => {
+      this.container.y = newHeight;
+      this.bgRect.height = this.scene.scale.height - this.container.y;
+
+      // Nudge save button to stay aligned with header
+      if (this.saveButtonText) {
+        this.saveButtonText.y = Math.max(8, Math.floor(newHeight / 2));
+      }
+
+      // Redraw grid for new viewport
+      const gridGraphics = this.container.getData('gridGraphics') as
+        | Phaser.GameObjects.Graphics
+        | undefined;
+      if (gridGraphics && this.manager.isGridVisible()) {
+        this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
+      }
+
+      // Keep origin near bottom so we gain upward space
+      this.adjustCameraForUpwardSpace();
+    };
+    this.scene.events.on('ui:header:heightChanged', this.headerHeightHandler);
   }
 
   /**
@@ -170,6 +271,9 @@ export class DesignStep {
     // Create camera controls
     this.cameraControls = new Phaser.Cameras.Controls.SmoothedKeyControl(controlConfig);
 
+    // Start with more upward space visible
+    this.adjustCameraForUpwardSpace();
+
     // Enable zoom with mouse wheel
     this.scene.input.on(
       'wheel',
@@ -197,6 +301,8 @@ export class DesignStep {
 
     // Create a graphics object for the grid
     const gridGraphics = this.scene.add.graphics();
+    // Offset grid upward so it fills behind the header/offset area
+    gridGraphics.y = -this.container.y;
     gridGraphics.setDepth(0); // Ensure grid is below entities
 
     // Draw the grid
@@ -238,7 +344,7 @@ export class DesignStep {
     const camera = this.scene.cameras.main;
     const viewport = {
       width: this.scene.scale.width,
-      height: this.scene.scale.height - 60, // Account for header height
+      height: this.scene.scale.height, // Draw across full scene height
     };
 
     // Calculate grid boundaries based on camera position
@@ -1042,6 +1148,7 @@ export class DesignStep {
         padding: { x: 10, y: 5 },
       })
       .setOrigin(0, 0.5);
+    this.backNavText = backButton;
 
     // Make button interactive
     backButton.setInteractive({ useHandCursor: true });
@@ -1064,6 +1171,7 @@ export class DesignStep {
         padding: { x: 10, y: 5 },
       })
       .setOrigin(0, 0.5);
+    this.nextNavText = nextButton;
 
     // Make button interactive
     nextButton.setInteractive({ useHandCursor: true });
@@ -1092,6 +1200,29 @@ export class DesignStep {
 
     // Set up input events for entity placement
     this.setupPlacementEvents();
+
+    // Toggle minimal UI with 'H' key to maximize grid space
+    const kb = this.scene.input.keyboard;
+    if (kb) {
+      const hKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.H);
+      hKey.on('down', () => {
+        const newVisible = !(this.toolbarContainer?.visible ?? true);
+        this.toolbarContainer?.setVisible(newVisible);
+        this.entityPaletteContainer?.setVisible(newVisible);
+        this.propertiesContainer?.setVisible(
+          newVisible && (this.propertiesContainer?.visible ?? false)
+        );
+        this.saveButtonText?.setVisible(newVisible);
+
+        // Redraw grid (not strictly necessary but keeps UX consistent)
+        const gridGraphics = this.container.getData('gridGraphics') as
+          | Phaser.GameObjects.Graphics
+          | undefined;
+        if (gridGraphics && this.manager.isGridVisible()) {
+          this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
+        }
+      });
+    }
   }
 
   /**
@@ -2460,17 +2591,23 @@ export class DesignStep {
   private createSaveButton(): void {
     // Get scene reference
     const scene = this.scene as Phaser.Scene;
+    const headerHeight = (scene.data && scene.data.get('headerHeight')) || 0;
 
     // Create a save button in the top-right corner
-    const saveButton = scene.add.text(scene.scale.width - 160, 20, 'Save Level', {
-      fontSize: '18px',
-      color: '#ffffff',
-      backgroundColor: '#4c7edb',
-      padding: { x: 12, y: 8 },
-      align: 'center',
-      stroke: '#000000',
-      strokeThickness: 1,
-    });
+    const saveButton = scene.add.text(
+      scene.scale.width - 160,
+      Math.max(8, Math.floor(headerHeight / 2)),
+      'Save Level',
+      {
+        fontSize: '18px',
+        color: '#ffffff',
+        backgroundColor: '#4c7edb',
+        padding: { x: 12, y: 8 },
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 1,
+      }
+    );
 
     // Make the button interactive
     saveButton.setInteractive({ useHandCursor: true });
@@ -2491,5 +2628,6 @@ export class DesignStep {
 
     // Button should be above the step UI
     saveButton.setDepth(100);
+    this.saveButtonText = saveButton;
   }
 }
