@@ -4,7 +4,7 @@ import BuildModeService from '../../services/BuildModeService';
 import { LevelSettings } from '../../../../shared/types/buildMode';
 
 /**
- * Setup step: simple, readable layout with a template grid and a fixed HTML form
+ * Setup step: simple, readable layout with a template grid
  */
 export class SetupStep {
   private scene: Phaser.Scene;
@@ -14,6 +14,10 @@ export class SetupStep {
   // Phaser UI
   private container!: Phaser.GameObjects.Container;
   private templateButtons: Phaser.GameObjects.Container[] = [];
+  private templateGridContainer: Phaser.GameObjects.Container | undefined;
+  private nextButtonText: Phaser.GameObjects.Text | undefined;
+  private leftKeyHandler: ((ev: KeyboardEvent) => void) | undefined;
+  private rightKeyHandler: ((ev: KeyboardEvent) => void) | undefined;
 
   // Removed level settings popup/form
 
@@ -71,6 +75,17 @@ export class SetupStep {
       this.scene.scale.off('resize', this.footerResizeHandler);
       this.footerResizeHandler = undefined;
     }
+    // Cleanup keyboard handlers
+    if (this.leftKeyHandler) {
+      // @ts-expect-error Phaser types
+      this.scene.input.keyboard.off('keydown-LEFT', this.leftKeyHandler, this);
+      this.leftKeyHandler = undefined;
+    }
+    if (this.rightKeyHandler) {
+      // @ts-expect-error Phaser types
+      this.scene.input.keyboard.off('keydown-RIGHT', this.rightKeyHandler, this);
+      this.rightKeyHandler = undefined;
+    }
     if (this.container) {
       this.container.destroy(true);
       // @ts-expect-error allow cleanup
@@ -94,29 +109,40 @@ export class SetupStep {
     this.container.add(bg);
 
     // Template grid
-    this.createTemplateGrid(84);
+    this.buildTemplateGrid(84);
 
     // Footer navigation
     this.createNavigationButtons();
 
-    // Resize: stretch bars and realign wrapper + rebuild grid
+    // Resize: stretch bars and rebuild grid
     this.resizeHandler = () => {
       // Limit bg to canvas width (Phaser scale reflects canvas width)
       bg.width = this.scene.scale.width;
       bg.height = this.scene.scale.height - 60;
 
       // Rebuild template grid for new width
-      this.templateButtons.forEach((c) => c.destroy());
+      if (this.templateGridContainer) {
+        this.templateGridContainer.destroy(true);
+        this.templateGridContainer = undefined;
+      }
       this.templateButtons = [];
-      this.createTemplateGrid(84);
+      this.buildTemplateGrid(84);
     };
     this.scene.scale.on('resize', this.resizeHandler);
+
+    // Keyboard navigation for template selection
+    this.leftKeyHandler = () => this.cycleTemplate(-1);
+    this.rightKeyHandler = () => this.cycleTemplate(1);
+    // @ts-expect-error Phaser types
+    this.scene.input.keyboard.on('keydown-LEFT', this.leftKeyHandler, this);
+    // @ts-expect-error Phaser types
+    this.scene.input.keyboard.on('keydown-RIGHT', this.rightKeyHandler, this);
   }
 
   /**
    * Create simple template selection UI
    */
-  private createTemplateGrid(startY: number): number {
+  private buildTemplateGrid(startY: number): void {
     const padding = 16;
     const cardW = 160;
     const cardH = 110;
@@ -125,13 +151,18 @@ export class SetupStep {
     const perRow = Math.max(2, Math.floor((maxWidth + gap) / (cardW + gap)));
     const startX = padding;
 
+    // Container to scope grid and allow simple rebuilds
+    const grid = this.scene.add.container(0, 0);
+    this.templateGridContainer = grid;
+    this.container.add(grid);
+
     const title = this.scene.add.text(startX, startY - 22, 'Templates', {
       fontSize: '18px',
       color: '#ffffff',
       fontFamily: 'Arial',
       fontStyle: 'bold',
     });
-    this.container.add(title);
+    grid.add(title);
 
     this.templates.forEach((tpl, i) => {
       const col = i % perRow;
@@ -143,7 +174,7 @@ export class SetupStep {
       const bg = this.scene.add.rectangle(0, 0, cardW, cardH, 0x2a3240).setOrigin(0, 0);
       bg.setStrokeStyle(this.selectedTemplate === tpl.id ? 2 : 1, 0x3a4154);
       if (this.selectedTemplate === tpl.id) bg.fillColor = 0x2a3a4a;
-      bg.setInteractive();
+      bg.setInteractive({ useHandCursor: true });
 
       const icon = this.scene.add.text(cardW / 2, 30, tpl.icon || '🚀', { fontSize: '24px' });
       icon.setOrigin(0.5);
@@ -165,13 +196,16 @@ export class SetupStep {
 
       c.add([bg, icon, name, desc]);
       bg.on('pointerdown', () => this.selectTemplate(tpl.id));
+      bg.on('pointerover', () => {
+        if (this.selectedTemplate !== tpl.id) bg.fillColor = 0x334155;
+      });
+      bg.on('pointerout', () => {
+        if (this.selectedTemplate !== tpl.id) bg.fillColor = 0x2a3240;
+      });
 
       this.templateButtons.push(c);
-      this.container.add(c);
+      grid.add(c);
     });
-    // Return number of rows to help position the form beneath the grid
-    const rows = Math.ceil(this.templates.length / perRow);
-    return rows;
   }
 
   // Removed form mounting and inputs
@@ -244,6 +278,9 @@ export class SetupStep {
       fontStyle: 'bold',
     });
     nextText.setOrigin(0.5);
+    this.nextButtonText = nextText;
+    const currentTpl = this.templates.find((t) => t.id === this.selectedTemplate);
+    if (currentTpl) this.nextButtonText.setText(`Next: Design (${currentTpl.name})`);
 
     nextButton.add([nextBg, nextText]);
 
@@ -298,7 +335,7 @@ export class SetupStep {
           // Selected template styling
           bg.setStrokeStyle(2, 0x4a90e2);
           bg.fillColor = 0x2a3a4a;
-          container.setScale(1.05);
+          this.scene.tweens.add({ targets: container, scale: 1.06, duration: 120 });
         } else {
           // Non-selected template styling
           bg.setStrokeStyle(1, 0x3a4154);
@@ -307,6 +344,23 @@ export class SetupStep {
         }
       }
     });
+
+    // Update Next button text with current selection name
+    const tpl = this.templates.find((t) => t.id === templateId);
+    if (this.nextButtonText && tpl) {
+      this.nextButtonText.setText(`Next: Design (${tpl.name})`);
+    }
+  }
+
+  /**
+   * Cycle template selection with keyboard arrows
+   */
+  private cycleTemplate(direction: -1 | 1) {
+    const idx = this.templates.findIndex((t) => t.id === this.selectedTemplate);
+    if (idx === -1) return;
+    const nextIdx = (idx + direction + this.templates.length) % this.templates.length;
+    const nextTpl = this.templates[nextIdx];
+    if (nextTpl) this.selectTemplate(nextTpl.id);
   }
 
   /**

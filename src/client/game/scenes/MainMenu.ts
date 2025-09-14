@@ -9,6 +9,7 @@ export class MainMenu extends Phaser.Scene {
   private starsTextureKey = 'stars';
   private leaderboardPopup!: Phaser.GameObjects.Container;
   private leaderboardVisible = false;
+  private resizeHandler: (() => void) | undefined;
 
   constructor() {
     super('MainMenu');
@@ -48,6 +49,18 @@ export class MainMenu extends Phaser.Scene {
     );
     this.background.setOrigin(0, 0);
 
+    // Keep background sized to viewport
+    this.resizeHandler = () => {
+      this.background.setSize(this.scale.width, this.scale.height);
+    };
+    this.scale.on('resize', this.resizeHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.resizeHandler) {
+        this.scale.off('resize', this.resizeHandler);
+        this.resizeHandler = undefined;
+      }
+    });
+
     // Add spacebar key and capture it to prevent page scrolling
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -64,194 +77,216 @@ export class MainMenu extends Phaser.Scene {
     const menuContainer = this.add.container(0, 0);
 
     // Helper function to create stylized buttons
-    const createMenuButton = (
-      y: number, 
-      text: string
-    ) => {
+    const createMenuButton = (y: number, text: string) => {
       // Create a container for the button and its effects positioned relative to (0,0)
       const buttonContainer = this.add.container(0, y);
       buttonContainer.setDepth(100); // Set very high depth to ensure buttons are on top
-      
+
       // Button dimensions
       const buttonWidth = 250;
       const buttonHeight = 50;
-      
+
       // Create simple button with blue frame to match mockup
       const buttonBg = this.add.graphics();
-      
+
       // Simple transparent background
       buttonBg.fillStyle(0x000000, 0.2);
-      buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
-      
+      buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+
       // Blue border
       buttonBg.lineStyle(2, 0x0088ff, 1);
-      buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
-      
+      buttonBg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+
       // Button text with soft shadow
-      const shadow = this.add.text(2, 2, text, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '28px',
-        fontStyle: 'bold',
-        color: '#000000',
-        align: 'center',
-      }).setOrigin(0.5);
-      
-      const buttonText = this.add.text(0, 0, text, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '28px',
-        fontStyle: 'bold',
-        color: '#ffffff',
-        align: 'center',
-      }).setOrigin(0.5);
-      
+      const shadow = this.add
+        .text(2, 2, text, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '28px',
+          fontStyle: 'bold',
+          color: '#000000',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+
+      const buttonText = this.add
+        .text(0, 0, text, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '28px',
+          fontStyle: 'bold',
+          color: '#ffffff',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+
       // Add elements to container
       buttonContainer.add([buttonBg, shadow, buttonText]);
-      
+
       // Create hitbox for the button
-      const hitArea = new Phaser.Geom.Rectangle(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight);
+      const hitArea = new Phaser.Geom.Rectangle(
+        -buttonWidth / 2,
+        -buttonHeight / 2,
+        buttonWidth,
+        buttonHeight
+      );
       buttonContainer.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
-      
+
       // Add simple hover effects
       buttonContainer.on('pointerover', () => {
         buttonBg.clear();
-        
+
         // Slightly brighter background on hover
         buttonBg.fillStyle(0x0044aa, 0.3);
-        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
-        
+        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+
         // Brighter blue border
         buttonBg.lineStyle(2, 0x00aaff, 1);
-        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
-        
+        buttonBg.strokeRoundedRect(
+          -buttonWidth / 2,
+          -buttonHeight / 2,
+          buttonWidth,
+          buttonHeight,
+          8
+        );
+
         // Brighten text
         buttonText.setTint(0xffffff);
       });
-      
+
       buttonContainer.on('pointerout', () => {
         buttonBg.clear();
-        
+
         // Restore normal appearance
         buttonBg.fillStyle(0x000000, 0.2);
-        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
-        
+        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+
         // Blue border
         buttonBg.lineStyle(2, 0x0088ff, 1);
-        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
-        
+        buttonBg.strokeRoundedRect(
+          -buttonWidth / 2,
+          -buttonHeight / 2,
+          buttonWidth,
+          buttonHeight,
+          8
+        );
+
         // Reset text tint
         buttonText.clearTint();
       });
-      
+
       buttonContainer.on('pointerdown', () => {
         // Simple pressed effect
         buttonText.setY(1);
         buttonBg.clear();
         buttonBg.fillStyle(0x0066ff, 0.4);
-        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
         buttonBg.lineStyle(2, 0x0088ff, 1);
-        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        buttonBg.strokeRoundedRect(
+          -buttonWidth / 2,
+          -buttonHeight / 2,
+          buttonWidth,
+          buttonHeight,
+          8
+        );
       });
-      
+
       buttonContainer.on('pointerup', () => {
         // Restore hover state
         buttonText.setY(0);
         buttonBg.clear();
         buttonBg.fillStyle(0x0044aa, 0.3);
-        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
         buttonBg.lineStyle(2, 0x00aaff, 1);
-        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 8);
+        buttonBg.strokeRoundedRect(
+          -buttonWidth / 2,
+          -buttonHeight / 2,
+          buttonWidth,
+          buttonHeight,
+          8
+        );
       });
-      
+
       return buttonContainer;
     };
 
     // Create a decorative blue frame around the menu area as shown in the mockup
     const menuFrame = this.add.graphics();
-    
+
     // Draw the frame with rounded corners
     const frameWidth = this.scale.width * 0.8;
     const originalFrameHeight = this.scale.height * 0.7;
-    
+
     // Reduce frame height by making it smaller from the top
     const topReduction = 50; // Reduce frame size from top by 50 pixels
     const frameHeight = originalFrameHeight - topReduction;
-    
+
     const frameX = this.scale.width / 2 - frameWidth / 2;
     // Calculate frameY to keep the bottom edge at the same position
     const originalFrameY = this.scale.height / 2 - originalFrameHeight / 2;
     const frameY = originalFrameY + topReduction;
-    
+
     // Add a translucent blue fill
     menuFrame.fillStyle(0x0066ff, 0.15); // Light blue with low opacity (0.15 = 15%)
     menuFrame.fillRoundedRect(frameX, frameY, frameWidth, frameHeight, 10);
-    
+
     // Add a blue border on top of the fill
     menuFrame.lineStyle(2, 0x0088ff, 0.8);
     menuFrame.strokeRoundedRect(frameX, frameY, frameWidth, frameHeight, 10);
     menuContainer.add(menuFrame);
-    
+
     // Create a container for buttons positioned in the center
     const buttonContainer = this.add.container(this.scale.width * 0.5, 250); // Moved up from 300 to 250
     menuContainer.add(buttonContainer);
-    
+
     // Create a simple title with blue glow to match mockup - ADDED AFTER THE MENU FRAME
-    const titleText = this.add.text(this.scale.width / 2, 100, 'GALAXY EXPLORER', {
-      fontFamily: 'Arial Black, sans-serif',
-      fontSize: '64px',
-      color: '#ffffff',
-      stroke: '#0066ff',
-      strokeThickness: 6,
-      align: 'center',
-      shadow: {
-        offsetX: 0,
-        offsetY: 0,
-        color: '#0088ff',
-        blur: 10,
-        fill: true
-      }
-    }).setOrigin(0.5);
+    const titleText = this.add
+      .text(this.scale.width / 2, 100, 'GALAXY EXPLORER', {
+        fontFamily: 'Arial Black, sans-serif',
+        fontSize: '64px',
+        color: '#ffffff',
+        stroke: '#0066ff',
+        strokeThickness: 6,
+        align: 'center',
+        shadow: {
+          offsetX: 0,
+          offsetY: 0,
+          color: '#0088ff',
+          blur: 10,
+          fill: true,
+        },
+      })
+      .setOrigin(0.5);
     titleText.setDepth(100); // Set very high depth to ensure it's on top
-    
+
     // Add a simple space-themed tagline - ADDED AFTER THE MENU FRAME
-    const tagline = this.add.text(this.scale.width / 2, 170, 'CONQUER THE COSMOS', {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '24px',
-      color: '#88ccff',
-      align: 'center',
-    }).setOrigin(0.5);
+    const tagline = this.add
+      .text(this.scale.width / 2, 170, 'CONQUER THE COSMOS', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '24px',
+        color: '#88ccff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
     tagline.setDepth(100); // Set very high depth to ensure it's on top
-    
+
     // Create the simple buttons with blue frames
-    const startButton = createMenuButton(
-      0, 
-      'START GAME'
-    );
-    
-    const customizeButton = createMenuButton(
-      90, 
-      'CUSTOMIZE'
-    );
-    
-    const leaderboardButton = createMenuButton(
-      180, 
-      'LEADERBOARD'
-    );
-    
+    const startButton = createMenuButton(0, 'START GAME');
+
+    const customizeButton = createMenuButton(90, 'CUSTOMIZE');
+
+    const leaderboardButton = createMenuButton(180, 'LEADERBOARD');
+
     // Add buttons to the container
     const buttons = [startButton, customizeButton, leaderboardButton];
-    
+
     // Add Build Mode button when feature is enabled
     let buildModeButton;
     if (isFeatureEnabled('ENABLE_BUILD_MODE')) {
-      buildModeButton = createMenuButton(
-        270, 
-        'BUILD MODE'
-      );
+      buildModeButton = createMenuButton(270, 'BUILD MODE');
       buttons.push(buildModeButton);
     }
-    
+
     buttonContainer.add(buttons);
-    
+
     // Keep the design clean as shown in the mockup - no additional decorations
 
     // Test data button - commented out for production
@@ -272,21 +307,23 @@ export class MainMenu extends Phaser.Scene {
     // Add instruction text with better styling
     const instructionContainer = this.add.container(this.scale.width / 2, 550); // Moved down from 520 to 550
     menuContainer.add(instructionContainer);
-    
+
     // Instruction background
     const instructionBg = this.add.rectangle(0, 0, 400, 40, 0x000000, 0.3);
     instructionBg.setStrokeStyle(1, 0x4466ff, 0.3);
     instructionContainer.add(instructionBg);
-    
+
     // Instruction text
-    const instructionText = this.add.text(0, 0, 'PRESS SPACE TO START', {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '18px',
-      color: '#aaccff',
-      align: 'center',
-    }).setOrigin(0.5);
+    const instructionText = this.add
+      .text(0, 0, 'PRESS SPACE TO START', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '18px',
+        color: '#aaccff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
     instructionContainer.add(instructionText);
-    
+
     // Animate the instruction text subtly
     this.tweens.add({
       targets: instructionText,
@@ -294,21 +331,18 @@ export class MainMenu extends Phaser.Scene {
       duration: 1500,
       ease: 'Sine.InOut',
       yoyo: true,
-      repeat: -1
+      repeat: -1,
     });
-    
+
     // Add a version number/footer at the bottom
-    const versionText = this.add.text(
-      this.scale.width - 10, 
-      this.scale.height - 10, 
-      'v1.0', 
-      {
+    const versionText = this.add
+      .text(this.scale.width - 10, this.scale.height - 10, 'v1.0', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '14px',
         color: '#666666',
         align: 'right',
-      }
-    ).setOrigin(1, 1);
+      })
+      .setOrigin(1, 1);
     menuContainer.add(versionText);
 
     // Create but hide the leaderboard popup initially
@@ -317,10 +351,10 @@ export class MainMenu extends Phaser.Scene {
     startButton.on('pointerdown', () => {
       // Add a button press sound effect (if available)
       // this.sound.play('button_click');
-      
+
       // Add a flash effect
       this.cameras.main.flash(300, 255, 255, 255, true);
-      
+
       // Start the game with a slight delay for the visual effect
       this.time.delayedCall(300, () => {
         this.startGame();
@@ -330,13 +364,13 @@ export class MainMenu extends Phaser.Scene {
     customizeButton.on('pointerdown', () => {
       // Add a button press sound effect (if available)
       // this.sound.play('button_click');
-      
+
       // Reset leaderboard state before changing scenes
       this.resetLeaderboardState();
-      
+
       // Add subtle camera effect
       this.cameras.main.flash(300, 100, 100, 255, true);
-      
+
       // Start scene with slight delay for visual effect
       this.time.delayedCall(200, () => {
         this.scene.start('CustomizationScene');
@@ -346,33 +380,33 @@ export class MainMenu extends Phaser.Scene {
     leaderboardButton.on('pointerdown', () => {
       // Add a button press sound effect (if available)
       // this.sound.play('button_click');
-      
+
       // Add subtle pulse effect
       this.tweens.add({
         targets: leaderboardButton,
         scale: { from: 0.95, to: 1 },
         duration: 300,
-        ease: 'Bounce.Out'
+        ease: 'Bounce.Out',
       });
-      
+
       // Show leaderboard with slight delay
       this.time.delayedCall(100, () => {
         void this.showLeaderboard(); // Use void to explicitly mark promise as handled
       });
     });
-    
+
     // Add Build Mode button handler if it exists
     if (buildModeButton && isFeatureEnabled('ENABLE_BUILD_MODE')) {
       buildModeButton.on('pointerdown', () => {
         // Add a button press sound effect (if available)
         // this.sound.play('button_click');
-        
+
         // Reset leaderboard state before changing scenes
         this.resetLeaderboardState();
-        
+
         // Add subtle camera effect
         this.cameras.main.flash(300, 100, 200, 255, true);
-        
+
         // Start Build Mode scene with slight delay for visual effect
         this.time.delayedCall(200, () => {
           this.scene.start('BuildModeScene', { action: 'browser' });
@@ -403,7 +437,7 @@ export class MainMenu extends Phaser.Scene {
         console.error('Failed to load or apply server config:', error);
       });
     }
-    
+
     // Add parallax elements to the background
     this.addParallaxElements();
   }
@@ -434,38 +468,38 @@ export class MainMenu extends Phaser.Scene {
   // Add parallax background elements for depth perception
   private addParallaxElements() {
     // Remove any existing parallax elements
-    this.children.getAll().forEach(child => {
+    this.children.getAll().forEach((child) => {
       if (child.getData('parallaxElement')) {
         child.destroy();
       }
     });
-    
+
     // Create some distant stars that move at a different speed than the main background
     for (let i = 0; i < 20; i++) {
       const x = Phaser.Math.Between(0, this.scale.width);
       const y = Phaser.Math.Between(0, this.scale.height);
       const size = Phaser.Math.FloatBetween(1.5, 3);
-      
+
       const distantStar = this.add.circle(x, y, size, 0xffffff, 0.7);
       distantStar.setData('parallaxElement', true);
       distantStar.setData('parallaxSpeed', 0.4);
       distantStar.setDepth(1);
     }
   }
-  
+
   override update(_time: number, delta: number) {
     // Use a fixed speed of 0.5 instead of getting it from the configuration
     const fixedSpeed = 0.5;
     const d = delta / 16.6667; // Make movement frame-rate independent
-    
+
     // Scroll the background at the fixed speed
     this.background.tilePositionY -= fixedSpeed * d;
-    
+
     // Update parallax elements
-    this.children.getAll().forEach(child => {
+    this.children.getAll().forEach((child) => {
       if (child.getData('parallaxElement')) {
         const parallaxSpeed = child.getData('parallaxSpeed') || 0.5;
-        
+
         // If this element is orbiting something
         const orbitData = child.getData('orbit');
         if (orbitData) {
@@ -473,18 +507,18 @@ export class MainMenu extends Phaser.Scene {
           orbitData.angle += orbitData.speed * d;
           const x = orbitData.center.x + Math.cos(orbitData.angle) * orbitData.radius;
           const y = orbitData.center.y + Math.sin(orbitData.angle) * orbitData.radius;
-          
+
           // Type safety - only call setPosition if the object has it
           if ('setPosition' in child && typeof child.setPosition === 'function') {
             child.setPosition(x, y);
           }
-        } 
+        }
         // Otherwise just move it vertically
         else if ('y' in child) {
           // Type safety - ensure we're updating a property that has 'y'
           const gameObject = child as unknown as { y: number };
           gameObject.y += parallaxSpeed * d;
-          
+
           // Wrap around when off-screen
           if (gameObject.y > this.scale.height + 50) {
             gameObject.y = -50;
@@ -589,7 +623,7 @@ export class MainMenu extends Phaser.Scene {
 
   private createStarsFallback(key: string, w: number, h: number, count: number) {
     const g = this.add.graphics();
-    
+
     // Create a dark red background as shown in the mockup
     const gradientCanvas = document.createElement('canvas');
     gradientCanvas.width = w;
@@ -602,7 +636,7 @@ export class MainMenu extends Phaser.Scene {
       gradient.addColorStop(1, 'rgba(50, 0, 0, 1)');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, w, h);
-      
+
       // No nebulas - keeping it simple as in the mockup
       this.textures.addCanvas(key + '_background', gradientCanvas);
     }
@@ -612,26 +646,26 @@ export class MainMenu extends Phaser.Scene {
     for (let i = 0; i < count; i++) {
       const x = Phaser.Math.Between(0, w - 1);
       const y = Phaser.Math.Between(0, h - 1);
-      
+
       // Simple star size variation
       const starSize = Phaser.Math.FloatBetween(0.5, 2);
-      
+
       // Use white stars only
       g.fillStyle(0xffffff, 1);
       g.fillCircle(x, y, starSize);
     }
-    
+
     // Add just a few larger stars
     for (let i = 0; i < Math.min(15, count / 30); i++) {
       const x = Phaser.Math.Between(0, w - 1);
       const y = Phaser.Math.Between(0, h - 1);
       const size = Phaser.Math.Between(2, 3);
-      
+
       // Simple white stars with no glow effect
       g.fillStyle(0xffffff, 1);
       g.fillCircle(x, y, size);
     }
-    
+
     g.generateTexture(key, w, h);
     g.destroy();
   }
@@ -644,10 +678,6 @@ export class MainMenu extends Phaser.Scene {
     this.createStarsFallback(key, this.scale.width, this.scale.height, config.density);
     // No animated elements - keeping it simple as in the mockup
   }
-  
-
-  
-
 
   private createLeaderboardPopup(): void {
     console.log('[Leaderboard] Creating leaderboard popup');
@@ -683,11 +713,11 @@ export class MainMenu extends Phaser.Scene {
     // Main background
     const background = this.add.rectangle(0, 0, 500, 550, 0x000022, 0.85);
     background.setStrokeStyle(3, 0x4466ff, 1);
-    
+
     // Add a decorative header
     const headerBg = this.add.rectangle(0, -250, 500, 70, 0x0033aa, 0.8);
     headerBg.setStrokeStyle(2, 0x88aaff, 1);
-    
+
     // Add decorative elements
     const decorGraphics = this.add.graphics();
     // Top left corner decoration
@@ -700,7 +730,7 @@ export class MainMenu extends Phaser.Scene {
     decorGraphics.strokePath();
     decorGraphics.fillStyle(0x4466ff, 0.8);
     decorGraphics.fillCircle(-230, -230, 4);
-    
+
     // Top right corner decoration
     decorGraphics.beginPath();
     decorGraphics.moveTo(250, -230);
@@ -710,7 +740,7 @@ export class MainMenu extends Phaser.Scene {
     decorGraphics.strokePath();
     decorGraphics.fillStyle(0x4466ff, 0.8);
     decorGraphics.fillCircle(230, -230, 4);
-    
+
     // Bottom left corner decoration
     decorGraphics.beginPath();
     decorGraphics.moveTo(-250, 230);
@@ -720,7 +750,7 @@ export class MainMenu extends Phaser.Scene {
     decorGraphics.strokePath();
     decorGraphics.fillStyle(0x4466ff, 0.8);
     decorGraphics.fillCircle(-230, 230, 4);
-    
+
     // Bottom right corner decoration
     decorGraphics.beginPath();
     decorGraphics.moveTo(250, 230);
@@ -749,7 +779,7 @@ export class MainMenu extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5);
-    
+
     // Add subtitle
     const subtitleText = this.add
       .text(0, -215, 'TOP SPACE COMMANDERS', {
@@ -763,7 +793,7 @@ export class MainMenu extends Phaser.Scene {
     // Create a styled close button
     const closeButtonBg = this.add.circle(220, -250, 25, 0x000022, 0.8);
     closeButtonBg.setStrokeStyle(2, 0x4466ff, 1);
-    
+
     const closeButton = this.add
       .text(220, -250, 'X', {
         fontFamily: 'Arial, sans-serif',
@@ -779,7 +809,7 @@ export class MainMenu extends Phaser.Scene {
       closeButtonBg.setFillStyle(0xaa0000, 0.8);
       closeButtonBg.setStrokeStyle(2, 0xff6666, 1);
     });
-    
+
     closeButton.on('pointerout', () => {
       closeButtonBg.setFillStyle(0x000022, 0.8);
       closeButtonBg.setStrokeStyle(2, 0x4466ff, 1);
@@ -795,7 +825,7 @@ export class MainMenu extends Phaser.Scene {
 
     // Create a themed loading indicator
     const loadingContainer = this.add.container(0, 0);
-    
+
     const loadingText = this.add
       .text(0, -20, 'RETRIEVING DATA...', {
         fontFamily: 'Arial, sans-serif',
@@ -804,35 +834,35 @@ export class MainMenu extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5);
-    
+
     // Create loading spinner animation
     const spinner = this.add.graphics();
     spinner.lineStyle(3, 0x4466ff, 1);
     spinner.beginPath();
     spinner.arc(0, 30, 25, 0, Math.PI * 1.5);
     spinner.strokePath();
-    
+
     // Animate spinner rotation
     this.tweens.add({
       targets: spinner,
       angle: 360,
       duration: 1500,
-      repeat: -1
+      repeat: -1,
     });
-    
+
     loadingContainer.add([loadingText, spinner]);
 
     // Add everything to the container
     this.leaderboardPopup.add([
-      fullscreenBlock, 
-      background, 
+      fullscreenBlock,
+      background,
       headerBg,
       decorGraphics,
       titleText,
-      subtitleText, 
+      subtitleText,
       closeButtonBg,
-      closeButton, 
-      loadingContainer
+      closeButton,
+      loadingContainer,
     ]);
 
     // Set initial visibility and depth
@@ -897,10 +927,10 @@ export class MainMenu extends Phaser.Scene {
 
       if (leaderboardData.scores.length === 0) {
         console.log('[Leaderboard] No scores available');
-        
+
         // Create an empty galaxy graphic
         const emptyGraphic = this.add.graphics();
-        
+
         // Create a small galaxy illustration
         emptyGraphic.fillStyle(0x4466ff, 0.3);
         emptyGraphic.fillCircle(0, -50, 40);
@@ -908,7 +938,7 @@ export class MainMenu extends Phaser.Scene {
         emptyGraphic.fillCircle(0, -50, 25);
         emptyGraphic.fillStyle(0xffffff, 0.8);
         emptyGraphic.fillCircle(0, -50, 5);
-        
+
         // Add some dots around to represent stars
         for (let i = 0; i < 20; i++) {
           const angle = Math.random() * Math.PI * 2;
@@ -919,10 +949,10 @@ export class MainMenu extends Phaser.Scene {
           emptyGraphic.fillStyle(0xffffff, 0.7);
           emptyGraphic.fillCircle(x, y, size);
         }
-        
+
         // Create empty state container
         const emptyContainer = this.add.container(0, 0);
-        
+
         // Show no scores available message with better styling
         const noScoresText = this.add
           .text(0, 20, 'NO COMMANDERS DETECTED', {
@@ -933,7 +963,7 @@ export class MainMenu extends Phaser.Scene {
             fontStyle: 'bold',
           })
           .setOrigin(0.5);
-          
+
         const encourageText = this.add
           .text(0, 60, 'Be the first to claim your place\nin the galactic rankings!', {
             fontFamily: 'Arial, sans-serif',
@@ -942,7 +972,7 @@ export class MainMenu extends Phaser.Scene {
             align: 'center',
           })
           .setOrigin(0.5);
-        
+
         // Add pulsing animation to the galaxy
         this.tweens.add({
           targets: emptyGraphic,
@@ -951,42 +981,47 @@ export class MainMenu extends Phaser.Scene {
           duration: 2000,
           yoyo: true,
           repeat: -1,
-          ease: 'Sine.easeInOut'
+          ease: 'Sine.easeInOut',
         });
-        
+
         emptyContainer.add([emptyGraphic, noScoresText, encourageText]);
         this.leaderboardPopup.add(emptyContainer);
-        
       } else {
         console.log('[Leaderboard] Creating leaderboard UI with scores');
         // Create styled header section with background
         const headerBg = this.add.rectangle(0, -180, 460, 40, 0x0033aa, 0.6);
         headerBg.setStrokeStyle(1, 0x4466ff, 0.7);
-        
+
         // Create header row with better alignment and styling
-        const rankHeader = this.add.text(-200, -180, 'RANK', {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '20px',
-          color: '#aaccff',
-          align: 'center',
-          fontStyle: 'bold',
-        }).setOrigin(0.5, 0.5);
+        const rankHeader = this.add
+          .text(-200, -180, 'RANK', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '20px',
+            color: '#aaccff',
+            align: 'center',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0.5, 0.5);
 
-        const nameHeader = this.add.text(0, -180, 'COMMANDER', {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '20px',
-          color: '#aaccff',
-          align: 'center',
-          fontStyle: 'bold',
-        }).setOrigin(0.5, 0.5);
+        const nameHeader = this.add
+          .text(0, -180, 'COMMANDER', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '20px',
+            color: '#aaccff',
+            align: 'center',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0.5, 0.5);
 
-        const scoreHeader = this.add.text(180, -180, 'SCORE', {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '20px',
-          color: '#aaccff',
-          align: 'center',
-          fontStyle: 'bold',
-        }).setOrigin(0.5, 0.5);
+        const scoreHeader = this.add
+          .text(180, -180, 'SCORE', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '20px',
+            color: '#aaccff',
+            align: 'center',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0.5, 0.5);
 
         this.leaderboardPopup.add([headerBg, rankHeader, nameHeader, scoreHeader]);
 
@@ -1011,10 +1046,10 @@ export class MainMenu extends Phaser.Scene {
             `[Leaderboard] Adding score entry ${index + 1}: ${score.username} - ${score.score}`
           );
           const y = index * 40; // Position relative to scroll container
-          
+
           // Create row container for each entry
           const rowContainer = this.add.container(0, y);
-          
+
           // Add alternating row background for better readability
           let rowBgColor = index % 2 === 0 ? 0x223366 : 0x112244;
           // Special styling for top 3
@@ -1023,7 +1058,7 @@ export class MainMenu extends Phaser.Scene {
             const topColor = topColors[index] || 0x223366; // Fallback to default if undefined
             rowBgColor = topColor;
           }
-          
+
           const rowBg = this.add.rectangle(0, 0, 460, 36, rowBgColor, 0.3);
           rowContainer.add(rowBg);
 
@@ -1032,39 +1067,47 @@ export class MainMenu extends Phaser.Scene {
           // For all ranks, use the same position but with different styling
           if (index === 0) {
             // Gold medal
-            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
-              fontFamily: 'Arial, sans-serif',
-              fontSize: '20px',
-              color: '#ffcc00', // Gold color
-              fontStyle: 'bold',
-              align: 'center',
-            }).setOrigin(0.5);
+            rankDisplay = this.add
+              .text(-200, 0, `${index + 1}`, {
+                fontFamily: 'Arial, sans-serif',
+                fontSize: '20px',
+                color: '#ffcc00', // Gold color
+                fontStyle: 'bold',
+                align: 'center',
+              })
+              .setOrigin(0.5);
           } else if (index === 1) {
             // Silver medal
-            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
-              fontFamily: 'Arial, sans-serif',
-              fontSize: '20px',
-              color: '#cccccc', // Silver color
-              fontStyle: 'bold',
-              align: 'center',
-            }).setOrigin(0.5);
+            rankDisplay = this.add
+              .text(-200, 0, `${index + 1}`, {
+                fontFamily: 'Arial, sans-serif',
+                fontSize: '20px',
+                color: '#cccccc', // Silver color
+                fontStyle: 'bold',
+                align: 'center',
+              })
+              .setOrigin(0.5);
           } else if (index === 2) {
             // Bronze medal
-            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
-              fontFamily: 'Arial, sans-serif',
-              fontSize: '20px',
-              color: '#cc8844', // Bronze color
-              fontStyle: 'bold',
-              align: 'center',
-            }).setOrigin(0.5);
+            rankDisplay = this.add
+              .text(-200, 0, `${index + 1}`, {
+                fontFamily: 'Arial, sans-serif',
+                fontSize: '20px',
+                color: '#cc8844', // Bronze color
+                fontStyle: 'bold',
+                align: 'center',
+              })
+              .setOrigin(0.5);
           } else {
             // Regular number
-            rankDisplay = this.add.text(-200, 0, `${index + 1}`, {
-              fontFamily: 'Arial, sans-serif',
-              fontSize: '20px',
-              color: '#ffffff',
-              align: 'center',
-            }).setOrigin(0.5);
+            rankDisplay = this.add
+              .text(-200, 0, `${index + 1}`, {
+                fontFamily: 'Arial, sans-serif',
+                fontSize: '20px',
+                color: '#ffffff',
+                align: 'center',
+              })
+              .setOrigin(0.5);
           }
 
           // Username - truncate if too long
@@ -1074,44 +1117,48 @@ export class MainMenu extends Phaser.Scene {
             console.log(`[Leaderboard] Truncated username: ${score.username} -> ${username}`);
           }
 
-          const nameText = this.add.text(0, 0, username, {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '20px',
-            color: '#ffffff',
-            align: 'center',
-          }).setOrigin(0.5);
+          const nameText = this.add
+            .text(0, 0, username, {
+              fontFamily: 'Arial, sans-serif',
+              fontSize: '20px',
+              color: '#ffffff',
+              align: 'center',
+            })
+            .setOrigin(0.5);
 
           // Score with formatting
-          const scoreText = this.add.text(180, 0, `${score.score.toLocaleString()}`, {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '20px',
-            color: '#ffffff',
-            align: 'center',
-          }).setOrigin(0.5);
+          const scoreText = this.add
+            .text(180, 0, `${score.score.toLocaleString()}`, {
+              fontFamily: 'Arial, sans-serif',
+              fontSize: '20px',
+              color: '#ffffff',
+              align: 'center',
+            })
+            .setOrigin(0.5);
 
           // Add special effects for top scores
           if (index < 3) {
             const glowColor = [0xffdd00, 0xdddddd, 0xddaa66][index];
-            
+
             // Add subtle glow effect
             nameText.setTint(glowColor);
             scoreText.setTint(glowColor);
-            
+
             // Make text slightly larger for top scores
             nameText.setFontSize(22);
             scoreText.setFontSize(22);
           }
-          
+
           // Add all elements to the row
           rowContainer.add([rankDisplay, nameText, scoreText]);
-          
+
           // Add row to scroll container with animation delay
           scrollContainer.add(rowContainer);
-          
+
           // Initial state - slide in from right with delay based on position
           rowContainer.setX(500);
           rowContainer.setAlpha(0);
-          
+
           // Animate each row in sequence
           this.tweens.add({
             targets: rowContainer,
@@ -1119,7 +1166,7 @@ export class MainMenu extends Phaser.Scene {
             alpha: 1,
             delay: index * 80,
             duration: 300,
-            ease: 'Back.Out'
+            ease: 'Back.Out',
           });
         });
       }
@@ -1149,7 +1196,7 @@ export class MainMenu extends Phaser.Scene {
 
       // Create an error display container
       const errorContainer = this.add.container(0, 0);
-      
+
       // Create warning icon
       const warningGraphic = this.add.graphics();
       warningGraphic.fillStyle(0xdd3333, 0.8);
@@ -1157,7 +1204,7 @@ export class MainMenu extends Phaser.Scene {
       warningGraphic.fillStyle(0x000000, 1);
       warningGraphic.fillRect(-4, -70, 8, 30);
       warningGraphic.fillCircle(0, -30, 4);
-      
+
       // Show error message with better styling
       const errorText = this.add
         .text(0, 20, 'COMMUNICATION ERROR', {
@@ -1168,46 +1215,53 @@ export class MainMenu extends Phaser.Scene {
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
-        
+
       const errorDetailText = this.add
-        .text(0, 60, 'Unable to establish connection with\nthe galactic database.\nPlease try again later.', {
+        .text(
+          0,
+          60,
+          'Unable to establish connection with\nthe galactic database.\nPlease try again later.',
+          {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '20px',
+            color: '#ffffff',
+            align: 'center',
+          }
+        )
+        .setOrigin(0.5);
+
+      // Add retry button
+      const retryButton = this.add.container(0, 120);
+
+      const retryBg = this.add.rectangle(0, 0, 120, 40, 0x444444, 0.8);
+      retryBg.setStrokeStyle(2, 0xff6666);
+
+      const retryText = this.add
+        .text(0, 0, 'RETRY', {
           fontFamily: 'Arial, sans-serif',
-          fontSize: '20px',
+          fontSize: '18px',
           color: '#ffffff',
           align: 'center',
         })
         .setOrigin(0.5);
-        
-      // Add retry button
-      const retryButton = this.add.container(0, 120);
-      
-      const retryBg = this.add.rectangle(0, 0, 120, 40, 0x444444, 0.8);
-      retryBg.setStrokeStyle(2, 0xff6666);
-      
-      const retryText = this.add.text(0, 0, 'RETRY', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '18px',
-        color: '#ffffff',
-        align: 'center',
-      }).setOrigin(0.5);
-      
+
       retryButton.add([retryBg, retryText]);
       retryButton.setInteractive(
         new Phaser.Geom.Rectangle(-60, -20, 120, 40),
         Phaser.Geom.Rectangle.Contains
       );
-      
+
       // Add hover effects for retry button
       retryButton.on('pointerover', () => {
         retryBg.setFillStyle(0x666666, 0.8);
         retryText.setTint(0xff9999);
       });
-      
+
       retryButton.on('pointerout', () => {
         retryBg.setFillStyle(0x444444, 0.8);
         retryText.setTint(0xffffff);
       });
-      
+
       // Add retry functionality
       retryButton.on('pointerdown', () => {
         errorContainer.destroy();
@@ -1220,7 +1274,7 @@ export class MainMenu extends Phaser.Scene {
           })
           .setOrigin(0.5);
         this.leaderboardPopup.add(loadingText);
-        
+
         // Retry getting the leaderboard after a short delay
         this.time.delayedCall(500, () => {
           this.hideLeaderboard();
@@ -1229,16 +1283,16 @@ export class MainMenu extends Phaser.Scene {
           });
         });
       });
-      
+
       // Add flashing animation to warning icon
       this.tweens.add({
         targets: warningGraphic,
         alpha: { from: 1, to: 0.5 },
         duration: 500,
-        yoyo: true, 
-        repeat: -1
+        yoyo: true,
+        repeat: -1,
       });
-      
+
       errorContainer.add([warningGraphic, errorText, errorDetailText, retryButton]);
       this.leaderboardPopup.add(errorContainer);
     }
