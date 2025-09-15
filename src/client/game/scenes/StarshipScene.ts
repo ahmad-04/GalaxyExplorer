@@ -1743,6 +1743,8 @@ export class StarshipScene extends Phaser.Scene {
       this.registry.set('powerupsCollected', 0);
       // Clear test level data reference
       this.registry.set('testLevelData', undefined);
+      // Clear any camera translation used during test
+      this.registry.set('testTranslate', undefined);
     } catch (e) {
       console.warn('[StarshipScene] Failed to clear registry test flags:', e);
     }
@@ -1799,19 +1801,45 @@ export class StarshipScene extends Phaser.Scene {
   }): void {
     console.log('[StarshipScene] Setting up custom level:', levelData.settings.name);
 
+    // If DesignStep provided a translation, apply it to entity positions
+    const translate = this.registry.get('testTranslate') as { dx: number; dy: number } | undefined;
+    const dx = translate?.dx ?? 0;
+    const dy = translate?.dy ?? 0;
+    const usingTranslate = dx !== 0 || dy !== 0;
+    if (usingTranslate) {
+      console.log('[StarshipScene] Applying design-camera translation to test entities:', {
+        dx,
+        dy,
+      });
+    }
+    const effectiveLevelData = usingTranslate
+      ? {
+          ...levelData,
+          entities: levelData.entities.map((e) =>
+            e.position
+              ? {
+                  ...e,
+                  position: { x: Math.floor(e.position.x + dx), y: Math.floor(e.position.y + dy) },
+                }
+              : e
+          ),
+        }
+      : levelData;
+
     // Detailed log of what we're working with
     console.log('[StarshipScene] Custom level details:', {
-      name: levelData.settings.name,
-      entitiesCount: levelData.entities?.length || 0,
-      validEntities: levelData.entities?.filter((e) => e.type && e.position).length || 0,
-      enemySpawners: levelData.entities?.filter((e) => e.type === 'ENEMY_SPAWNER').length || 0,
+      name: effectiveLevelData.settings.name,
+      entitiesCount: effectiveLevelData.entities?.length || 0,
+      validEntities: effectiveLevelData.entities?.filter((e) => e.type && e.position).length || 0,
+      enemySpawners:
+        effectiveLevelData.entities?.filter((e) => e.type === 'ENEMY_SPAWNER').length || 0,
     });
 
     // Stop the default enemy spawning
     console.log('[StarshipScene] Stopping default enemy spawning');
     this.enemyManager.stopSpawning();
 
-    if (!levelData.entities || !Array.isArray(levelData.entities)) {
+    if (!effectiveLevelData.entities || !Array.isArray(effectiveLevelData.entities)) {
       console.error('[StarshipScene] No entities found in level data, using default spawning');
       this.enemyManager.startSpawning(1000);
       return;
@@ -1820,7 +1848,7 @@ export class StarshipScene extends Phaser.Scene {
     // Log entity types to help debug
     const entityTypeCounts: Record<string, number> = {};
     const enemyTypes: Record<string, number> = {};
-    levelData.entities.forEach((e) => {
+    effectiveLevelData.entities.forEach((e) => {
       if (e.type) {
         entityTypeCounts[e.type] = (entityTypeCounts[e.type] || 0) + 1;
 
@@ -1963,7 +1991,7 @@ export class StarshipScene extends Phaser.Scene {
     });
 
     console.log(
-      `[StarshipScene] Placed ${enemiesPlaced} enemies from custom level. Expected: ${levelData.entities.filter((e) => e.type === EntityType.ENEMY_SPAWNER).length}`
+      `[StarshipScene] Placed ${enemiesPlaced} enemies from custom level. Expected: ${effectiveLevelData.entities.filter((e) => e.type === EntityType.ENEMY_SPAWNER).length}`
     );
 
     // Track expected kills for Build Mode auto-completion: only count placed enemies
@@ -1991,7 +2019,7 @@ export class StarshipScene extends Phaser.Scene {
       if (enemiesPlaced > 0) {
         this.time.addEvent({
           delay: 3000,
-          callback: () => this.respawnEnemiesIfNeeded(levelData),
+          callback: () => this.respawnEnemiesIfNeeded(effectiveLevelData),
           loop: true,
         });
       } else {
@@ -2226,7 +2254,8 @@ export class StarshipScene extends Phaser.Scene {
 
       // Fallback/secondary: coordinate-based approach — no active enemies in bounds
       const inBoundsActive = this.getActiveEnemiesInBounds();
-      if (inBoundsActive === 0) {
+      // Require at least some combat (defeated > 0) before considering fallback to avoid instant exit
+      if (inBoundsActive === 0 && defeated > 0) {
         console.log('[StarshipScene] No active enemies within bounds; completing build test');
         this.completeBuildTest();
       }

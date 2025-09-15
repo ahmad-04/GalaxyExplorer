@@ -1,9 +1,7 @@
 import * as Phaser from 'phaser';
 import { BuildModeManager } from '../entities/BuildModeManager';
 import BuildModeService from '../services/BuildModeService';
-import { SetupStep } from './buildMode/SetupStep';
 import { DesignStep } from './buildMode/DesignStep';
-import { TestStep } from './buildMode/TestStep';
 import { PublishStep } from './buildMode/PublishStep';
 import { LevelBrowser } from '../ui/LevelBrowser';
 
@@ -23,12 +21,10 @@ export class BuildModeScene extends Phaser.Scene {
   private buildModeManager!: BuildModeManager;
 
   // Current step in the workflow
-  private currentStep: string = 'setup';
+  private currentStep: string = 'design';
 
   // Step scenes
-  private setupStep?: SetupStep;
   private designStep?: DesignStep;
-  private testStep?: TestStep;
   private publishStep?: PublishStep;
   private levelBrowser?: LevelBrowser;
 
@@ -53,9 +49,8 @@ export class BuildModeScene extends Phaser.Scene {
     }
 
     // Handle startup action
-    if (data.action === 'browse') {
-      this.currentStep = 'browser';
-    }
+    if (data.action === 'browse') this.currentStep = 'browser';
+    if (data.action === 'design') this.currentStep = 'design';
 
     console.log(
       `[BuildModeScene] Initialized with step: ${this.currentStep}, levelId: ${this.currentLevelId || 'none'}`
@@ -316,25 +311,11 @@ export class BuildModeScene extends Phaser.Scene {
    */
   private activateCurrentStep() {
     switch (this.currentStep) {
-      case 'setup':
-        if (!this.setupStep) {
-          this.setupStep = new SetupStep(this, this.buildModeManager, this.buildModeService);
-        }
-        this.setupStep.activate(this.currentLevelId);
-        break;
-
       case 'design':
         if (!this.designStep) {
           this.designStep = new DesignStep(this, this.buildModeManager, this.buildModeService);
         }
         this.designStep.activate(this.currentLevelId);
-        break;
-
-      case 'test':
-        if (!this.testStep) {
-          this.testStep = new TestStep(this, this.buildModeManager, this.buildModeService);
-        }
-        this.testStep.activate(this.currentLevelId);
         break;
 
       case 'publish':
@@ -353,7 +334,7 @@ export class BuildModeScene extends Phaser.Scene {
 
       default:
         console.error(`[BuildModeScene] Unknown step: ${this.currentStep}`);
-        this.changeStep('setup');
+        this.changeStep('design');
         break;
     }
   }
@@ -363,16 +344,8 @@ export class BuildModeScene extends Phaser.Scene {
    */
   private deactivateCurrentStep() {
     switch (this.currentStep) {
-      case 'setup':
-        this.setupStep?.deactivate();
-        break;
-
       case 'design':
         this.designStep?.deactivate();
-        break;
-
-      case 'test':
-        this.testStep?.deactivate();
         break;
 
       case 'publish':
@@ -395,16 +368,8 @@ export class BuildModeScene extends Phaser.Scene {
   private handleEscapeKey() {
     // Different behavior depending on current step
     switch (this.currentStep) {
-      case 'setup':
-        this.showExitConfirmation();
-        break;
-
       case 'design':
-        this.changeStep('setup');
-        break;
-
-      case 'test':
-        this.changeStep('design');
+        this.showExitConfirmation();
         break;
 
       case 'publish':
@@ -438,16 +403,8 @@ export class BuildModeScene extends Phaser.Scene {
   override update(time: number, delta: number) {
     // Update the current step
     switch (this.currentStep) {
-      case 'setup':
-        this.setupStep?.update(time, delta);
-        break;
-
       case 'design':
         this.designStep?.update(time, delta);
-        break;
-
-      case 'test':
-        this.testStep?.update(time, delta);
         break;
 
       case 'publish':

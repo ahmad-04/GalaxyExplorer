@@ -407,9 +407,9 @@ export class MainMenu extends Phaser.Scene {
         // Add subtle camera effect
         this.cameras.main.flash(300, 100, 200, 255, true);
 
-        // Start Build Mode scene with slight delay for visual effect
+        // Start Build Mode scene directly in Design with slight delay
         this.time.delayedCall(200, () => {
-          this.scene.start('BuildModeScene', { action: 'browser' });
+          this.scene.start('BuildModeScene', { action: 'design' });
         });
       });
     }

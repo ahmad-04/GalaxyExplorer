@@ -7,7 +7,12 @@
 import * as Phaser from 'phaser';
 import { BuildModeManager, BuildModeTool } from '../../entities/BuildModeManager';
 import BuildModeService from '../../services/BuildModeService';
-import { BaseEntity, EntityType, EnemySpawnerType } from '../../../../shared/types/buildMode';
+import {
+  BaseEntity,
+  EntityType,
+  EnemySpawnerType,
+  LevelData,
+} from '../../../../shared/types/buildMode';
 
 /**
  * Design step in the Build Mode workflow
@@ -19,7 +24,7 @@ export class DesignStep {
   private service: BuildModeService;
   // Reduced top offset to give grid more vertical space
   private readonly topUiOffset: number = 0;
-  // Camera state: no drag-to-pan; use wheel + WASD
+  // Camera state: no drag-to-pan; wheel-only vertical panning (no WASD)
   private lastCamScroll = { x: 0, y: 0 };
   // Padding inside the top sticky bar to push content down
   private readonly topBarPadding: number = 24;
@@ -53,6 +58,9 @@ export class DesignStep {
   private statusDivider2?: Phaser.GameObjects.Rectangle;
   private statusSelectionListener: ((...args: unknown[]) => void) | undefined;
   private statusDirtyListener: ((...args: unknown[]) => void) | undefined;
+  // Inline test state
+  private inlineTesting: boolean = false;
+  private floatingStopButton: Phaser.GameObjects.Container | undefined;
   // Top sticky bar background
   private topBarBg?: Phaser.GameObjects.Rectangle;
   private readonly paletteWidth: number = 220;
@@ -64,7 +72,7 @@ export class DesignStep {
   // private toolbarRevealButton?: Phaser.GameObjects.Container;
 
   // Grid and camera
-  private cameraControls!: Phaser.Cameras.Controls.SmoothedKeyControl;
+  private cameraControls?: Phaser.Cameras.Controls.SmoothedKeyControl;
 
   // Entity management
   private entities: Phaser.GameObjects.Container[] = [];
@@ -82,7 +90,7 @@ export class DesignStep {
     const viewportHeight = this.scene.scale.height - (this.container ? this.container.y : 0);
     const margin = this.manager.getGridSize() * 2;
     const desiredScrollY = -viewportHeight + margin;
-    cam.setScroll(cam.scrollX, desiredScrollY);
+    cam.setScroll(0, desiredScrollY);
   }
 
   constructor(scene: Phaser.Scene, manager: BuildModeManager, service: BuildModeService) {
@@ -415,37 +423,14 @@ export class DesignStep {
    * Set up camera controls
    */
   private setupCameraControls(): void {
-    // Create camera control configuration
-    const keyboard = this.scene.input.keyboard;
-    if (!keyboard) {
-      console.error('[DesignStep] Keyboard input is not available');
-      return;
-    }
-
     const cam = this.scene.cameras.main;
 
     // Lock zoom: fixed scale, disable zoom inputs
     cam.setZoom(1);
 
-    // Large world bounds to allow extensive panning range
-    const WORLD_SIZE = 100000; // 100k px square world
-    // Restrict vertical bounds so camera cannot pan below origin (y <= 0)
-    cam.setBounds(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, WORLD_SIZE / 2);
-
-    // Key-based panning only (no zoom bindings)
-    const controlConfig = {
-      camera: cam,
-      left: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      right: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-      up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      down: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      acceleration: 0.08,
-      drag: 0.003,
-      maxSpeed: 1.2,
-    } as Phaser.Types.Cameras.Controls.SmoothedKeyControlConfig;
-
-    // Create camera controls
-    this.cameraControls = new Phaser.Cameras.Controls.SmoothedKeyControl(controlConfig);
+    // World bounds: lock horizontal movement (x=0 only), allow large upward range
+    const WORLD_SIZE = 100000; // vertical span
+    cam.setBounds(0, -WORLD_SIZE / 2, 1, WORLD_SIZE / 2);
 
     // Start with more upward space visible
     this.adjustCameraForUpwardSpace();
@@ -454,12 +439,13 @@ export class DesignStep {
     // Mouse wheel pans instead of zooms (supports trackpads: horizontal + vertical)
     this.scene.input.on(
       'wheel',
-      (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], dx: number, dy: number) => {
+      (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], _dx: number, dy: number) => {
         if (this.entityPaletteContainer?.visible && this.isPointerOverPalette(pointer)) {
           this.scrollPaletteContent(dy);
           return;
         }
-        const nextX = cam.scrollX + dx * 0.5;
+        // Ignore horizontal wheel movement; lock X at 0
+        const nextX = 0;
         const nextY = cam.scrollY + dy * 0.5;
         // Clamp downward panning so origin stays at or below bottom edge
         const minY = -Infinity; // allow upward freely
@@ -468,7 +454,7 @@ export class DesignStep {
       }
     );
 
-    // Drag-to-pan removed: use mouse wheel and WASD for panning
+    // Drag-to-pan removed: use mouse wheel only for vertical panning
 
     // Redraw grid only when camera moved
     this.scene.events.on('update', this.updateOnCameraMove, this);
@@ -479,6 +465,8 @@ export class DesignStep {
     const cam = this.scene.cameras.main;
     // Enforce upward-only panning: never allow scrollY > 0
     if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
+    // Enforce no horizontal movement
+    if (cam.scrollX !== 0) cam.setScroll(0, cam.scrollY);
     const moved =
       (cam.scrollX | 0) !== (this.lastCamScroll.x | 0) ||
       (cam.scrollY | 0) !== (this.lastCamScroll.y | 0);
@@ -891,16 +879,13 @@ export class DesignStep {
     // Make button interactive
     backButton.setInteractive({ useHandCursor: true });
 
-    // Navigate to Setup step
+    // Navigate back to Main Menu (Setup removed)
     backButton.on('pointerdown', () => {
-      // Save current progress
       this.saveProgress();
-
-      // Change to Setup step
-      this.scene.events.emit('step:change', 'setup', this.levelId);
+      this.scene.scene.start('MainMenu');
     });
 
-    // Next button (to Test step)
+    // Test button (inline test)
     const nextButton = this.scene.add
       .text(this.scene.scale.width - 80, this.scene.scale.height - 40, 'Test ▶', {
         fontSize: '14px',
@@ -913,13 +898,16 @@ export class DesignStep {
     // Make button interactive
     nextButton.setInteractive({ useHandCursor: true });
 
-    // Navigate to Test step
+    // Start/Stop inline test
     nextButton.on('pointerdown', () => {
-      // Save current progress
       this.saveProgress();
-
-      // Change to Test step
-      this.scene.events.emit('step:change', 'test', this.levelId);
+      if (!this.inlineTesting) {
+        this.startInlineTest();
+        nextButton.setText('Stop ■');
+      } else {
+        this.stopInlineTest();
+        nextButton.setText('Test ▶');
+      }
     });
 
     this.container.add([backButton, nextButton]);
@@ -963,8 +951,9 @@ export class DesignStep {
       const fKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F);
       fKey.on('down', () => {
         const cam = this.scene.cameras.main;
-        cam.centerOn(0, 0);
-        if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
+        // Center vertically on origin only; keep X locked
+        const desiredY = 0 - cam.height / 2;
+        cam.setScroll(0, Math.min(desiredY, 0));
       });
 
       // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection, Delete/D to delete, L to lock
@@ -2029,6 +2018,241 @@ export class DesignStep {
     this.saveButtonContainer = btnContainer;
   }
 
+  // Inline test: start the gameplay in StarshipScene and hide editor UI
+  private startInlineTest(): void {
+    if (this.inlineTesting) return;
+    this.inlineTesting = true;
+
+    // Hide the entire overlay (container includes grid and editor UI)
+    if (this.container) {
+      this.container.setVisible(false);
+    }
+    // Also hide any floating/sticky elements
+    this.entityPaletteContainer?.setVisible(false);
+    this.saveButtonContainer?.setVisible(false);
+    this.statusBarContainer?.setVisible(false);
+    this.topBarBg?.setVisible(false);
+    this.paletteRevealButton?.setVisible(false);
+    this.topBackButtonContainer?.setVisible(false);
+
+    // Ensure test data is prepared like TestStep
+    const levelData = this.prepareTestEnvironmentData();
+    if (!levelData) {
+      console.error('[DesignStep] No level data prepared; aborting test');
+      // Restore overlay and UI if we aborted
+      this.stopInlineTest();
+      return;
+    }
+
+    // Align test view to current design camera center by passing a translation
+    const cam = this.scene.cameras.main;
+    const camCenter = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+    const dx = Math.floor(this.scene.scale.width / 2 - camCenter.x);
+    const dy = Math.floor(this.scene.scale.height / 2 - camCenter.y);
+    this.scene.registry.set('testTranslate', { dx, dy });
+    // Reset per-test counters/flags
+    this.scene.registry.set('enemiesDefeated', 0);
+    this.scene.registry.set('playerDeaths', 0);
+    this.scene.registry.set('powerupsCollected', 0);
+    this.scene.registry.set('isBuildModeTest', true);
+
+    // Launch game scene in test mode
+    if (this.scene.scene.isActive('StarshipScene')) {
+      const starship = this.scene.scene.get('StarshipScene');
+      if (starship) starship.events.emit('test:stop');
+      this.scene.scene.stop('StarshipScene');
+    }
+    // Wire test events like TestStep
+    this.scene.events.once('test:completed', this.onInlineTestCompleted, this);
+    this.scene.events.once('test:stats', this.onInlineTestStats, this);
+    this.scene.scene.launch('StarshipScene', {
+      testMode: true,
+      levelData,
+      buildModeTest: true,
+    });
+
+    // Floating Stop button while testing (resize-aware)
+    const btn = this.scene.add.container(0, 0);
+    btn.setScrollFactor(0);
+    btn.setDepth(200);
+    const bg = this.scene.add.rectangle(0, 0, 120, 34, 0x991b1b, 1).setOrigin(0.5);
+    bg.setStrokeStyle(1, 0x7f1d1d, 1);
+    const label = this.scene.add
+      .text(0, 0, 'Stop ■', { fontSize: '14px', color: '#ffffff' })
+      .setOrigin(0.5);
+    bg.setInteractive({ useHandCursor: true });
+    bg.on('pointerover', () => bg.setFillStyle(0xb91c1c, 1));
+    bg.on('pointerout', () => bg.setFillStyle(0x991b1b, 1));
+    bg.on('pointerdown', () => this.stopInlineTest());
+    btn.add([bg, label]);
+    this.floatingStopButton = btn;
+    this.positionFloatingStopButton();
+    this.scene.scale.on('resize', this.positionFloatingStopButton, this);
+  }
+
+  // Inline test: stop gameplay and restore editor UI
+  private stopInlineTest(): void {
+    if (!this.inlineTesting) return;
+    this.inlineTesting = false;
+    if (this.scene.scene.isActive('StarshipScene')) {
+      const starship = this.scene.scene.get('StarshipScene');
+      if (starship) starship.events.emit('test:stop');
+      this.scene.scene.stop('StarshipScene');
+    }
+    // Remove test event listeners
+    this.scene.events.off('test:completed', this.onInlineTestCompleted, this);
+    this.scene.events.off('test:stats', this.onInlineTestStats, this);
+    // Restore overlay/UI
+    if (this.container) {
+      this.container.setVisible(true);
+    }
+    this.entityPaletteContainer?.setVisible(true);
+    this.saveButtonContainer?.setVisible(true);
+    this.statusBarContainer?.setVisible(true);
+    this.topBarBg?.setVisible(true);
+    this.topBackButtonContainer?.setVisible(true);
+    // Reveal button depends on palette state
+    if (!this.paletteOpen) this.togglePalette(false, true);
+    // Reset nav text label if present
+    if (this.nextNavText) this.nextNavText.setText('Test ▶');
+    // Remove floating stop
+    if (this.floatingStopButton) {
+      this.scene.scale.off('resize', this.positionFloatingStopButton, this);
+      this.floatingStopButton.destroy(true);
+      this.floatingStopButton = undefined;
+    }
+  }
+
+  private onInlineTestCompleted = (): void => {
+    // Auto-return to Design as requested
+    this.stopInlineTest();
+  };
+
+  private onInlineTestStats = (_stats: unknown): void => {
+    // Currently unused, wired for parity with TestStep
+  };
+
+  // Build level data from current entities (minimal version)
+  private buildLevelDataFromEntities(): LevelData {
+    // Prefer existing level if available to preserve entity-specific properties
+    let data = this.service.loadLevel(this.levelId || this.manager.getCurrentLevelId() || '');
+    if (!data) {
+      data = this.service.createEmptyLevel({ name: 'Untitled Level' });
+    }
+    const entities: BaseEntity[] = [];
+    this.entities.forEach((container) => {
+      const existing = container.getData('entityData') as BaseEntity | undefined;
+      if (existing) {
+        // Update position/rotation on existing object to keep type-specific fields (e.g., enemyType)
+        existing.position = { x: container.x, y: container.y };
+        existing.rotation = container.rotation || 0;
+        entities.push(existing);
+      } else {
+        // Fallback minimal entity
+        entities.push({
+          id: container.getData('id'),
+          type: container.getData('type'),
+          position: { x: container.x, y: container.y },
+          rotation: container.rotation || 0,
+          scale: 1,
+        } as BaseEntity);
+      }
+    });
+    data.entities = entities;
+    const savedId = this.service.saveLevel(data);
+    this.levelId = savedId;
+    this.manager.setCurrentLevelId(savedId);
+    return data;
+  }
+
+  private positionFloatingStopButton = (): void => {
+    if (!this.floatingStopButton) return;
+    const x = Math.floor(this.scene.scale.width / 2);
+    const y = 40;
+    this.floatingStopButton.setPosition(x, y);
+  };
+
+  // Mirror TestStep.setupTestEnvironment(): prepare and store test level data reliably
+  private prepareTestEnvironmentData(): LevelData | null {
+    console.log('[DesignStep] Preparing test environment data');
+    // Save current layout first to persist any edits
+    this.saveProgress();
+
+    // Choose a level ID: current DesignStep id or manager id
+    const levelIdToUse = this.levelId || this.manager.getCurrentLevelId();
+    if (!levelIdToUse) {
+      console.warn('[DesignStep] No level ID available to prepare test data');
+      // Try building directly from current entities as last resort
+      const built = this.buildLevelDataFromEntities();
+      this.scene.registry.set('testLevelData', built);
+      return built;
+    }
+
+    console.log(`[DesignStep] Using levelId: ${levelIdToUse} for test data`);
+
+    // Load level list for fallback matching
+    const allLevels = this.service.getLevelList();
+    let effectiveLevelId = levelIdToUse;
+    let levelData = this.service.loadLevel(levelIdToUse);
+
+    if (!levelData) {
+      console.log('[DesignStep] Direct ID lookup failed; attempting to match IDs like TestStep');
+      const matchingLevels = allLevels.filter((level) => {
+        if (!levelIdToUse || !level.id) return false;
+        const serviceIdPart = level.id.startsWith('level_')
+          ? level.id.split('_')[1]
+          : level.id.substring(0, 8);
+        const managerIdPart = levelIdToUse.substring(0, 8);
+        return (
+          serviceIdPart === managerIdPart ||
+          level.id.includes(managerIdPart) ||
+          (serviceIdPart && levelIdToUse.includes(serviceIdPart))
+        );
+      });
+
+      if (matchingLevels.length > 0) {
+        matchingLevels.sort((a, b) => b.lastModified - a.lastModified);
+        const best = matchingLevels[0];
+        if (best?.id) {
+          effectiveLevelId = best.id;
+          levelData = this.service.loadLevel(best.id) || null;
+        }
+      }
+
+      if (!levelData) {
+        const recent = [...allLevels].sort((a, b) => b.lastModified - a.lastModified);
+        if (recent.length > 0) {
+          const mostRecent = recent[0];
+          if (mostRecent && mostRecent.id) {
+            effectiveLevelId = mostRecent.id;
+            levelData = this.service.loadLevel(effectiveLevelId) || null;
+          }
+        }
+      }
+    }
+
+    if (!levelData) {
+      console.error(`[DesignStep] Failed to load any level data for testing`);
+      // Build from current entities as ultimate fallback
+      const built = this.buildLevelDataFromEntities();
+      this.scene.registry.set('testLevelData', built);
+      return built;
+    }
+
+    console.log('[DesignStep] Prepared level data for test:', {
+      id: levelData.id,
+      name: levelData.settings?.name,
+      entities: levelData.entities?.length || 0,
+    });
+
+    // Normalize entity positions into visible area for gameplay
+    // Store original; StarshipScene will translate using testTranslate
+    this.scene.registry.set('testLevelData', levelData);
+    return levelData;
+  }
+
+  // normalizeLevelForTest removed; StarshipScene applies translation using 'testTranslate'.
+
   // Create a top-left Back button styled like the Save button
   private createTopBackButton(): void {
     const scene = this.scene as Phaser.Scene;
@@ -2067,9 +2291,8 @@ export class DesignStep {
     bg.on('pointerout', () => bg.setFillStyle(0x3b82f6, 1));
     bg.on('pointerdown', () => {
       bg.setFillStyle(0x2563eb, 1);
-      // Same navigation as bottom back button
       this.saveProgress();
-      this.scene.events.emit('step:change', 'setup', this.levelId);
+      this.scene.scene.start('MainMenu');
     });
     bg.on('pointerup', () => bg.setFillStyle(0x60a5fa, 1));
 
@@ -2080,9 +2303,9 @@ export class DesignStep {
   private centerCameraOnSelection(): void {
     const ids = this.manager.getSelectedEntityIds();
     if (!ids.length) {
-      this.scene.cameras.main.centerOn(0, 0);
       const cam0 = this.scene.cameras.main;
-      if (cam0.scrollY > 0) cam0.setScroll(cam0.scrollX, 0);
+      const desiredY0 = 0 - cam0.height / 2;
+      cam0.setScroll(0, Math.min(desiredY0, 0));
       return;
     }
     let sumX = 0;
@@ -2097,16 +2320,15 @@ export class DesignStep {
       }
     });
     if (count === 0) {
-      this.scene.cameras.main.centerOn(0, 0);
       const cam1 = this.scene.cameras.main;
-      if (cam1.scrollY > 0) cam1.setScroll(cam1.scrollX, 0);
+      const desiredY1 = 0 - cam1.height / 2;
+      cam1.setScroll(0, Math.min(desiredY1, 0));
       return;
     }
-    const cx = sumX / count;
     const cy = sumY / count;
-    this.scene.cameras.main.centerOn(cx, cy);
     const cam = this.scene.cameras.main;
-    if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
+    const desiredY = cy - cam.height / 2;
+    cam.setScroll(0, Math.min(desiredY, 0));
   }
 
   // === Phase 2: Properties drawer helpers ===
