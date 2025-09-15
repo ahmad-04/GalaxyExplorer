@@ -512,16 +512,16 @@ export class DesignStep {
       height: this.scene.scale.height, // Draw across full scene height
     };
 
-  // Calculate grid boundaries based on camera position
-  const startX = Math.floor(camera.scrollX / gridSize) * gridSize - gridSize;
-  const rawStartY = Math.floor(camera.scrollY / gridSize) * gridSize - gridSize;
-  const endX = startX + viewport.width + gridSize * 2;
-  const rawEndY = rawStartY + viewport.height + gridSize * 2;
+    // Calculate grid boundaries based on camera position
+    const startX = Math.floor(camera.scrollX / gridSize) * gridSize - gridSize;
+    const rawStartY = Math.floor(camera.scrollY / gridSize) * gridSize - gridSize;
+    const endX = startX + viewport.width + gridSize * 2;
+    const rawEndY = rawStartY + viewport.height + gridSize * 2;
 
-  // Only render grid upwards from origin (y <= 0)
-  const yLimit = 0;
-  const startY = Math.min(rawStartY, yLimit);
-  const endY = Math.min(rawEndY, yLimit);
+    // Only render grid upwards from origin (y <= 0)
+    const yLimit = 0;
+    const startY = Math.min(rawStartY, yLimit);
+    const endY = Math.min(rawEndY, yLimit);
 
     // Subtle minor grid lines
     graphics.lineStyle(1, 0x3b4756, 0.5);
@@ -542,11 +542,11 @@ export class DesignStep {
       graphics.strokePath();
     }
 
-  // Subtle major grid lines (every 5 cells)
-  const majorGridSize = gridSize * 5;
-  const majorStartX = Math.floor(camera.scrollX / majorGridSize) * majorGridSize;
-  const rawMajorStartY = Math.floor(camera.scrollY / majorGridSize) * majorGridSize;
-  const majorStartY = Math.min(rawMajorStartY, yLimit);
+    // Subtle major grid lines (every 5 cells)
+    const majorGridSize = gridSize * 5;
+    const majorStartX = Math.floor(camera.scrollX / majorGridSize) * majorGridSize;
+    const rawMajorStartY = Math.floor(camera.scrollY / majorGridSize) * majorGridSize;
+    const majorStartY = Math.min(rawMajorStartY, yLimit);
 
     graphics.lineStyle(1, 0x4a5568, 0.6);
 
