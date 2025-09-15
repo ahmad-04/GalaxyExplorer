@@ -19,16 +19,15 @@ export class DesignStep {
   private service: BuildModeService;
   // Reduced top offset to give grid more vertical space
   private readonly topUiOffset: number = 0;
-  // Camera state for scroll-only navigation
-  private isPanning: boolean = false;
-  private panStart: { x: number; y: number; scrollX: number; scrollY: number } | null = null;
+  // Camera state: no drag-to-pan; use wheel + WASD
   private lastCamScroll = { x: 0, y: 0 };
   // Padding inside the top sticky bar to push content down
   private readonly topBarPadding: number = 24;
 
   // UI elements
   private container!: Phaser.GameObjects.Container;
-  private toolbarContainer!: Phaser.GameObjects.Container;
+  // Left toolbar removed in new model
+  // private toolbarContainer!: Phaser.GameObjects.Container;
   private entityPaletteContainer!: Phaser.GameObjects.Container;
   private paletteRevealButton?: Phaser.GameObjects.Container;
   private bgRect!: Phaser.GameObjects.Rectangle;
@@ -57,12 +56,10 @@ export class DesignStep {
   private readonly paletteWidth: number = 220;
   private readonly paletteHeight: number = 460;
   private paletteAnimating: boolean = false;
-  // Set when a UI element (reveal/collapse) handled the click so scene shouldn't place
-  private uiClickConsumed: boolean = false;
-  // Toolbar (left panel) animation + reveal state
-  private toolbarOpen: boolean = true;
-  private toolbarAnimating: boolean = false;
-  private toolbarRevealButton?: Phaser.GameObjects.Container;
+  // Toolbar removed: state no longer used
+  // private toolbarOpen: boolean = true;
+  // private toolbarAnimating: boolean = false;
+  // private toolbarRevealButton?: Phaser.GameObjects.Container;
 
   // Grid and camera
   private cameraControls!: Phaser.Cameras.Controls.SmoothedKeyControl;
@@ -272,20 +269,7 @@ export class DesignStep {
         const topBarH = Math.max(48, headerH);
         this.entityPaletteContainer.y = topBarH + 20 + this.paletteHeight / 2;
       }
-      // Reposition toolbar (sticky)
-      if (this.toolbarContainer) {
-        const headerHtb = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        const topBarHtb = Math.max(48, headerHtb);
-        this.toolbarContainer.y = topBarHtb + 20;
-        this.toolbarContainer.x = this.toolbarOpen ? 0 : -64;
-      }
-      // Reposition toolbar reveal button if visible
-      if (this.toolbarRevealButton && this.toolbarRevealButton.visible) {
-        const headerHtb = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        const topBarHtb = Math.max(48, headerHtb);
-        this.toolbarRevealButton.x = 12;
-        this.toolbarRevealButton.y = topBarHtb + 20 + 150;
-      }
+      // Left toolbar removed; no repositioning needed
       if (this.paletteRevealButton && this.paletteRevealButton.visible) {
         this.paletteRevealButton.x = this.scene.scale.width - 12;
         const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
@@ -366,16 +350,7 @@ export class DesignStep {
         this.topBarBg.width = this.scene.scale.width;
       }
 
-      // Reposition toolbar under updated top bar height
-      if (this.toolbarContainer) {
-        const topBarHtb2 = Math.max(48, newHeight || 0);
-        this.toolbarContainer.y = topBarHtb2 + 20;
-        this.toolbarContainer.x = this.toolbarOpen ? 0 : -64;
-      }
-      if (this.toolbarRevealButton && this.toolbarRevealButton.visible) {
-        const topBarHtb2 = Math.max(48, newHeight || 0);
-        this.toolbarRevealButton.y = topBarHtb2 + 20 + 150;
-      }
+      // Left toolbar removed; nothing to update here
 
       // Redraw grid for new viewport
       const gridGraphics = this.container.getData('gridGraphics') as
@@ -446,32 +421,16 @@ export class DesignStep {
           this.scrollPaletteContent(dy);
           return;
         }
-        cam.setScroll(cam.scrollX + dx * 0.5, cam.scrollY + dy * 0.5);
+        const nextX = cam.scrollX + dx * 0.5;
+        const nextY = cam.scrollY + dy * 0.5;
+        // Clamp downward panning so origin stays at or below bottom edge
+        const minY = -Infinity; // allow upward freely
+        const maxY = 0; // do not pan downward beyond origin
+        cam.setScroll(nextX, Math.min(Math.max(nextY, minY), maxY));
       }
     );
 
-    // Drag-to-pan (middle mouse, or PAN tool with left mouse)
-    this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Do not start panning when clicking over sticky UI
-      if (this.isPointerOverAnyUi(pointer)) return;
-      const panToolActive = this.manager.getCurrentTool() === BuildModeTool.PAN;
-      if (pointer.middleButtonDown() || (panToolActive && pointer.leftButtonDown())) {
-        this.isPanning = true;
-        this.panStart = { x: pointer.x, y: pointer.y, scrollX: cam.scrollX, scrollY: cam.scrollY };
-      }
-    });
-
-    this.scene.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (!this.isPanning || !this.panStart) return;
-      const dx = pointer.x - this.panStart.x;
-      const dy = pointer.y - this.panStart.y;
-      cam.setScroll(this.panStart.scrollX - dx, this.panStart.scrollY - dy);
-    });
-
-    this.scene.input.on('pointerup', () => {
-      this.isPanning = false;
-      this.panStart = null;
-    });
+    // Drag-to-pan removed: use mouse wheel and WASD for panning
 
     // Redraw grid only when camera moved
     this.scene.events.on('update', this.updateOnCameraMove, this);
@@ -553,16 +512,21 @@ export class DesignStep {
       height: this.scene.scale.height, // Draw across full scene height
     };
 
-    // Calculate grid boundaries based on camera position
-    const startX = Math.floor(camera.scrollX / gridSize) * gridSize - gridSize;
-    const startY = Math.floor(camera.scrollY / gridSize) * gridSize - gridSize;
-    const endX = startX + viewport.width + gridSize * 2;
-    const endY = startY + viewport.height + gridSize * 2;
+  // Calculate grid boundaries based on camera position
+  const startX = Math.floor(camera.scrollX / gridSize) * gridSize - gridSize;
+  const rawStartY = Math.floor(camera.scrollY / gridSize) * gridSize - gridSize;
+  const endX = startX + viewport.width + gridSize * 2;
+  const rawEndY = rawStartY + viewport.height + gridSize * 2;
+
+  // Only render grid upwards from origin (y <= 0)
+  const yLimit = 0;
+  const startY = Math.min(rawStartY, yLimit);
+  const endY = Math.min(rawEndY, yLimit);
 
     // Subtle minor grid lines
     graphics.lineStyle(1, 0x3b4756, 0.5);
 
-    // Draw vertical lines
+    // Draw vertical lines (clamped to y <= 0)
     for (let x = startX; x <= endX; x += gridSize) {
       graphics.beginPath();
       graphics.moveTo(x, startY);
@@ -570,7 +534,7 @@ export class DesignStep {
       graphics.strokePath();
     }
 
-    // Draw horizontal lines
+    // Draw horizontal lines (only y <= 0)
     for (let y = startY; y <= endY; y += gridSize) {
       graphics.beginPath();
       graphics.moveTo(startX, y);
@@ -578,14 +542,15 @@ export class DesignStep {
       graphics.strokePath();
     }
 
-    // Subtle major grid lines (every 5 cells)
-    const majorGridSize = gridSize * 5;
-    const majorStartX = Math.floor(camera.scrollX / majorGridSize) * majorGridSize;
-    const majorStartY = Math.floor(camera.scrollY / majorGridSize) * majorGridSize;
+  // Subtle major grid lines (every 5 cells)
+  const majorGridSize = gridSize * 5;
+  const majorStartX = Math.floor(camera.scrollX / majorGridSize) * majorGridSize;
+  const rawMajorStartY = Math.floor(camera.scrollY / majorGridSize) * majorGridSize;
+  const majorStartY = Math.min(rawMajorStartY, yLimit);
 
     graphics.lineStyle(1, 0x4a5568, 0.6);
 
-    // Draw major vertical lines
+    // Draw major vertical lines (clamped)
     for (let x = majorStartX; x <= endX; x += majorGridSize) {
       graphics.beginPath();
       graphics.moveTo(x, startY);
@@ -593,7 +558,7 @@ export class DesignStep {
       graphics.strokePath();
     }
 
-    // Draw major horizontal lines
+    // Draw major horizontal lines (only y <= 0)
     for (let y = majorStartY; y <= endY; y += majorGridSize) {
       graphics.beginPath();
       graphics.moveTo(startX, y);
@@ -610,284 +575,10 @@ export class DesignStep {
    * Create the toolbar with editing tools
    */
   private createToolbar(): void {
-    // Create toolbar container
-    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-    const topBarH = Math.max(48, headerH);
-    const toolbarWidth = 56;
-    const toolbarHeight = 300;
-    this.toolbarContainer = this.scene.add.container(0, topBarH + 20);
-    this.toolbarContainer.setScrollFactor(0);
-    this.toolbarContainer.setDepth(85);
-
-    // Create toolbar background
-    const toolbarBg = this.scene.add.rectangle(0, 0, toolbarWidth, toolbarHeight, 0x333333);
-    toolbarBg.setOrigin(0, 0);
-    toolbarBg.setStrokeStyle(1, 0x555555);
-    this.toolbarContainer.add(toolbarBg);
-
-    // Collapse handle, centered just outside the toolbar's right edge
-    const collapse = this.scene.add.container(toolbarWidth + 9, toolbarHeight / 2);
-    collapse.setScrollFactor(0);
-    const collapseBg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
-    collapseBg.setStrokeStyle(1, 0x2b3a4a, 1);
-    const collapseIcon = this.scene.add
-      .text(0, 0, '<', { fontSize: '16px', color: '#9ca3af' })
-      .setOrigin(0.5);
-    collapse.add([collapseBg, collapseIcon]);
-    collapse.setInteractive(
-      new Phaser.Geom.Rectangle(-9, -22, 18, 44),
-      Phaser.Geom.Rectangle.Contains
-    );
-    collapse.on('pointerover', () => collapseBg.setFillStyle(0x1f2937, 1));
-    collapse.on('pointerout', () => collapseBg.setFillStyle(0x111827, 0.9));
-    collapse.on('pointerdown', () => this.toggleToolbar(false));
-    this.toolbarContainer.add(collapse);
-
-    // Create tool buttons
-    const tools = [
-      { tool: BuildModeTool.SELECT, icon: '👆', label: 'Select' },
-      { tool: BuildModeTool.PLACE, icon: '➕', label: 'Place' },
-      { tool: BuildModeTool.MOVE, icon: '✋', label: 'Move' },
-      { tool: BuildModeTool.DELETE, icon: '❌', label: 'Delete' },
-      { tool: BuildModeTool.PAN, icon: '👁️', label: 'Pan' },
-    ];
-
-    // Keep track of tool button backgrounds
-    const toolButtonBackgrounds: { [key: string]: Phaser.GameObjects.Rectangle } = {};
-
-    tools.forEach((toolInfo, index) => {
-      const y = 20 + index * 50;
-
-      // Button background for selection indicator
-      const buttonBg = this.scene.add.rectangle(28, y, 44, 44, 0x333333);
-      buttonBg.setOrigin(0.5);
-      buttonBg.setStrokeStyle(2, 0x555555, 0);
-      this.toolbarContainer.add(buttonBg);
-
-      // Store background reference by tool name
-      toolButtonBackgrounds[toolInfo.tool] = buttonBg;
-
-      // If this is the current tool, highlight it
-      if (this.manager.getCurrentTool() === toolInfo.tool) {
-        buttonBg.setFillStyle(0x0066aa);
-        buttonBg.setStrokeStyle(2, 0x00ffff, 1);
-      }
-
-      // Tool button
-      const toolButton = this.scene.add
-        .text(28, y, toolInfo.icon, {
-          fontSize: '24px',
-          color: '#ffffff',
-        })
-        .setOrigin(0.5);
-
-      // Make button interactive
-      toolButton.setInteractive({ useHandCursor: true });
-
-      // Add hover effects with delayed tooltip (~1s)
-      toolButton.on('pointerover', () => {
-        toolButton.setTint(0x00ffff);
-        buttonBg.setStrokeStyle(2, 0x00ffff, 1);
-        // Add a subtle hover background to improve affordance if not selected
-        if (this.manager.getCurrentTool() !== toolInfo.tool) {
-          buttonBg.setFillStyle(0x3a3a3a);
-        }
-
-        // Schedule tooltip after a delay
-        const timer = this.scene.time.delayedCall(1000, () => {
-          // Create tooltip as a child of the toolbar container so it aligns to the icon
-          const tooltip = this.scene.add
-            .text(60, y, toolInfo.label, {
-              fontSize: '12px',
-              backgroundColor: '#1f2937',
-              padding: { x: 6, y: 4 },
-              color: '#e5e7eb',
-            })
-            .setOrigin(0, 0.5);
-          // Keep tooltip in the same (sticky) coordinate space
-          this.toolbarContainer.add(tooltip);
-          toolButton.setData('tooltip', tooltip);
-        });
-        toolButton.setData('tooltipTimer', timer);
-      });
-
-      toolButton.on('pointerout', () => {
-        toolButton.clearTint();
-
-        // Only clear stroke if not selected
-        if (this.manager.getCurrentTool() !== toolInfo.tool) {
-          buttonBg.setStrokeStyle(2, 0x555555, 0);
-          // Restore base background when not hovered and not selected
-          buttonBg.setFillStyle(0x333333);
-        }
-
-        // Cancel delayed tooltip and remove if shown
-        const t: Phaser.Time.TimerEvent | undefined = toolButton.getData('tooltipTimer');
-        if (t && !t.hasDispatched) t.remove(false);
-        toolButton.setData('tooltipTimer', undefined);
-        const tooltip = toolButton.getData('tooltip') as Phaser.GameObjects.Text | undefined;
-        if (tooltip) tooltip.destroy();
-      });
-
-      // Set tool on click
-      toolButton.on('pointerdown', () => {
-        // Update the tool
-        this.manager.setCurrentTool(toolInfo.tool);
-
-        // Dismiss tooltip immediately on click
-        const t: Phaser.Time.TimerEvent | undefined = toolButton.getData('tooltipTimer');
-        if (t && !t.hasDispatched) t.remove(false);
-        toolButton.setData('tooltipTimer', undefined);
-        const tooltip = toolButton.getData('tooltip') as Phaser.GameObjects.Text | undefined;
-        if (tooltip) tooltip.destroy();
-
-        // Reset all button backgrounds
-        Object.values(toolButtonBackgrounds).forEach((bg) => {
-          bg.setFillStyle(0x333333);
-          bg.setStrokeStyle(2, 0x555555, 0);
-        });
-
-        // Highlight selected tool
-        buttonBg.setFillStyle(0x0066aa);
-        buttonBg.setStrokeStyle(2, 0x00ffff, 1);
-      });
-
-      this.toolbarContainer.add(toolButton);
-    });
-
-    // Listen for tool changes from the manager
-    this.manager.on('tool:change', (...args: unknown[]) => {
-      const tool = args[0] as BuildModeTool;
-      // Reset all button backgrounds
-      Object.values(toolButtonBackgrounds).forEach((bg) => {
-        bg.setFillStyle(0x333333);
-        bg.setStrokeStyle(2, 0x555555, 0);
-      });
-
-      // Highlight the selected tool
-      const selectedBg = toolButtonBackgrounds[tool];
-      if (selectedBg) {
-        selectedBg.setFillStyle(0x0066aa);
-        selectedBg.setStrokeStyle(2, 0x00ffff, 1);
-      }
-    });
-
-    // Ensure entire toolbar and its children are non-scrolling for correct input mapping
-    this.setScrollFactorDeep(this.toolbarContainer, 0);
-
-    // Restore persisted toolbar open state
-    try {
-      const persisted = window?.localStorage?.getItem('design.toolbar.open');
-      if (persisted === 'false') {
-        this.toggleToolbar(false, true);
-      }
-    } catch {
-      // ignore
-    }
+    // Left toolbar removed in new model
   }
 
-  // Toggle left toolbar (hugging left), mirroring palette animation
-  private toggleToolbar(forceOpen?: boolean, immediate: boolean = false): void {
-    if (this.toolbarAnimating) return;
-    const newState = forceOpen !== undefined ? forceOpen : !this.toolbarOpen;
-    this.toolbarOpen = newState;
-
-    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-    const topBarH = Math.max(48, headerH);
-    const openX = 0; // hugs left edge
-    const closedX = -64; // hide to the left beyond its width (~56) plus margin
-    const targetY = topBarH + 20;
-    if (!this.toolbarContainer) return;
-    this.toolbarContainer.y = targetY;
-
-    const ensureReveal = () => {
-      if (!this.toolbarRevealButton) {
-        const btn = this.scene.add.container(12, targetY + 150);
-        btn.setScrollFactor(0);
-        const bg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
-        bg.setStrokeStyle(1, 0x2b3a4a, 1);
-        const icon = this.scene.add
-          .text(0, 0, '>', { fontSize: '16px', color: '#9ca3af' })
-          .setOrigin(0.5);
-        btn.add([bg, icon]);
-        btn.setInteractive(
-          new Phaser.Geom.Rectangle(-9, -22, 18, 44),
-          Phaser.Geom.Rectangle.Contains
-        );
-        btn.on('pointerover', () => bg.setFillStyle(0x1f2937, 1));
-        btn.on('pointerout', () => bg.setFillStyle(0x111827, 0.9));
-        btn.on(
-          'pointerdown',
-          (
-            _pointer: Phaser.Input.Pointer,
-            _lx: number,
-            _ly: number,
-            event: Phaser.Types.Input.EventData
-          ) => {
-            this.uiClickConsumed = true;
-            if (event && (event as unknown as { stopPropagation?: () => void }).stopPropagation) {
-              (event as unknown as { stopPropagation?: () => void }).stopPropagation!();
-            }
-            this.toggleToolbar(true);
-          }
-        );
-        this.toolbarRevealButton = btn;
-      }
-      this.toolbarRevealButton!.x = 12;
-      this.toolbarRevealButton!.y = targetY + 150;
-    };
-
-    if (immediate) {
-      if (newState) {
-        this.toolbarContainer.setVisible(true);
-        this.toolbarContainer.x = openX;
-        this.toolbarContainer.y = targetY;
-      } else {
-        this.toolbarContainer.x = closedX;
-        this.toolbarContainer.setVisible(false);
-        ensureReveal();
-      }
-      try {
-        window?.localStorage?.setItem('design.toolbar.open', String(newState));
-      } catch {
-        /* ignore */
-      }
-      return;
-    }
-
-    this.toolbarAnimating = true;
-    if (newState) {
-      this.toolbarContainer.setVisible(true);
-      this.toolbarRevealButton?.setVisible(false);
-      this.scene.tweens.add({
-        targets: this.toolbarContainer,
-        x: openX,
-        duration: 200,
-        ease: 'Cubic.easeOut',
-        onComplete: () => {
-          this.toolbarAnimating = false;
-        },
-      });
-    } else {
-      ensureReveal();
-      this.scene.tweens.add({
-        targets: this.toolbarContainer,
-        x: closedX,
-        duration: 180,
-        ease: 'Cubic.easeIn',
-        onComplete: () => {
-          this.toolbarContainer.setVisible(false);
-          this.toolbarRevealButton!.setVisible(true);
-          this.toolbarAnimating = false;
-        },
-      });
-    }
-    try {
-      window?.localStorage?.setItem('design.toolbar.open', String(newState));
-    } catch {
-      /* ignore */
-    }
-  }
+  // Left toolbar removed in new model
 
   /**
    * Create the entity palette for selecting entities to place
@@ -1000,7 +691,6 @@ export class DesignStep {
         _ly: number,
         event: Phaser.Types.Input.EventData
       ) => {
-        this.uiClickConsumed = true;
         if (event && (event as unknown as { stopPropagation?: () => void }).stopPropagation) {
           (event as unknown as { stopPropagation?: () => void }).stopPropagation!();
         }
@@ -1122,8 +812,15 @@ export class DesignStep {
       });
       rowBg.on('pointerdown', () => {
         this.manager.setCurrentEntityType(enemy.type);
-        this.manager.setCurrentTool(BuildModeTool.PLACE);
-        console.log(`[DesignStep] Selected enemy type: ${enemy.type}`);
+        const cam = this.scene.cameras.main;
+        const center = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+        const snapped = this.manager.snapToGridIfEnabled({ x: center.x, y: center.y });
+        const entity = this.placeEntity(enemy.type, snapped.x, snapped.y);
+        if (entity) this.selectEntity(entity, false);
+        this.updateStatusBarDirty();
+        console.log(`[DesignStep] Spawned ${enemy.type} at camera center`);
+        // Auto-collapse palette after spawn
+        this.togglePalette(false);
       });
 
       row.add([rowBg, iconCircle, label]);
@@ -1218,43 +915,22 @@ export class DesignStep {
     // Entity type change event
     this.manager.events.on('entityType:change', this.handleEntityTypeChange, this);
 
-    // Selection change no longer toggles a properties drawer
-
-    // Set up input events for entity placement
-    this.setupPlacementEvents();
-
     // Toggle minimal UI with 'H' key to maximize grid space
     const kb = this.scene.input.keyboard;
     if (kb) {
       const hKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.H);
       hKey.on('down', () => {
-        const newVisible = !(this.toolbarContainer?.visible ?? true);
-        this.toolbarContainer?.setVisible(newVisible);
+        const anyVisible = this.entityPaletteContainer?.visible ?? true;
+        const newVisible = !anyVisible;
         this.entityPaletteContainer?.setVisible(newVisible);
-        // No properties panel to toggle
         this.saveButtonContainer?.setVisible(newVisible);
         this.statusBarContainer?.setVisible(newVisible);
-
-        // Redraw grid (not strictly necessary but keeps UX consistent)
         const gridGraphics = this.container.getData('gridGraphics') as
           | Phaser.GameObjects.Graphics
           | undefined;
         if (gridGraphics && this.manager.isGridVisible()) {
           this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
         }
-      });
-
-      // Tool shortcuts 1–6
-      const keyMap: Array<{ code: number; tool: BuildModeTool }> = [
-        { code: Phaser.Input.Keyboard.KeyCodes.ONE, tool: BuildModeTool.SELECT },
-        { code: Phaser.Input.Keyboard.KeyCodes.TWO, tool: BuildModeTool.PLACE },
-        { code: Phaser.Input.Keyboard.KeyCodes.THREE, tool: BuildModeTool.MOVE },
-        { code: Phaser.Input.Keyboard.KeyCodes.FIVE, tool: BuildModeTool.DELETE },
-        { code: Phaser.Input.Keyboard.KeyCodes.SIX, tool: BuildModeTool.PAN },
-      ];
-      keyMap.forEach(({ code, tool }) => {
-        const k = kb.addKey(code);
-        k.on('down', () => this.manager.setCurrentTool(tool));
       });
 
       // Toggle palette with T
@@ -1268,7 +944,7 @@ export class DesignStep {
         cam.centerOn(0, 0);
       });
 
-      // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection
+      // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection, Delete/D to delete, L to lock
       if (this.scene.input.keyboard)
         this.scene.input.keyboard.on('keydown', (ev: KeyboardEvent) => {
           const key = ev.key.toLowerCase();
@@ -1280,6 +956,31 @@ export class DesignStep {
             this.manager.setGridVisible(!this.manager.isGridVisible());
           } else if (!ev.ctrlKey && !ev.metaKey && key === 'c') {
             this.centerCameraOnSelection();
+          } else if (!ev.ctrlKey && !ev.metaKey && (key === 'delete' || key === 'd')) {
+            // Delete selected entities, skipping locked
+            const ids = this.manager.getSelectedEntityIds();
+            if (ids.length > 0) {
+              const toDelete: Phaser.GameObjects.Container[] = [];
+              for (const id of ids) {
+                const entity = this.entities.find((e) => e.getData('id') === id);
+                if (!entity) continue;
+                if (entity.getData('locked')) continue;
+                toDelete.push(entity);
+              }
+              toDelete.forEach((e) => this.deleteEntity(e));
+            }
+          } else if (!ev.ctrlKey && !ev.metaKey && key === 'l') {
+            // Toggle lock on selected entities
+            const ids = this.manager.getSelectedEntityIds();
+            if (ids.length > 0) {
+              for (const id of ids) {
+                const entity = this.entities.find((e) => e.getData('id') === id);
+                if (!entity) continue;
+                const nowLocked = !entity.getData('locked');
+                entity.setData('locked', nowLocked);
+                this.applyLockVisual(entity, nowLocked);
+              }
+            }
           }
         });
 
@@ -1290,102 +991,7 @@ export class DesignStep {
   /**
    * Set up events for entity placement
    */
-  private setupPlacementEvents(): void {
-    // Create a placement preview that follows the cursor
-    const placementPreview = this.scene.add.container(0, 0);
-    placementPreview.setVisible(false);
-    this.container.add(placementPreview);
-
-    // Store reference to placement preview
-    this.container.setData('placementPreview', placementPreview);
-
-    // Handle pointer move
-    this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.uiClickConsumed) {
-        this.uiClickConsumed = false;
-        return;
-      }
-      // Update status bar world coordinates
-      this.updateStatusBarCoords(pointer);
-      // Only show preview when PLACE tool is active and not over UI
-      if (
-        this.manager.getCurrentTool() !== BuildModeTool.PLACE ||
-        this.isPointerOverAnyUi(pointer)
-      ) {
-        placementPreview.setVisible(false);
-        return;
-      }
-
-      // Get current entity type
-      const entityType = this.manager.getCurrentEntityType();
-      if (!entityType) {
-        placementPreview.setVisible(false);
-        return;
-      }
-
-      // Convert screen position to world position
-      const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
-
-      // Snap to grid if enabled
-      const snappedPosition = this.manager.snapToGridIfEnabled({
-        x: worldPoint.x,
-        y: worldPoint.y,
-      });
-
-      // Update preview position
-      placementPreview.setPosition(snappedPosition.x, snappedPosition.y);
-
-      // If preview content doesn't match current entity type, recreate it
-      if (placementPreview.getData('entityType') !== entityType) {
-        this.updatePlacementPreview(placementPreview, entityType);
-      }
-
-      // Show the preview
-      placementPreview.setVisible(true);
-    });
-
-    // Handle pointer down for placement
-    this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.uiClickConsumed) {
-        this.uiClickConsumed = false;
-        return;
-      }
-      // Only place when using PLACE tool with left click
-      if (
-        this.manager.getCurrentTool() !== BuildModeTool.PLACE ||
-        pointer.button !== 0 ||
-        pointer.middleButtonDown() ||
-        pointer.rightButtonDown()
-      ) {
-        return;
-      }
-      // Do not place if clicking over any sticky UI (palette, toolbar, bars, reveal handles)
-      if (this.isPointerOverAnyUi(pointer)) {
-        return;
-      }
-
-      // Get current entity type
-      const entityType = this.manager.getCurrentEntityType();
-      if (!entityType) {
-        return;
-      }
-
-      // Convert screen position to world position
-      const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
-
-      // Snap to grid if enabled
-      const snappedPosition = this.manager.snapToGridIfEnabled({
-        x: worldPoint.x,
-        y: worldPoint.y,
-      });
-
-      // Create the entity
-      this.placeEntity(entityType, snappedPosition.x, snappedPosition.y);
-
-      // After placement, mark dirty text and selection count
-      this.updateStatusBarDirty();
-    });
-  }
+  // setupPlacementEvents removed in new model (grid-click placement disabled)
 
   // Returns true if pointer is over any non-grid UI element
   private isPointerOverAnyUi(pointer: Phaser.Input.Pointer): boolean {
@@ -1393,21 +999,13 @@ export class DesignStep {
     if (this.entityPaletteContainer?.visible && this.isPointerOverPalette(pointer)) return true;
     // Right palette reveal handle
     if (this.isPointerOverRevealButton(this.paletteRevealButton, pointer, 9, 22)) return true;
-    // Left toolbar body
-    if (this.isPointerOverToolbar(pointer)) return true;
-    // Left toolbar reveal handle
-    if (this.isPointerOverRevealButton(this.toolbarRevealButton, pointer, 9, 22)) return true;
     // Top bar and status bar
     if (this.isPointerOverTopBar(pointer)) return true;
     if (this.isPointerOverStatusBar(pointer)) return true;
     return false;
   }
 
-  private isPointerOverToolbar(pointer: Phaser.Input.Pointer): boolean {
-    if (!this.toolbarContainer?.visible) return false;
-    const b = this.toolbarContainer.getBounds();
-    return pointer.x >= b.x && pointer.x <= b.right && pointer.y >= b.y && pointer.y <= b.bottom;
-  }
+  // No toolbar in new model
 
   private isPointerOverTopBar(pointer: Phaser.Input.Pointer): boolean {
     const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
@@ -1714,6 +1312,8 @@ export class DesignStep {
    * @param entity The entity to delete
    */
   private deleteEntity(entity: Phaser.GameObjects.Container): void {
+    // Do not delete locked entities
+    if (entity.getData('locked')) return;
     // Get entity ID
     const entityId = entity.getData('id');
     console.log(`[DesignStep] Deleting entity with ID: ${entityId}`);
@@ -1729,6 +1329,39 @@ export class DesignStep {
 
     // Mark the level as dirty
     this.manager.setDirty(true);
+  }
+
+  // Apply or remove a simple lock visual (tint/outline)
+  private applyLockVisual(entity: Phaser.GameObjects.Container, locked: boolean): void {
+    const sprite = entity.list[0] as Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+    if (!sprite) return;
+    if (locked) {
+      if (sprite instanceof Phaser.GameObjects.Image) {
+        sprite.setTintFill(0x7aa2f7);
+        sprite.setAlpha(0.85);
+      } else if (sprite instanceof Phaser.GameObjects.Rectangle) {
+        sprite.setStrokeStyle(2, 0x3b82f6, 1);
+        sprite.setAlpha(0.85);
+      }
+    } else {
+      if (sprite instanceof Phaser.GameObjects.Image) {
+        sprite.clearTint();
+        sprite.setAlpha(1);
+      } else if (sprite instanceof Phaser.GameObjects.Rectangle) {
+        // Restore default stroke for known shapes
+        const entityData = entity.getData('entityData') as BaseEntity | undefined;
+        if (entityData?.type === EntityType.PLAYER_START) {
+          sprite.setStrokeStyle(2, 0xffffff);
+        } else if (entityData?.type === EntityType.OBSTACLE) {
+          sprite.setStrokeStyle(2, 0xffffff);
+        } else if (entityData?.type === EntityType.TRIGGER) {
+          sprite.setStrokeStyle(1, 0xff00ff, 0.8);
+        } else {
+          sprite.setStrokeStyle();
+        }
+        sprite.setAlpha(1);
+      }
+    }
   }
 
   /**
@@ -1874,34 +1507,18 @@ export class DesignStep {
 
     // Entity selection
     sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Only handle selection if using the SELECT tool or holding SHIFT
-      if (this.manager.getCurrentTool() === BuildModeTool.SELECT || pointer.event.shiftKey) {
-        // Determine if this should be added to selection or replace it
-        const addToSelection = pointer.event.shiftKey;
-
-        // Select the entity
-        this.selectEntity(entityContainer, addToSelection);
-
-        // Mark the level as dirty
-        this.manager.setDirty(true);
-      }
-
-      // Handle movement with the MOVE tool
-      if (this.manager.getCurrentTool() === BuildModeTool.MOVE) {
-        // Store the initial offset between pointer and entity
-        entityContainer.setData('dragOffsetX', entityContainer.x - pointer.worldX);
-        entityContainer.setData('dragOffsetY', entityContainer.y - pointer.worldY);
-      }
+      if (entityContainer.getData('locked')) return;
+      const addToSelection = pointer.event.shiftKey;
+      this.selectEntity(entityContainer, addToSelection);
+      this.manager.setDirty(true);
+      // Always allow dragging: store drag offset
+      entityContainer.setData('dragOffsetX', entityContainer.x - pointer.worldX);
+      entityContainer.setData('dragOffsetY', entityContainer.y - pointer.worldY);
     });
 
     // Drag start
     sprite.on('dragstart', () => {
-      // Only allow dragging with MOVE tool
-      if (this.manager.getCurrentTool() !== BuildModeTool.MOVE) {
-        return;
-      }
-
-      // Select the entity if not already selected
+      if (entityContainer.getData('locked')) return;
       if (!this.manager.getSelectedEntityIds().includes(entityContainer.getData('id'))) {
         this.selectEntity(entityContainer);
       }
@@ -1909,11 +1526,7 @@ export class DesignStep {
 
     // Drag movement
     sprite.on('drag', (pointer: Phaser.Input.Pointer) => {
-      // Only allow dragging with MOVE tool
-      if (this.manager.getCurrentTool() !== BuildModeTool.MOVE) {
-        return;
-      }
-
+      if (entityContainer.getData('locked')) return;
       // Get the drag offset
       const offsetX = entityContainer.getData('dragOffsetX') || 0;
       const offsetY = entityContainer.getData('dragOffsetY') || 0;
@@ -1937,11 +1550,7 @@ export class DesignStep {
 
     // Drag end
     sprite.on('dragend', () => {
-      // Only process if using MOVE tool
-      if (this.manager.getCurrentTool() !== BuildModeTool.MOVE) {
-        return;
-      }
-
+      if (entityContainer.getData('locked')) return;
       // Update the entity data with the new position
       const entityData = entityContainer.getData('entityData');
       if (entityData) {
@@ -2128,56 +1737,7 @@ export class DesignStep {
     // selection reference removed
   }
 
-  /**
-   * Update the placement preview with the current entity type
-   * @param previewContainer The preview container to update
-   * @param entityType The type of entity to preview
-   */
-  private updatePlacementPreview(
-    previewContainer: Phaser.GameObjects.Container,
-    entityType: string
-  ): void {
-    // Clear existing preview
-    previewContainer.removeAll(true);
-
-    // Store the current entity type
-    previewContainer.setData('entityType', entityType);
-
-    // Create a preview based on entity type
-    let previewSprite: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
-
-    // Create a semi-transparent preview sprite
-    if (entityType === EnemySpawnerType.FIGHTER) {
-      previewSprite = this.scene.add.image(0, 0, 'enemy_fighter');
-      previewSprite.setAlpha(0.7);
-    } else if (entityType === EnemySpawnerType.SCOUT) {
-      previewSprite = this.scene.add.image(0, 0, 'enemy_scout');
-      previewSprite.setAlpha(0.7);
-    } else if (entityType === EnemySpawnerType.CRUISER) {
-      previewSprite = this.scene.add.image(0, 0, 'enemy_cruiser');
-      previewSprite.setAlpha(0.7);
-    } else if (entityType === EnemySpawnerType.SEEKER) {
-      previewSprite = this.scene.add.image(0, 0, 'enemy_seeker');
-      previewSprite.setAlpha(0.7);
-    } else if (entityType === EnemySpawnerType.GUNSHIP) {
-      previewSprite = this.scene.add.image(0, 0, 'enemy_gunship');
-      previewSprite.setAlpha(0.7);
-    } else {
-      // Default preview
-      previewSprite = this.scene.add.rectangle(0, 0, 32, 32, 0xff0000, 0.5);
-    }
-
-    // Add the preview sprite to the container
-    previewContainer.add(previewSprite);
-
-    // Add grid cell highlight
-    const gridSize = this.manager.getGridSize();
-    const highlight = this.scene.add.rectangle(0, 0, gridSize, gridSize, 0xffffff, 0.2);
-    highlight.setStrokeStyle(1, 0xffffff, 0.8);
-
-    // Add highlight first so it's behind the sprite
-    previewContainer.addAt(highlight, 0);
-  }
+  // updatePlacementPreview removed in new model (no placement preview)
 
   /**
    * Place an entity at the specified position
