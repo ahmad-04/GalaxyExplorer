@@ -35,8 +35,10 @@ export class DesignStep {
   private nextNavText!: Phaser.GameObjects.Text;
   // Save button
   private saveButtonContainer?: Phaser.GameObjects.Container;
-  private headerTitleText!: Phaser.GameObjects.Text;
+  // No header title text in the new design
   private saveButtonWidth: number = 116;
+  private topBackButtonContainer?: Phaser.GameObjects.Container;
+  private topBackButtonWidth: number = 100;
   private paletteOpen: boolean = true;
   private paletteMask?: Phaser.Display.Masks.GeometryMask;
   private paletteMaskGraphics?: Phaser.GameObjects.Graphics;
@@ -177,6 +179,23 @@ export class DesignStep {
       this.headerHeightHandler = undefined;
     }
 
+    // Destroy sticky UI elements created on the scene root
+    if (this.entityPaletteContainer) {
+      this.entityPaletteContainer.destroy(true);
+    }
+    if (this.paletteRevealButton) {
+      this.paletteRevealButton.destroy(true);
+    }
+    if (this.paletteMaskGraphics) {
+      this.paletteMaskGraphics.destroy();
+    }
+    if (this.topBarBg) {
+      this.topBarBg.destroy();
+    }
+    if (this.saveButtonContainer) {
+      this.saveButtonContainer.destroy(true);
+    }
+
     // Remove any active tool listeners
     this.removeDeleteListener();
 
@@ -237,6 +256,9 @@ export class DesignStep {
     // Add save button
     this.createSaveButton();
 
+    // Add top-left Back button styled like Save
+    this.createTopBackButton();
+
     // Create top sticky bar background to match bottom status bar
     const initialHeaderHeight = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
     const topBarHeight = Math.max(48, initialHeaderHeight);
@@ -270,7 +292,7 @@ export class DesignStep {
         this.entityPaletteContainer.y = topBarH + 20 + this.paletteHeight / 2;
       }
       // Left toolbar removed; no repositioning needed
-      if (this.paletteRevealButton && this.paletteRevealButton.visible) {
+      if (this.paletteRevealButton) {
         this.paletteRevealButton.x = this.scene.scale.width - 12;
         const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
         const topBarH = Math.max(48, headerH);
@@ -306,12 +328,23 @@ export class DesignStep {
         this.topBarBg.y = 0;
       }
 
-      // Reposition save button in top-right (mirror title left padding)
+      // Reposition save button in top-right (mirror left padding)
       if (this.saveButtonContainer) {
         const currentHeader = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        const leftPad = this.headerTitleText ? this.headerTitleText.x : 20;
+        const leftPad = 20;
         this.saveButtonContainer.x = this.scene.scale.width - (leftPad + this.saveButtonWidth / 2);
         this.saveButtonContainer.y = Math.max(
+          16,
+          Math.floor(currentHeader / 2) + this.topBarPadding
+        );
+      }
+
+      // Reposition top-left Back button
+      if (this.topBackButtonContainer) {
+        const currentHeader = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        const leftPad = 20;
+        this.topBackButtonContainer.x = leftPad + this.topBackButtonWidth / 2;
+        this.topBackButtonContainer.y = Math.max(
           16,
           Math.floor(currentHeader / 2) + this.topBarPadding
         );
@@ -335,14 +368,11 @@ export class DesignStep {
       // Nudge save button to stay aligned with header and mirror title padding
       if (this.saveButtonContainer) {
         this.saveButtonContainer.y = Math.max(16, Math.floor(newHeight / 2) + this.topBarPadding);
-        const leftPad = this.headerTitleText ? this.headerTitleText.x : 20;
+        const leftPad = 20;
         this.saveButtonContainer.x = this.scene.scale.width - (leftPad + this.saveButtonWidth / 2);
       }
 
-      // Reposition header title as well
-      if (this.headerTitleText) {
-        this.headerTitleText.y = Math.max(20, Math.floor(newHeight / 2) + this.topBarPadding);
-      }
+      // No header title in new design
 
       // Update top sticky bar background height to reflect header changes
       if (this.topBarBg) {
@@ -362,6 +392,13 @@ export class DesignStep {
 
       // Keep origin near bottom so we gain upward space
       this.adjustCameraForUpwardSpace();
+
+      // Reposition reveal button if present
+      if (this.paletteRevealButton) {
+        const topBarH = Math.max(48, newHeight || 0);
+        this.paletteRevealButton.x = this.scene.scale.width - 12;
+        this.paletteRevealButton.y = topBarH + 20 + this.paletteHeight / 2;
+      }
 
       // Update status bar position after header change (sticky)
       if (this.statusBarContainer && this.statusBg) {
@@ -392,7 +429,8 @@ export class DesignStep {
 
     // Large world bounds to allow extensive panning range
     const WORLD_SIZE = 100000; // 100k px square world
-    cam.setBounds(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, WORLD_SIZE);
+    // Restrict vertical bounds so camera cannot pan below origin (y <= 0)
+    cam.setBounds(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, WORLD_SIZE / 2);
 
     // Key-based panning only (no zoom bindings)
     const controlConfig = {
@@ -439,6 +477,8 @@ export class DesignStep {
   // Redraw grid if camera scroll changes
   private updateOnCameraMove(): void {
     const cam = this.scene.cameras.main;
+    // Enforce upward-only panning: never allow scrollY > 0
+    if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
     const moved =
       (cam.scrollX | 0) !== (this.lastCamScroll.x | 0) ||
       (cam.scrollY | 0) !== (this.lastCamScroll.y | 0);
@@ -884,25 +924,7 @@ export class DesignStep {
 
     this.container.add([backButton, nextButton]);
 
-    // Add header title similar to mockup (top-left)
-    if (!this.headerTitleText) {
-      const headerHeight = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-      this.headerTitleText = this.scene.add
-        .text(
-          20,
-          Math.max(20, Math.floor(headerHeight / 2) + this.topBarPadding),
-          'Build your level',
-          {
-            fontSize: '22px',
-            color: '#e5e7eb',
-            fontStyle: 'bold',
-          }
-        )
-        .setOrigin(0, 0.5);
-      this.headerTitleText.setDepth(100);
-      // Keep the header sticky relative to camera
-      this.headerTitleText.setScrollFactor(0);
-    }
+    // No header title in the new design
   }
 
   /**
@@ -942,6 +964,7 @@ export class DesignStep {
       fKey.on('down', () => {
         const cam = this.scene.cameras.main;
         cam.centerOn(0, 0);
+        if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
       });
 
       // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection, Delete/D to delete, L to lock
@@ -1910,6 +1933,10 @@ export class DesignStep {
     if (this.cameraControls) {
       this.cameraControls.update(delta);
 
+      // Enforce upward-only panning defensively
+      const cam = this.scene.cameras.main;
+      if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
+
       // Update grid when camera moves
       const gridGraphics = this.container.getData('gridGraphics') as Phaser.GameObjects.Graphics;
       if (gridGraphics && this.manager.isGridVisible()) {
@@ -1972,7 +1999,7 @@ export class DesignStep {
     const computedWidth = Math.ceil(label.width + horizontalPadding);
     this.saveButtonWidth = computedWidth;
 
-    const leftPad = this.headerTitleText ? this.headerTitleText.x : 20;
+    const leftPad = 20;
     const x = scene.scale.width - (leftPad + this.saveButtonWidth / 2);
 
     // Button group: rounded rect + label
@@ -2002,11 +2029,60 @@ export class DesignStep {
     this.saveButtonContainer = btnContainer;
   }
 
+  // Create a top-left Back button styled like the Save button
+  private createTopBackButton(): void {
+    const scene = this.scene as Phaser.Scene;
+    const headerHeight = (scene.data && scene.data.get('headerHeight')) || 0;
+    const y = Math.max(16, Math.floor(headerHeight / 2) + this.topBarPadding);
+
+    // Create label first to measure width
+    const label = scene.add
+      .text(0, 0, '< Back', {
+        fontSize: '14px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    label.setScrollFactor(0);
+    const horizontalPadding = 24;
+    const computedWidth = Math.ceil(label.width + horizontalPadding);
+    this.topBackButtonWidth = computedWidth;
+
+    const leftPad = 20;
+    const x = leftPad + this.topBackButtonWidth / 2;
+
+    const btnContainer = scene.add.container(x, y);
+    btnContainer.setScrollFactor(0);
+    const bg = scene.add.rectangle(0, 0, this.topBackButtonWidth, 34, 0x3b82f6, 1);
+    bg.setScrollFactor(0);
+    bg.setStrokeStyle(1, 0x1f2937, 1);
+    bg.setOrigin(0.5);
+    bg.setInteractive({ useHandCursor: true, pixelPerfect: false });
+
+    btnContainer.add([bg, label]);
+    btnContainer.setDepth(100);
+
+    // Hover/press states
+    bg.on('pointerover', () => bg.setFillStyle(0x60a5fa, 1));
+    bg.on('pointerout', () => bg.setFillStyle(0x3b82f6, 1));
+    bg.on('pointerdown', () => {
+      bg.setFillStyle(0x2563eb, 1);
+      // Same navigation as bottom back button
+      this.saveProgress();
+      this.scene.events.emit('step:change', 'setup', this.levelId);
+    });
+    bg.on('pointerup', () => bg.setFillStyle(0x60a5fa, 1));
+
+    this.topBackButtonContainer = btnContainer;
+  }
+
   // Center camera on the average position of current selection (fallback to origin)
   private centerCameraOnSelection(): void {
     const ids = this.manager.getSelectedEntityIds();
     if (!ids.length) {
       this.scene.cameras.main.centerOn(0, 0);
+      const cam0 = this.scene.cameras.main;
+      if (cam0.scrollY > 0) cam0.setScroll(cam0.scrollX, 0);
       return;
     }
     let sumX = 0;
@@ -2022,11 +2098,15 @@ export class DesignStep {
     });
     if (count === 0) {
       this.scene.cameras.main.centerOn(0, 0);
+      const cam1 = this.scene.cameras.main;
+      if (cam1.scrollY > 0) cam1.setScroll(cam1.scrollX, 0);
       return;
     }
     const cx = sumX / count;
     const cy = sumY / count;
     this.scene.cameras.main.centerOn(cx, cy);
+    const cam = this.scene.cameras.main;
+    if (cam.scrollY > 0) cam.setScroll(cam.scrollX, 0);
   }
 
   // === Phase 2: Properties drawer helpers ===
@@ -2060,9 +2140,12 @@ export class DesignStep {
     };
 
     const ensureReveal = () => {
-      if (!this.paletteRevealButton) {
+      const needsNew =
+        !this.paletteRevealButton || (this.paletteRevealButton && !this.paletteRevealButton.active);
+      if (needsNew) {
         const btn = this.scene.add.container(this.scene.scale.width - 12, targetY);
         btn.setScrollFactor(0);
+        btn.setDepth(95);
         const bg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
         bg.setStrokeStyle(1, 0x2b3a4a, 1);
         const icon = this.scene.add

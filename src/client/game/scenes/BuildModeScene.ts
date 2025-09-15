@@ -63,8 +63,10 @@ export class BuildModeScene extends Phaser.Scene {
   }
 
   create() {
-    // Register key bindings
-    this.input.keyboard.on('keydown-ESC', this.handleEscapeKey, this);
+    // Register key bindings (guard for strict null checks)
+    if (this.input && this.input.keyboard) {
+      this.input.keyboard.on('keydown-ESC', this.handleEscapeKey, this);
+    }
 
     // Set up event handlers for step transitions
     this.events.on('step:change', this.changeStep, this);
@@ -280,8 +282,33 @@ export class BuildModeScene extends Phaser.Scene {
       this.currentLevelId = this.buildModeManager.getCurrentLevelId();
     }
 
+    // Reset camera so previous step state (e.g., Design panning) doesn't leak
+    this.resetCameraForStep(stepName);
+
     // Activate new step
     this.activateCurrentStep();
+  }
+
+  /**
+   * Reset camera scroll, bounds, and zoom to safe defaults for the target step
+   * Ensures scrolling in Design does not affect Setup/Test/Publish pages
+   */
+  private resetCameraForStep(stepName: string): void {
+    const cam = this.cameras.main;
+    // Stop any following behavior and normalize zoom
+    cam.stopFollow();
+    cam.setZoom(1);
+
+    // Default: no panning for non-design steps; tight bounds to viewport
+    if (stepName !== 'design') {
+      cam.setBounds(0, 0, this.scale.width, this.scale.height);
+      cam.setScroll(0, 0);
+      return;
+    }
+
+    // For design, start neutral; DesignStep will configure its own world bounds
+    cam.setBounds(0, 0, this.scale.width, this.scale.height);
+    cam.setScroll(0, 0);
   }
 
   /**
