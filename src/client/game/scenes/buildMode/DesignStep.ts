@@ -7,12 +7,7 @@
 import * as Phaser from 'phaser';
 import { BuildModeManager, BuildModeTool } from '../../entities/BuildModeManager';
 import BuildModeService from '../../services/BuildModeService';
-import {
-  BaseEntity,
-  EntityType,
-  EnemySpawnerType,
-  EnemySpawner,
-} from '../../../../shared/types/buildMode';
+import { BaseEntity, EntityType, EnemySpawnerType } from '../../../../shared/types/buildMode';
 
 /**
  * Design step in the Build Mode workflow
@@ -36,7 +31,6 @@ export class DesignStep {
   private toolbarContainer!: Phaser.GameObjects.Container;
   private entityPaletteContainer!: Phaser.GameObjects.Container;
   private paletteRevealButton?: Phaser.GameObjects.Container;
-  private propertiesContainer!: Phaser.GameObjects.Container;
   private bgRect!: Phaser.GameObjects.Rectangle;
   private backNavText!: Phaser.GameObjects.Text;
   private nextNavText!: Phaser.GameObjects.Text;
@@ -47,10 +41,6 @@ export class DesignStep {
   private paletteOpen: boolean = true;
   private paletteMask?: Phaser.Display.Masks.GeometryMask;
   private paletteMaskGraphics?: Phaser.GameObjects.Graphics;
-  private propertiesOpen: boolean = false;
-  private propertiesMask?: Phaser.Display.Masks.GeometryMask;
-  private propertiesMaskGraphics?: Phaser.GameObjects.Graphics;
-  private propertiesContent!: Phaser.GameObjects.Container;
 
   // Status bar
   private statusBarContainer!: Phaser.GameObjects.Container;
@@ -67,6 +57,8 @@ export class DesignStep {
   private readonly paletteWidth: number = 220;
   private readonly paletteHeight: number = 460;
   private paletteAnimating: boolean = false;
+  // Set when a UI element (reveal/collapse) handled the click so scene shouldn't place
+  private uiClickConsumed: boolean = false;
   // Toolbar (left panel) animation + reveal state
   private toolbarOpen: boolean = true;
   private toolbarAnimating: boolean = false;
@@ -242,9 +234,6 @@ export class DesignStep {
       // ignore storage issues
     }
 
-    // Create properties panel
-    this.createPropertiesPanel();
-
     // Add step navigation buttons
     this.createStepNavigation();
 
@@ -311,21 +300,6 @@ export class DesignStep {
         const maskX2 = this.entityPaletteContainer.x - maskWidth / 2;
         const maskY2 = this.entityPaletteContainer.y - 140;
         this.paletteMaskGraphics.fillRect(maskX2, maskY2, maskWidth, 320);
-      }
-      // Left drawer anchors (sticky like palette)
-      if (this.propertiesContainer) {
-        const headerH2 = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        const topBarH2 = Math.max(48, headerH2);
-        this.propertiesContainer.x = 160;
-        this.propertiesContainer.y = topBarH2 + 20 + 230;
-        // update properties mask position
-        if (this.propertiesMaskGraphics) {
-          this.propertiesMaskGraphics.clear();
-          this.propertiesMaskGraphics.fillStyle(0xffffff);
-          const pmx = this.propertiesContainer.x - 150;
-          const pmy = this.propertiesContainer.y - 140;
-          this.propertiesMaskGraphics.fillRect(pmx, pmy, 300, 320);
-        }
       }
 
       // Navigation buttons are laid out inside the status bar now
@@ -403,19 +377,6 @@ export class DesignStep {
         this.toolbarRevealButton.y = topBarHtb2 + 20 + 150;
       }
 
-      // Keep properties panel anchored below the top bar
-      if (this.propertiesContainer) {
-        const topBarH3 = Math.max(48, newHeight || 0);
-        this.propertiesContainer.y = topBarH3 + 20 + 230;
-        if (this.propertiesMaskGraphics) {
-          this.propertiesMaskGraphics.clear();
-          this.propertiesMaskGraphics.fillStyle(0xffffff);
-          const pmx = this.propertiesContainer.x - 150;
-          const pmy = this.propertiesContainer.y - 140;
-          this.propertiesMaskGraphics.fillRect(pmx, pmy, 300, 320);
-        }
-      }
-
       // Redraw grid for new viewport
       const gridGraphics = this.container.getData('gridGraphics') as
         | Phaser.GameObjects.Graphics
@@ -485,16 +446,14 @@ export class DesignStep {
           this.scrollPaletteContent(dy);
           return;
         }
-        if (this.propertiesContainer?.visible && this.isPointerOverProperties(pointer)) {
-          this.scrollPropertiesContent(dy);
-          return;
-        }
         cam.setScroll(cam.scrollX + dx * 0.5, cam.scrollY + dy * 0.5);
       }
     );
 
     // Drag-to-pan (middle mouse, or PAN tool with left mouse)
     this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Do not start panning when clicking over sticky UI
+      if (this.isPointerOverAnyUi(pointer)) return;
       const panToolActive = this.manager.getCurrentTool() === BuildModeTool.PAN;
       if (pointer.middleButtonDown() || (panToolActive && pointer.leftButtonDown())) {
         this.isPanning = true;
@@ -689,7 +648,6 @@ export class DesignStep {
       { tool: BuildModeTool.SELECT, icon: '👆', label: 'Select' },
       { tool: BuildModeTool.PLACE, icon: '➕', label: 'Place' },
       { tool: BuildModeTool.MOVE, icon: '✋', label: 'Move' },
-      { tool: BuildModeTool.ROTATE, icon: '🔄', label: 'Rotate' },
       { tool: BuildModeTool.DELETE, icon: '❌', label: 'Delete' },
       { tool: BuildModeTool.PAN, icon: '👁️', label: 'Pan' },
     ];
@@ -858,7 +816,21 @@ export class DesignStep {
         );
         btn.on('pointerover', () => bg.setFillStyle(0x1f2937, 1));
         btn.on('pointerout', () => bg.setFillStyle(0x111827, 0.9));
-        btn.on('pointerdown', () => this.toggleToolbar(true));
+        btn.on(
+          'pointerdown',
+          (
+            _pointer: Phaser.Input.Pointer,
+            _lx: number,
+            _ly: number,
+            event: Phaser.Types.Input.EventData
+          ) => {
+            this.uiClickConsumed = true;
+            if (event && (event as unknown as { stopPropagation?: () => void }).stopPropagation) {
+              (event as unknown as { stopPropagation?: () => void }).stopPropagation!();
+            }
+            this.toggleToolbar(true);
+          }
+        );
         this.toolbarRevealButton = btn;
       }
       this.toolbarRevealButton!.x = 12;
@@ -1020,7 +992,21 @@ export class DesignStep {
     );
     collapse.on('pointerover', () => collapseBg.setFillStyle(0x1f2937, 1));
     collapse.on('pointerout', () => collapseBg.setFillStyle(0x111827, 0.9));
-    collapse.on('pointerdown', () => this.togglePalette(false));
+    collapse.on(
+      'pointerdown',
+      (
+        _pointer: Phaser.Input.Pointer,
+        _lx: number,
+        _ly: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        this.uiClickConsumed = true;
+        if (event && (event as unknown as { stopPropagation?: () => void }).stopPropagation) {
+          (event as unknown as { stopPropagation?: () => void }).stopPropagation!();
+        }
+        this.togglePalette(false);
+      }
+    );
     this.entityPaletteContainer.add(collapse);
 
     // Ensure the entire palette (and children) are non-scrolling for correct input mapping
@@ -1152,75 +1138,6 @@ export class DesignStep {
   // Placeholder textures are now created in the BuildModeScene
 
   /**
-   * Create the properties panel for editing entity properties
-   */
-  private createPropertiesPanel(): void {
-    // Left drawer 320px, sticky to viewport like the right palette
-    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-    const topBarH = Math.max(48, headerH);
-    this.propertiesContainer = this.scene.add.container(160, topBarH + 20 + 230);
-    this.propertiesContainer.setScrollFactor(0);
-    this.propertiesContainer.setDepth(85);
-
-    // Background + divider
-    const bg = this.scene.add.rectangle(0, 0, 320, 460, 0x222222, 0.95);
-    bg.setOrigin(0.5);
-    bg.setStrokeStyle(2, 0x66ccff);
-    const divider = this.scene.add.rectangle(160, 0, 2, 460, 0x66ccff, 0.5);
-    divider.setOrigin(0.5);
-    this.propertiesContainer.add([bg, divider]);
-
-    // Header
-    const header = this.scene.add.rectangle(0, -200, 320, 40, 0x2b8dd8, 1);
-    header.setOrigin(0.5);
-    const title = this.scene.add
-      .text(0, -200, 'PROPERTIES', {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    this.propertiesContainer.add([header, title]);
-
-    // Content area
-    this.propertiesContent = this.scene.add.container(0, -120);
-    this.propertiesContent.setName('propertiesContent');
-    this.propertiesContainer.add(this.propertiesContent);
-
-    // No selection placeholder
-    const placeholder = this.scene.add
-      .text(0, 0, 'No entity selected', { fontSize: '14px', color: '#aaaaaa' })
-      .setOrigin(0.5);
-    this.propertiesContent.add(placeholder);
-
-    // Mask for scrollable content area
-    this.propertiesMaskGraphics = this.scene.add.graphics();
-    this.propertiesMaskGraphics.fillStyle(0xffffff);
-    const pmx = this.propertiesContainer.x - 150;
-    const pmy = this.propertiesContainer.y - 140;
-    this.propertiesMaskGraphics.fillRect(pmx, pmy, 300, 320);
-    this.propertiesMask = this.propertiesMaskGraphics.createGeometryMask();
-    this.propertiesMaskGraphics.setVisible(false);
-    this.propertiesMaskGraphics.setScrollFactor(0);
-    this.propertiesContent.setMask(this.propertiesMask);
-
-    // Ensure the entire properties panel (and children) are non-scrolling for correct input mapping
-    this.setScrollFactorDeep(this.propertiesContainer, 0);
-
-    // Restore persisted state
-    try {
-      const persisted = window?.localStorage?.getItem('design.properties.open');
-      if (persisted === 'true') {
-        this.toggleProperties(true);
-      } else {
-        this.toggleProperties(false);
-      }
-    } catch {
-      this.toggleProperties(false);
-    }
-  }
-
-  /**
    * Create navigation buttons between steps
    */
   private createStepNavigation(): void {
@@ -1301,11 +1218,7 @@ export class DesignStep {
     // Entity type change event
     this.manager.events.on('entityType:change', this.handleEntityTypeChange, this);
 
-    // Auto toggle properties drawer based on selection state
-    this.manager.events.on('selection:change', (ids: string[]) => {
-      const hasSelection = Array.isArray(ids) && ids.length > 0;
-      this.toggleProperties(hasSelection);
-    });
+    // Selection change no longer toggles a properties drawer
 
     // Set up input events for entity placement
     this.setupPlacementEvents();
@@ -1318,9 +1231,7 @@ export class DesignStep {
         const newVisible = !(this.toolbarContainer?.visible ?? true);
         this.toolbarContainer?.setVisible(newVisible);
         this.entityPaletteContainer?.setVisible(newVisible);
-        this.propertiesContainer?.setVisible(
-          newVisible && (this.propertiesContainer?.visible ?? false)
-        );
+        // No properties panel to toggle
         this.saveButtonContainer?.setVisible(newVisible);
         this.statusBarContainer?.setVisible(newVisible);
 
@@ -1338,7 +1249,6 @@ export class DesignStep {
         { code: Phaser.Input.Keyboard.KeyCodes.ONE, tool: BuildModeTool.SELECT },
         { code: Phaser.Input.Keyboard.KeyCodes.TWO, tool: BuildModeTool.PLACE },
         { code: Phaser.Input.Keyboard.KeyCodes.THREE, tool: BuildModeTool.MOVE },
-        { code: Phaser.Input.Keyboard.KeyCodes.FOUR, tool: BuildModeTool.ROTATE },
         { code: Phaser.Input.Keyboard.KeyCodes.FIVE, tool: BuildModeTool.DELETE },
         { code: Phaser.Input.Keyboard.KeyCodes.SIX, tool: BuildModeTool.PAN },
       ];
@@ -1373,9 +1283,7 @@ export class DesignStep {
           }
         });
 
-      // Toggle properties drawer with P
-      const pKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.P);
-      pKey.on('down', () => this.toggleProperties());
+      // Shortcut P previously toggled properties panel; now unused
     }
   }
 
@@ -1392,11 +1300,18 @@ export class DesignStep {
     this.container.setData('placementPreview', placementPreview);
 
     // Handle pointer move
-    this.scene.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+    this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.uiClickConsumed) {
+        this.uiClickConsumed = false;
+        return;
+      }
       // Update status bar world coordinates
       this.updateStatusBarCoords(pointer);
-      // Only show preview when PLACE tool is active
-      if (this.manager.getCurrentTool() !== BuildModeTool.PLACE) {
+      // Only show preview when PLACE tool is active and not over UI
+      if (
+        this.manager.getCurrentTool() !== BuildModeTool.PLACE ||
+        this.isPointerOverAnyUi(pointer)
+      ) {
         placementPreview.setVisible(false);
         return;
       }
@@ -1431,8 +1346,21 @@ export class DesignStep {
 
     // Handle pointer down for placement
     this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Only place when using PLACE tool and left click
-      if (this.manager.getCurrentTool() !== BuildModeTool.PLACE || pointer.rightButtonDown()) {
+      if (this.uiClickConsumed) {
+        this.uiClickConsumed = false;
+        return;
+      }
+      // Only place when using PLACE tool with left click
+      if (
+        this.manager.getCurrentTool() !== BuildModeTool.PLACE ||
+        pointer.button !== 0 ||
+        pointer.middleButtonDown() ||
+        pointer.rightButtonDown()
+      ) {
+        return;
+      }
+      // Do not place if clicking over any sticky UI (palette, toolbar, bars, reveal handles)
+      if (this.isPointerOverAnyUi(pointer)) {
         return;
       }
 
@@ -1457,6 +1385,58 @@ export class DesignStep {
       // After placement, mark dirty text and selection count
       this.updateStatusBarDirty();
     });
+  }
+
+  // Returns true if pointer is over any non-grid UI element
+  private isPointerOverAnyUi(pointer: Phaser.Input.Pointer): boolean {
+    // Right palette body
+    if (this.entityPaletteContainer?.visible && this.isPointerOverPalette(pointer)) return true;
+    // Right palette reveal handle
+    if (this.isPointerOverRevealButton(this.paletteRevealButton, pointer, 9, 22)) return true;
+    // Left toolbar body
+    if (this.isPointerOverToolbar(pointer)) return true;
+    // Left toolbar reveal handle
+    if (this.isPointerOverRevealButton(this.toolbarRevealButton, pointer, 9, 22)) return true;
+    // Top bar and status bar
+    if (this.isPointerOverTopBar(pointer)) return true;
+    if (this.isPointerOverStatusBar(pointer)) return true;
+    return false;
+  }
+
+  private isPointerOverToolbar(pointer: Phaser.Input.Pointer): boolean {
+    if (!this.toolbarContainer?.visible) return false;
+    const b = this.toolbarContainer.getBounds();
+    return pointer.x >= b.x && pointer.x <= b.right && pointer.y >= b.y && pointer.y <= b.bottom;
+  }
+
+  private isPointerOverTopBar(pointer: Phaser.Input.Pointer): boolean {
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    return pointer.y <= topBarH;
+  }
+
+  private isPointerOverStatusBar(pointer: Phaser.Input.Pointer): boolean {
+    if (!this.statusBarContainer || !this.statusBg) return false;
+    const barTop = this.statusBarContainer.y;
+    const barBottom = barTop + this.statusBg.height;
+    return pointer.y >= barTop && pointer.y <= barBottom;
+  }
+
+  private isPointerOverRevealButton(
+    btn: Phaser.GameObjects.Container | undefined,
+    pointer: Phaser.Input.Pointer,
+    halfW: number,
+    halfH: number
+  ): boolean {
+    if (!btn || !btn.visible) return false;
+    const cx = btn.x;
+    const cy = btn.y;
+    return (
+      pointer.x >= cx - halfW &&
+      pointer.x <= cx + halfW &&
+      pointer.y >= cy - halfH &&
+      pointer.y <= cy + halfH
+    );
   }
 
   /**
@@ -1689,8 +1669,14 @@ export class DesignStep {
    * Handle clicks when using the delete tool
    */
   private handleDeleteToolClick(pointer: Phaser.Input.Pointer): void {
-    // Only process left clicks with DELETE tool
-    if (this.manager.getCurrentTool() !== BuildModeTool.DELETE || pointer.rightButtonDown()) {
+    // Only process left clicks with DELETE tool and ignore UI clicks
+    if (
+      this.manager.getCurrentTool() !== BuildModeTool.DELETE ||
+      pointer.button !== 0 ||
+      pointer.middleButtonDown() ||
+      pointer.rightButtonDown() ||
+      this.isPointerOverAnyUi(pointer)
+    ) {
       return;
     }
 
@@ -2053,8 +2039,7 @@ export class DesignStep {
     // Update visual selection state for all entities
     this.updateEntitySelectionVisuals();
 
-    // Show properties panel for the selected entity
-    this.showPropertiesForEntity(entity);
+    // Properties panel removed; selection only updates status bar
   }
 
   /**
@@ -2119,527 +2104,13 @@ export class DesignStep {
     // If nothing is selected, clear the selected entity reference
     if (selectedIds.length === 0) {
       // selection reference removed
-
-      // Hide properties panel when nothing is selected
-      if (this.propertiesContainer) {
-        this.propertiesContainer.setVisible(false);
-      }
+      // No properties panel; nothing to hide
     }
   }
 
-  /**
-   * Show properties panel for an entity
-   * @param entity The entity to show properties for
-   */
-  private showPropertiesForEntity(entity: Phaser.GameObjects.Container): void {
-    // Ensure properties container exists
-    if (!this.propertiesContainer) {
-      return;
-    }
+  // All properties-related UI methods removed
 
-    // Get entity data
-    const entityData = entity.getData('entityData') as BaseEntity;
-
-    if (!entityData) {
-      return;
-    }
-
-    // Clear existing content
-    this.propertiesContent.removeAll(true);
-
-    // Create properties UI based on entity type
-    const commonY = -40; // Starting Y position
-    let currentY = commonY;
-
-    // Store property controls for later access
-    const controls: { [key: string]: Phaser.GameObjects.GameObject } = {};
-
-    // Add a title for the entity
-    const entityTitle = this.scene.add
-      .text(0, -100, this.getEntityTypeLabel(entityData.type), {
-        fontSize: '14px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    this.propertiesContent.add(entityTitle);
-
-    // ID (read-only)
-    this.addReadOnlyProperty('ID', entityData.id, currentY);
-    currentY += 25;
-
-    // Position (read-only - use Move tool to change)
-    this.addReadOnlyProperty(
-      'Position',
-      `(${Math.round(entityData.position.x)}, ${Math.round(entityData.position.y)})`,
-      currentY
-    );
-    currentY += 25;
-
-    // Rotation (numeric input)
-    const rotationControl = this.addNumericProperty(
-      'Rotation',
-      Phaser.Math.RadToDeg(entityData.rotation ?? 0),
-      currentY,
-      0,
-      360,
-      (value) => {
-        // Update entity rotation (store in radians, display in degrees)
-        entityData.rotation = Phaser.Math.DegToRad(value);
-        entity.setRotation(entityData.rotation);
-        this.manager.setDirty(true);
-      }
-    );
-    controls['rotation'] = rotationControl;
-    currentY += 25;
-
-    // Scale (numeric input)
-    const scaleControl = this.addNumericProperty(
-      'Scale',
-      entityData.scale || 1,
-      currentY,
-      0.1,
-      3,
-      (value) => {
-        // Update entity scale
-        entityData.scale = value;
-        entity.setScale(value);
-        this.manager.setDirty(true);
-      },
-      0.1
-    );
-    controls['scale'] = scaleControl;
-    currentY += 25;
-
-    // Add type-specific properties
-    switch (entityData.type) {
-      case EntityType.ENEMY_SPAWNER: {
-        const enemySpawner = entityData as unknown as EnemySpawner;
-
-        // Add a separator
-        const separator = this.scene.add.graphics();
-        separator.lineStyle(1, 0x555555, 1);
-        separator.lineBetween(-120, currentY + 10, 120, currentY + 10);
-        this.propertiesContent.add(separator);
-        currentY += 25;
-
-        // Enemy Type (dropdown)
-        const enemyTypeOptions = [
-          { value: EnemySpawnerType.FIGHTER, label: 'Fighter' },
-          { value: EnemySpawnerType.SCOUT, label: 'Scout' },
-          { value: EnemySpawnerType.CRUISER, label: 'Cruiser' },
-          { value: EnemySpawnerType.SEEKER, label: 'Seeker' },
-          { value: EnemySpawnerType.GUNSHIP, label: 'Gunship' },
-          { value: EnemySpawnerType.RANDOM, label: 'Random' },
-        ];
-
-        const enemyTypeControl = this.addDropdownProperty(
-          'Enemy Type',
-          enemySpawner.enemyType,
-          enemyTypeOptions,
-          currentY,
-          (value) => {
-            // Update enemy type
-            enemySpawner.enemyType = value as EnemySpawnerType;
-
-            // Update the entity visual
-            const sprite = entity.list.find(
-              (child) => child instanceof Phaser.GameObjects.Image
-            ) as Phaser.GameObjects.Image;
-
-            if (sprite) {
-              // Determine texture based on enemy type
-              let texture = 'enemy_fighter'; // Default texture
-
-              if (value === EnemySpawnerType.SCOUT) {
-                texture = 'enemy_scout';
-              } else if (value === EnemySpawnerType.CRUISER) {
-                texture = 'enemy_cruiser';
-              } else if (value === EnemySpawnerType.SEEKER) {
-                texture = 'enemy_seeker';
-              } else if (value === EnemySpawnerType.GUNSHIP) {
-                texture = 'enemy_gunship';
-              }
-
-              // Update texture
-              sprite.setTexture(texture);
-            }
-
-            // Mark level as dirty
-            this.manager.setDirty(true);
-          }
-        );
-        controls['enemyType'] = enemyTypeControl;
-        currentY += 25;
-
-        // Spawn Rate (numeric input)
-        const spawnRateControl = this.addNumericProperty(
-          'Spawn Rate',
-          enemySpawner.spawnRate || 2,
-          currentY,
-          0.5,
-          10,
-          (value) => {
-            // Update spawn rate
-            enemySpawner.spawnRate = value;
-            this.manager.setDirty(true);
-          },
-          0.1
-        );
-        controls['spawnRate'] = spawnRateControl;
-        currentY += 25;
-
-        // Max Enemies (numeric input)
-        const maxEnemiesControl = this.addNumericProperty(
-          'Max Enemies',
-          enemySpawner.maxEnemies || 5,
-          currentY,
-          1,
-          20,
-          (value) => {
-            // Update max enemies
-            enemySpawner.maxEnemies = Math.round(value);
-            this.manager.setDirty(true);
-          },
-          1
-        );
-        controls['maxEnemies'] = maxEnemiesControl;
-        currentY += 25;
-
-        // Activation Distance (numeric input)
-        const activationDistanceControl = this.addNumericProperty(
-          'Activation Dist.',
-          enemySpawner.activationDistance || 400,
-          currentY,
-          100,
-          1000,
-          (value) => {
-            // Update activation distance
-            enemySpawner.activationDistance = Math.round(value);
-            this.manager.setDirty(true);
-          },
-          10
-        );
-        controls['activationDistance'] = activationDistanceControl;
-        currentY += 25;
-        break;
-      }
-    }
-
-    // Add apply button
-    currentY += 20;
-    const applyButton = this.scene.add
-      .text(0, currentY, 'Apply Changes', {
-        fontSize: '14px',
-        color: '#ffffff',
-        backgroundColor: '#0066cc',
-        padding: { x: 10, y: 5 },
-      })
-      .setOrigin(0.5);
-
-    // Make button interactive
-    applyButton.setInteractive({ useHandCursor: true });
-
-    // Apply changes on click
-    applyButton.on('pointerdown', () => {
-      // All changes are applied immediately for now
-      console.log('[DesignStep] Applied property changes');
-
-      // Show confirmation message
-      const message = this.scene.add
-        .text(0, currentY + 30, 'Changes applied!', {
-          fontSize: '12px',
-          color: '#00ff00',
-        })
-        .setOrigin(0.5);
-
-      this.propertiesContent.add(message);
-
-      // Hide message after 2 seconds
-      this.scene.time.delayedCall(2000, () => {
-        message.destroy();
-      });
-    });
-
-    this.propertiesContent.add(applyButton);
-
-    // Store the entity reference
-    this.propertiesContainer.setData('entity', entity);
-
-    // Show the properties panel
-    this.toggleProperties(true);
-  }
-
-  /**
-   * Add a read-only property to the properties panel
-   * @param label The property label
-   * @param value The property value
-   * @param y The y position
-   */
-  private addReadOnlyProperty(label: string, value: string, y: number): void {
-    // Property label
-    const labelText = this.scene.add
-      .text(-120, y, label + ':', {
-        fontSize: '12px',
-        color: '#aaaaaa',
-      })
-      .setOrigin(0, 0.5);
-
-    // Property value
-    const valueText = this.scene.add
-      .text(-30, y, value, {
-        fontSize: '12px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5);
-
-    this.propertiesContent.add([labelText, valueText]);
-  }
-
-  /**
-   * Add a numeric property with increment/decrement controls to the properties panel
-   * @param label The property label
-   * @param value The property value
-   * @param y The y position
-   * @param min The minimum value
-   * @param max The maximum value
-   * @param onChange The callback to call when the value changes
-   * @param step The step value for increments/decrements
-   * @returns The input container
-   */
-  private addNumericProperty(
-    label: string,
-    value: number,
-    y: number,
-    min: number,
-    max: number,
-    onChange: (value: number) => void,
-    step: number = 1
-  ): Phaser.GameObjects.Container {
-    // Property label
-    const labelText = this.scene.add
-      .text(-120, y, label + ':', {
-        fontSize: '12px',
-        color: '#aaaaaa',
-      })
-      .setOrigin(0, 0.5);
-
-    // Input container
-    const inputContainer = this.scene.add.container(-30, y);
-
-    // Value background
-    const valueBg = this.scene.add.rectangle(0, 0, 80, 20, 0x555555);
-    valueBg.setOrigin(0, 0.5);
-
-    // Value text
-    const valueText = this.scene.add
-      .text(40, 0, value.toString(), {
-        fontSize: '12px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    // Decrement button
-    const decButton = this.scene.add
-      .text(10, 0, '-', {
-        fontSize: '14px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    decButton.setInteractive({ useHandCursor: true });
-    decButton.on('pointerdown', () => {
-      // Decrement value
-      const newValue = Math.max(min, parseFloat((value - step).toFixed(2)));
-      value = newValue;
-      valueText.setText(value.toString());
-      onChange(value);
-    });
-
-    // Increment button
-    const incButton = this.scene.add
-      .text(70, 0, '+', {
-        fontSize: '14px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    incButton.setInteractive({ useHandCursor: true });
-    incButton.on('pointerdown', () => {
-      // Increment value
-      const newValue = Math.min(max, parseFloat((value + step).toFixed(2)));
-      value = newValue;
-      valueText.setText(value.toString());
-      onChange(value);
-    });
-
-    // Add to input container
-    inputContainer.add([valueBg, valueText, decButton, incButton]);
-
-    // Add to properties container
-    this.propertiesContent.add([labelText, inputContainer]);
-
-    return inputContainer;
-  }
-
-  /**
-   * Add a dropdown property to the properties panel
-   * @param label The property label
-   * @param value The current value
-   * @param options The dropdown options
-   * @param y The y position
-   * @param onChange The callback to call when the value changes
-   * @returns The dropdown container
-   */
-  private addDropdownProperty(
-    label: string,
-    value: string,
-    options: Array<{ value: string; label: string }>,
-    y: number,
-    onChange: (value: string) => void
-  ): Phaser.GameObjects.Container {
-    // Property label
-    const labelText = this.scene.add
-      .text(-120, y, label + ':', {
-        fontSize: '12px',
-        color: '#aaaaaa',
-      })
-      .setOrigin(0, 0.5);
-
-    // Dropdown container
-    const dropdownContainer = this.scene.add.container(-30, y);
-
-    // Ensure we have default options
-    if (options.length === 0) {
-      options.push({ value: 'default', label: 'Default' });
-    }
-
-    // Get the label to display in the dropdown
-    let displayLabel = 'Select...';
-    if (options.length > 0) {
-      // Find the selected option or use the first one
-      const selectedOption = options.find((option) => option.value === value);
-      if (selectedOption) {
-        displayLabel = selectedOption.label;
-      } else if (options[0]) {
-        displayLabel = options[0].label;
-      }
-    }
-
-    // Dropdown background
-    const dropdownBg = this.scene.add.rectangle(0, 0, 100, 20, 0x555555);
-    dropdownBg.setOrigin(0, 0.5);
-    dropdownBg.setInteractive({ useHandCursor: true });
-
-    // Dropdown text
-    const dropdownText = this.scene.add
-      .text(50, 0, displayLabel, {
-        fontSize: '12px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    // Dropdown arrow
-    const dropdownArrow = this.scene.add
-      .text(90, 0, '▼', {
-        fontSize: '10px',
-        color: '#aaaaaa',
-      })
-      .setOrigin(0.5);
-
-    // Add to dropdown container
-    dropdownContainer.add([dropdownBg, dropdownText, dropdownArrow]);
-
-    // Options popup
-    let optionsContainer: Phaser.GameObjects.Container | null = null;
-
-    // Toggle dropdown on click
-    dropdownBg.on('pointerdown', () => {
-      if (optionsContainer) {
-        // Close dropdown
-        optionsContainer.destroy();
-        optionsContainer = null;
-      } else {
-        // Open dropdown
-        optionsContainer = this.scene.add.container(0, 15);
-
-        // Create options
-        options.forEach((option, index) => {
-          const optionY = index * 20;
-
-          // Option background
-          const optionBg = this.scene.add.rectangle(0, optionY, 100, 20, 0x333333);
-          optionBg.setOrigin(0, 0.5);
-          optionBg.setInteractive({ useHandCursor: true });
-
-          // Highlight on hover
-          optionBg.on('pointerover', () => {
-            optionBg.setFillStyle(0x666666);
-          });
-
-          optionBg.on('pointerout', () => {
-            optionBg.setFillStyle(0x333333);
-          });
-
-          // Select option on click
-          optionBg.on('pointerdown', () => {
-            dropdownText.setText(option.label);
-            onChange(option.value);
-
-            // Close dropdown
-            if (optionsContainer) {
-              optionsContainer.destroy();
-              optionsContainer = null;
-            }
-          });
-
-          // Option text
-          const optionText = this.scene.add
-            .text(50, optionY, option.label, {
-              fontSize: '12px',
-              color: '#ffffff',
-            })
-            .setOrigin(0.5);
-
-          if (optionsContainer) {
-            optionsContainer.add([optionBg, optionText]);
-          }
-        });
-
-        dropdownContainer.add(optionsContainer);
-      }
-    });
-
-    // Add to properties container
-    this.propertiesContainer.add([labelText, dropdownContainer]);
-
-    return dropdownContainer;
-  }
-
-  /**
-   * Get a display label for an entity type
-   * @param type The entity type
-   * @returns A display label
-   */
-  private getEntityTypeLabel(type: EntityType): string {
-    switch (type) {
-      case EntityType.ENEMY_SPAWNER:
-        return 'Enemy Spawner';
-      case EntityType.PLAYER_START:
-        return 'Player Start Position';
-      case EntityType.OBSTACLE:
-        return 'Obstacle';
-      case EntityType.POWERUP_SPAWNER:
-        return 'Power-Up Spawner';
-      case EntityType.DECORATION:
-        return 'Decoration';
-      case EntityType.TRIGGER:
-        return 'Trigger';
-      default:
-        return 'Unknown Entity';
-    }
-  }
+  // Dropdowns and entity-type labels were for the properties panel; removed
 
   /**
    * Clear all entities from the level
@@ -2999,46 +2470,7 @@ export class DesignStep {
   }
 
   // === Phase 2: Properties drawer helpers ===
-  private toggleProperties(forceOpen?: boolean): void {
-    const newState = forceOpen !== undefined ? forceOpen : !this.propertiesOpen;
-    this.propertiesOpen = newState;
-    if (this.propertiesContainer) {
-      const uiVisible = this.toolbarContainer?.visible ?? true;
-      this.propertiesContainer.setVisible(newState && uiVisible);
-    }
-    try {
-      window?.localStorage?.setItem('design.properties.open', String(newState));
-    } catch {
-      // ignore
-    }
-  }
-
-  private isPointerOverProperties(pointer: Phaser.Input.Pointer): boolean {
-    if (!this.propertiesContainer?.visible) return false;
-    // Properties panel is sticky (screen-space), so compare to pointer screen coords
-    const cx = this.propertiesContainer.x;
-    const cy = this.propertiesContainer.y;
-    const halfW = 160;
-    const halfH = 230;
-    return (
-      pointer.x >= cx - halfW &&
-      pointer.x <= cx + halfW &&
-      pointer.y >= cy - halfH &&
-      pointer.y <= cy + halfH
-    );
-  }
-
-  private scrollPropertiesContent(dy: number): void {
-    if (!this.propertiesContainer?.visible || !this.propertiesContent) return;
-    const step = Math.sign(dy) * 20;
-    const targetY = this.propertiesContent.y - step;
-    const b = this.propertiesContent.getBounds();
-    const contentHeight = b.height || 300;
-    const viewportHeight = 320;
-    const maxY = -120;
-    const minY = Math.min(maxY, maxY - (contentHeight - viewportHeight));
-    this.propertiesContent.y = Phaser.Math.Clamp(targetY, minY, maxY);
-  }
+  // No properties helpers (panel removed)
 
   // === Phase 1 helpers: palette drawer behavior ===
   private togglePalette(forceOpen?: boolean, immediate: boolean = false): void {
