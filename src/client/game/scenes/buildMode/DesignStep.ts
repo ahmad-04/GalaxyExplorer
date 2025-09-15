@@ -24,19 +24,55 @@ export class DesignStep {
   private service: BuildModeService;
   // Reduced top offset to give grid more vertical space
   private readonly topUiOffset: number = 0;
+  // Camera state for scroll-only navigation
+  private isPanning: boolean = false;
+  private panStart: { x: number; y: number; scrollX: number; scrollY: number } | null = null;
+  private lastCamScroll = { x: 0, y: 0 };
+  // Padding inside the top sticky bar to push content down
+  private readonly topBarPadding: number = 24;
 
   // UI elements
   private container!: Phaser.GameObjects.Container;
   private toolbarContainer!: Phaser.GameObjects.Container;
   private entityPaletteContainer!: Phaser.GameObjects.Container;
+  private paletteRevealButton?: Phaser.GameObjects.Container;
   private propertiesContainer!: Phaser.GameObjects.Container;
   private bgRect!: Phaser.GameObjects.Rectangle;
   private backNavText!: Phaser.GameObjects.Text;
   private nextNavText!: Phaser.GameObjects.Text;
-  private saveButtonText!: Phaser.GameObjects.Text;
+  // Save button
+  private saveButtonContainer?: Phaser.GameObjects.Container;
+  private headerTitleText!: Phaser.GameObjects.Text;
+  private saveButtonWidth: number = 116;
+  private paletteOpen: boolean = true;
+  private paletteMask?: Phaser.Display.Masks.GeometryMask;
+  private paletteMaskGraphics?: Phaser.GameObjects.Graphics;
+  private propertiesOpen: boolean = false;
+  private propertiesMask?: Phaser.Display.Masks.GeometryMask;
+  private propertiesMaskGraphics?: Phaser.GameObjects.Graphics;
+  private propertiesContent!: Phaser.GameObjects.Container;
+
+  // Status bar
+  private statusBarContainer!: Phaser.GameObjects.Container;
+  private statusBg!: Phaser.GameObjects.Rectangle;
+  private statusTextCoords!: Phaser.GameObjects.Text;
+  private statusTextSelection!: Phaser.GameObjects.Text;
+  private statusTextDirty!: Phaser.GameObjects.Text;
+  private statusDivider1?: Phaser.GameObjects.Rectangle;
+  private statusDivider2?: Phaser.GameObjects.Rectangle;
+  private statusSelectionListener: ((...args: unknown[]) => void) | undefined;
+  private statusDirtyListener: ((...args: unknown[]) => void) | undefined;
+  // Top sticky bar background
+  private topBarBg?: Phaser.GameObjects.Rectangle;
+  private readonly paletteWidth: number = 220;
+  private readonly paletteHeight: number = 460;
+  private paletteAnimating: boolean = false;
+  // Toolbar (left panel) animation + reveal state
+  private toolbarOpen: boolean = true;
+  private toolbarAnimating: boolean = false;
+  private toolbarRevealButton?: Phaser.GameObjects.Container;
 
   // Grid and camera
-  // private grid!: Phaser.GameObjects.Grid; // Keeping for future use
   private cameraControls!: Phaser.Cameras.Controls.SmoothedKeyControl;
 
   // Entity management
@@ -114,6 +150,32 @@ export class DesignStep {
     // Clean up events
     this.cleanupEvents();
 
+    // Remove status bar listeners
+    if (this.statusSelectionListener) {
+      this.manager.off('selection:change', this.statusSelectionListener);
+      this.statusSelectionListener = undefined;
+    }
+    if (this.statusDirtyListener) {
+      this.manager.off('level:dirtyChange', this.statusDirtyListener);
+      this.statusDirtyListener = undefined;
+    }
+
+    // Destroy sticky status bar if present
+    if (this.statusBarContainer) {
+      this.statusBarContainer.destroy(true);
+      // Clear references
+      // @ts-expect-error allow clearing
+      this.statusBarContainer = undefined;
+      // @ts-expect-error allow clearing
+      this.statusBg = undefined;
+      // @ts-expect-error allow clearing
+      this.statusTextCoords = undefined;
+      // @ts-expect-error allow clearing
+      this.statusTextSelection = undefined;
+      // @ts-expect-error allow clearing
+      this.statusTextDirty = undefined;
+    }
+
     // Remove resize listener
     if (this.resizeHandler) {
       this.scene.scale.off('resize', this.resizeHandler);
@@ -132,6 +194,9 @@ export class DesignStep {
     // Remove placement events
     this.scene.input.removeAllListeners('pointermove');
     this.scene.input.removeAllListeners('pointerdown');
+    this.scene.input.removeAllListeners('pointerup');
+    this.scene.input.removeAllListeners('wheel');
+    this.scene.events.off('update', this.updateOnCameraMove, this);
   }
 
   /**
@@ -159,14 +224,23 @@ export class DesignStep {
     // Create grid
     this.createGrid();
 
-    // Create grid controls
-    this.createGridControls();
+    // Grid controls removed (grid is fixed-size and always toggleable via code)
 
     // Create toolbar
     this.createToolbar();
 
-    // Create entity palette
+    // Create entity palette (sticky on the right)
     this.createEntityPalette();
+
+    // Initialize palette visibility from persisted state
+    try {
+      const persisted = window?.localStorage?.getItem('design.palette.open');
+      if (persisted === 'false') {
+        this.togglePalette(false, true);
+      }
+    } catch {
+      // ignore storage issues
+    }
 
     // Create properties panel
     this.createPropertiesPanel();
@@ -177,37 +251,112 @@ export class DesignStep {
     // Add save button
     this.createSaveButton();
 
+    // Create top sticky bar background to match bottom status bar
+    const initialHeaderHeight = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarHeight = Math.max(48, initialHeaderHeight);
+    this.topBarBg = this.scene.add.rectangle(
+      0,
+      0,
+      this.scene.scale.width,
+      topBarHeight,
+      0x1f2937,
+      1
+    );
+    this.topBarBg.setOrigin(0, 0);
+    this.topBarBg.setScrollFactor(0);
+    this.topBarBg.setStrokeStyle(1, 0x374151, 1);
+    this.topBarBg.setDepth(80); // Below title/save (100), above grid
+
+    // Create bottom status bar
+    this.createStatusBar();
+
     // Handle viewport resize to keep UI anchored and fill screen
     this.resizeHandler = () => {
       // Background fills available space
       this.bgRect.width = this.scene.scale.width;
       this.bgRect.height = this.scene.scale.height - this.container.y;
 
-      // Reposition right-side UI panels
+      // Reposition right-side UI panels (sticky palette)
       if (this.entityPaletteContainer) {
-        this.entityPaletteContainer.x = this.scene.scale.width - 150;
+        this.entityPaletteContainer.x = this.scene.scale.width - this.paletteWidth / 2;
+        const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        const topBarH = Math.max(48, headerH);
+        this.entityPaletteContainer.y = topBarH + 20 + this.paletteHeight / 2;
       }
+      // Reposition toolbar (sticky)
+      if (this.toolbarContainer) {
+        const headerHtb = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        const topBarHtb = Math.max(48, headerHtb);
+        this.toolbarContainer.y = topBarHtb + 20;
+        this.toolbarContainer.x = this.toolbarOpen ? 0 : -64;
+      }
+      // Reposition toolbar reveal button if visible
+      if (this.toolbarRevealButton && this.toolbarRevealButton.visible) {
+        const headerHtb = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        const topBarHtb = Math.max(48, headerHtb);
+        this.toolbarRevealButton.x = 12;
+        this.toolbarRevealButton.y = topBarHtb + 20 + 150;
+      }
+      if (this.paletteRevealButton && this.paletteRevealButton.visible) {
+        this.paletteRevealButton.x = this.scene.scale.width - 12;
+        const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        const topBarH = Math.max(48, headerH);
+        this.paletteRevealButton.y = topBarH + 20 + this.paletteHeight / 2;
+      }
+      // update palette mask position
+      if (this.paletteMaskGraphics && this.entityPaletteContainer) {
+        this.paletteMaskGraphics.clear();
+        this.paletteMaskGraphics.fillStyle(0xffffff);
+        const maskWidth = this.paletteWidth - 40;
+        const maskX2 = this.entityPaletteContainer.x - maskWidth / 2;
+        const maskY2 = this.entityPaletteContainer.y - 140;
+        this.paletteMaskGraphics.fillRect(maskX2, maskY2, maskWidth, 320);
+      }
+      // Left drawer anchors (sticky like palette)
       if (this.propertiesContainer) {
-        this.propertiesContainer.x = this.scene.scale.width - 160;
-        this.propertiesContainer.y = this.scene.scale.height - 220;
+        const headerH2 = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        const topBarH2 = Math.max(48, headerH2);
+        this.propertiesContainer.x = 160;
+        this.propertiesContainer.y = topBarH2 + 20 + 230;
+        // update properties mask position
+        if (this.propertiesMaskGraphics) {
+          this.propertiesMaskGraphics.clear();
+          this.propertiesMaskGraphics.fillStyle(0xffffff);
+          const pmx = this.propertiesContainer.x - 150;
+          const pmy = this.propertiesContainer.y - 140;
+          this.propertiesMaskGraphics.fillRect(pmx, pmy, 300, 320);
+        }
       }
 
-      // Reposition navigation buttons at the bottom-right
-      if (this.backNavText) {
-        this.backNavText.x = this.scene.scale.width - 200;
-        this.backNavText.y = this.scene.scale.height - 40;
-      }
-      if (this.nextNavText) {
-        this.nextNavText.x = this.scene.scale.width - 80;
-        this.nextNavText.y = this.scene.scale.height - 40;
+      // Navigation buttons are laid out inside the status bar now
+
+      // Anchor status bar at bottom (sticky)
+      if (this.statusBarContainer && this.statusBg) {
+        const barHeight = 28;
+        this.statusBarContainer.x = 0;
+        this.statusBarContainer.y = this.scene.scale.height - barHeight;
+        this.statusBg.width = this.scene.scale.width;
+        this.statusBg.height = barHeight;
+        this.layoutStatusBarText();
       }
 
-      // Reposition save button in top-right (align with header)
-      if (this.saveButtonText) {
-        this.saveButtonText.x = this.scene.scale.width - 160;
-        // Keep button near the header area
+      // Resize top sticky bar background
+      if (this.topBarBg) {
+        const h = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+        this.topBarBg.width = this.scene.scale.width;
+        this.topBarBg.height = Math.max(48, h);
+        this.topBarBg.y = 0;
+      }
+
+      // Reposition save button in top-right (mirror title left padding)
+      if (this.saveButtonContainer) {
         const currentHeader = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        this.saveButtonText.y = Math.max(8, Math.floor(currentHeader / 2));
+        const leftPad = this.headerTitleText ? this.headerTitleText.x : 20;
+        this.saveButtonContainer.x = this.scene.scale.width - (leftPad + this.saveButtonWidth / 2);
+        this.saveButtonContainer.y = Math.max(
+          16,
+          Math.floor(currentHeader / 2) + this.topBarPadding
+        );
       }
 
       // Redraw grid for new viewport size
@@ -225,9 +374,46 @@ export class DesignStep {
       this.container.y = newHeight;
       this.bgRect.height = this.scene.scale.height - this.container.y;
 
-      // Nudge save button to stay aligned with header
-      if (this.saveButtonText) {
-        this.saveButtonText.y = Math.max(8, Math.floor(newHeight / 2));
+      // Nudge save button to stay aligned with header and mirror title padding
+      if (this.saveButtonContainer) {
+        this.saveButtonContainer.y = Math.max(16, Math.floor(newHeight / 2) + this.topBarPadding);
+        const leftPad = this.headerTitleText ? this.headerTitleText.x : 20;
+        this.saveButtonContainer.x = this.scene.scale.width - (leftPad + this.saveButtonWidth / 2);
+      }
+
+      // Reposition header title as well
+      if (this.headerTitleText) {
+        this.headerTitleText.y = Math.max(20, Math.floor(newHeight / 2) + this.topBarPadding);
+      }
+
+      // Update top sticky bar background height to reflect header changes
+      if (this.topBarBg) {
+        this.topBarBg.height = Math.max(48, newHeight || 0);
+        this.topBarBg.width = this.scene.scale.width;
+      }
+
+      // Reposition toolbar under updated top bar height
+      if (this.toolbarContainer) {
+        const topBarHtb2 = Math.max(48, newHeight || 0);
+        this.toolbarContainer.y = topBarHtb2 + 20;
+        this.toolbarContainer.x = this.toolbarOpen ? 0 : -64;
+      }
+      if (this.toolbarRevealButton && this.toolbarRevealButton.visible) {
+        const topBarHtb2 = Math.max(48, newHeight || 0);
+        this.toolbarRevealButton.y = topBarHtb2 + 20 + 150;
+      }
+
+      // Keep properties panel anchored below the top bar
+      if (this.propertiesContainer) {
+        const topBarH3 = Math.max(48, newHeight || 0);
+        this.propertiesContainer.y = topBarH3 + 20 + 230;
+        if (this.propertiesMaskGraphics) {
+          this.propertiesMaskGraphics.clear();
+          this.propertiesMaskGraphics.fillStyle(0xffffff);
+          const pmx = this.propertiesContainer.x - 150;
+          const pmy = this.propertiesContainer.y - 140;
+          this.propertiesMaskGraphics.fillRect(pmx, pmy, 300, 320);
+        }
       }
 
       // Redraw grid for new viewport
@@ -240,6 +426,14 @@ export class DesignStep {
 
       // Keep origin near bottom so we gain upward space
       this.adjustCameraForUpwardSpace();
+
+      // Update status bar position after header change (sticky)
+      if (this.statusBarContainer && this.statusBg) {
+        const barHeight = 28;
+        this.statusBarContainer.y = this.scene.scale.height - barHeight;
+        this.statusBg.width = this.scene.scale.width;
+        this.layoutStatusBarText();
+      }
     };
     this.scene.events.on('ui:header:heightChanged', this.headerHeightHandler);
   }
@@ -255,40 +449,91 @@ export class DesignStep {
       return;
     }
 
+    const cam = this.scene.cameras.main;
+
+    // Lock zoom: fixed scale, disable zoom inputs
+    cam.setZoom(1);
+
+    // Large world bounds to allow extensive panning range
+    const WORLD_SIZE = 100000; // 100k px square world
+    cam.setBounds(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, WORLD_SIZE);
+
+    // Key-based panning only (no zoom bindings)
     const controlConfig = {
-      camera: this.scene.cameras.main,
+      camera: cam,
       left: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       down: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      zoomIn: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
-      zoomOut: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
-      acceleration: 0.06,
+      acceleration: 0.08,
       drag: 0.003,
-      maxSpeed: 1.0,
-    };
+      maxSpeed: 1.2,
+    } as Phaser.Types.Cameras.Controls.SmoothedKeyControlConfig;
 
     // Create camera controls
     this.cameraControls = new Phaser.Cameras.Controls.SmoothedKeyControl(controlConfig);
 
     // Start with more upward space visible
     this.adjustCameraForUpwardSpace();
+    this.lastCamScroll = { x: cam.scrollX, y: cam.scrollY };
 
-    // Enable zoom with mouse wheel
+    // Mouse wheel pans instead of zooms (supports trackpads: horizontal + vertical)
     this.scene.input.on(
       'wheel',
-      (_pointer: Phaser.Input.Pointer, _gameObjects: unknown, _deltaX: number, deltaY: number) => {
-        const camera = this.scene.cameras.main;
-        const zoom = camera.zoom;
-
-        // Adjust zoom based on wheel direction
-        if (deltaY > 0) {
-          camera.setZoom(Math.max(0.5, zoom - 0.1));
-        } else {
-          camera.setZoom(Math.min(2, zoom + 0.1));
+      (pointer: Phaser.Input.Pointer, _gameObjects: unknown[], dx: number, dy: number) => {
+        if (this.entityPaletteContainer?.visible && this.isPointerOverPalette(pointer)) {
+          this.scrollPaletteContent(dy);
+          return;
         }
+        if (this.propertiesContainer?.visible && this.isPointerOverProperties(pointer)) {
+          this.scrollPropertiesContent(dy);
+          return;
+        }
+        cam.setScroll(cam.scrollX + dx * 0.5, cam.scrollY + dy * 0.5);
       }
     );
+
+    // Drag-to-pan (middle mouse, or PAN tool with left mouse)
+    this.scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      const panToolActive = this.manager.getCurrentTool() === BuildModeTool.PAN;
+      if (pointer.middleButtonDown() || (panToolActive && pointer.leftButtonDown())) {
+        this.isPanning = true;
+        this.panStart = { x: pointer.x, y: pointer.y, scrollX: cam.scrollX, scrollY: cam.scrollY };
+      }
+    });
+
+    this.scene.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.isPanning || !this.panStart) return;
+      const dx = pointer.x - this.panStart.x;
+      const dy = pointer.y - this.panStart.y;
+      cam.setScroll(this.panStart.scrollX - dx, this.panStart.scrollY - dy);
+    });
+
+    this.scene.input.on('pointerup', () => {
+      this.isPanning = false;
+      this.panStart = null;
+    });
+
+    // Redraw grid only when camera moved
+    this.scene.events.on('update', this.updateOnCameraMove, this);
+  }
+
+  // Redraw grid if camera scroll changes
+  private updateOnCameraMove(): void {
+    const cam = this.scene.cameras.main;
+    const moved =
+      (cam.scrollX | 0) !== (this.lastCamScroll.x | 0) ||
+      (cam.scrollY | 0) !== (this.lastCamScroll.y | 0);
+    if (!moved) return;
+    this.lastCamScroll = { x: cam.scrollX, y: cam.scrollY };
+    const gridGraphics = this.container?.getData('gridGraphics') as
+      | Phaser.GameObjects.Graphics
+      | undefined;
+    if (gridGraphics && this.manager.isGridVisible()) {
+      this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
+    }
+    // Update coordinates in status bar as camera moves
+    this.updateStatusBarCoords();
   }
 
   /**
@@ -313,11 +558,13 @@ export class DesignStep {
     this.container.setData('gridGraphics', gridGraphics);
 
     // Set up event listeners for grid changes
-    this.manager.on('grid:visibilityChange', (visible: boolean) => {
+    this.manager.on('grid:visibilityChange', (...args: unknown[]) => {
+      const visible = Boolean(args[0]);
       this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), visible);
     });
 
-    this.manager.on('grid:sizeChange', (size: number) => {
+    this.manager.on('grid:sizeChange', (...args: unknown[]) => {
+      const size = Number(args[0]);
       this.updateGridDisplay(gridGraphics, size, this.manager.isGridVisible());
     });
   }
@@ -353,8 +600,8 @@ export class DesignStep {
     const endX = startX + viewport.width + gridSize * 2;
     const endY = startY + viewport.height + gridSize * 2;
 
-    // Draw minor grid lines (standard grid)
-    graphics.lineStyle(1, 0x555555, 0.6);
+    // Subtle minor grid lines
+    graphics.lineStyle(1, 0x3b4756, 0.5);
 
     // Draw vertical lines
     for (let x = startX; x <= endX; x += gridSize) {
@@ -372,12 +619,12 @@ export class DesignStep {
       graphics.strokePath();
     }
 
-    // Draw major grid lines (every 5 cells)
+    // Subtle major grid lines (every 5 cells)
     const majorGridSize = gridSize * 5;
     const majorStartX = Math.floor(camera.scrollX / majorGridSize) * majorGridSize;
     const majorStartY = Math.floor(camera.scrollY / majorGridSize) * majorGridSize;
 
-    graphics.lineStyle(1.5, 0x777777, 0.8);
+    graphics.lineStyle(1, 0x4a5568, 0.6);
 
     // Draw major vertical lines
     for (let x = majorStartX; x <= endX; x += majorGridSize) {
@@ -395,173 +642,47 @@ export class DesignStep {
       graphics.strokePath();
     }
 
-    // Draw axes with different color
-    graphics.lineStyle(2.5, 0x00aaff, 0.9);
-
-    // X axis (horizontal line at y=0)
-    graphics.beginPath();
-    graphics.moveTo(startX, 0);
-    graphics.lineTo(endX, 0);
-    graphics.strokePath();
-
-    // Y axis (vertical line at x=0)
-    graphics.beginPath();
-    graphics.moveTo(0, startY);
-    graphics.lineTo(0, endY);
-    graphics.strokePath();
-
-    // Draw origin point
-    graphics.fillStyle(0xff9900, 1);
-    graphics.fillCircle(0, 0, 4);
+    // No axes/origin for cleaner look matching mockup
   }
 
-  /**
-   * Create grid control UI
-   */
-  private createGridControls(): void {
-    // Create a container for grid controls
-    const controlsContainer = this.scene.add.container(this.scene.scale.width - 140, 120);
-    this.container.add(controlsContainer);
-
-    // Controls background
-    const controlsBg = this.scene.add.rectangle(0, 0, 120, 150, 0x333333, 0.8);
-    controlsBg.setOrigin(0.5);
-    controlsBg.setStrokeStyle(1, 0x555555);
-    controlsContainer.add(controlsBg);
-
-    // Title
-    const title = this.scene.add
-      .text(0, -60, 'Grid Controls', {
-        fontSize: '16px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    controlsContainer.add(title);
-
-    // Grid visibility toggle
-    const toggleBg = this.scene.add.rectangle(-40, -20, 24, 24, 0x555555);
-    toggleBg.setOrigin(0.5);
-    toggleBg.setStrokeStyle(2, 0xaaaaaa);
-
-    // Checkmark (shown when grid is visible)
-    const checkmark = this.scene.add
-      .text(-40, -20, '✓', {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    // Initial state from manager
-    const isVisible = this.manager.isGridVisible();
-    checkmark.setVisible(isVisible);
-    if (isVisible) {
-      toggleBg.setFillStyle(0x00aaff);
-      toggleBg.setStrokeStyle(2, 0x00ffff);
-    }
-
-    // Label
-    const toggleLabel = this.scene.add
-      .text(-25, -20, 'Show Grid', {
-        fontSize: '14px',
-        color: '#ffffff',
-      })
-      .setOrigin(0, 0.5);
-
-    // Make toggle interactive
-    toggleBg.setInteractive({ useHandCursor: true });
-    toggleBg.on('pointerdown', () => {
-      const newVisible = !this.manager.isGridVisible();
-      this.manager.setGridVisible(newVisible);
-      checkmark.setVisible(newVisible);
-
-      if (newVisible) {
-        toggleBg.setFillStyle(0x00aaff);
-        toggleBg.setStrokeStyle(2, 0x00ffff);
-      } else {
-        toggleBg.setFillStyle(0x555555);
-        toggleBg.setStrokeStyle(2, 0xaaaaaa);
-      }
-    });
-
-    // Grid size controls
-    const sizeLabel = this.scene.add
-      .text(0, 10, 'Grid Size', {
-        fontSize: '14px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    // Size value display
-    const sizeValue = this.scene.add
-      .text(0, 30, this.manager.getGridSize().toString(), {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    // Decrease button
-    const decButton = this.scene.add
-      .text(-30, 30, '-', {
-        fontSize: '24px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-    decButton.setInteractive({ useHandCursor: true });
-    decButton.on('pointerdown', () => {
-      const currentSize = this.manager.getGridSize();
-      if (currentSize > 8) {
-        // Minimum size
-        this.manager.setGridSize(currentSize - 8);
-        sizeValue.setText(this.manager.getGridSize().toString());
-      }
-    });
-
-    // Increase button
-    const incButton = this.scene.add
-      .text(30, 30, '+', {
-        fontSize: '24px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-    incButton.setInteractive({ useHandCursor: true });
-    incButton.on('pointerdown', () => {
-      const currentSize = this.manager.getGridSize();
-      if (currentSize < 64) {
-        // Maximum size
-        this.manager.setGridSize(currentSize + 8);
-        sizeValue.setText(this.manager.getGridSize().toString());
-      }
-    });
-
-    // Add all controls to container
-    controlsContainer.add([
-      title,
-      toggleBg,
-      checkmark,
-      toggleLabel,
-      sizeLabel,
-      sizeValue,
-      decButton,
-      incButton,
-    ]);
-  }
+  // Grid control UI removed
 
   /**
    * Create the toolbar with editing tools
    */
   private createToolbar(): void {
     // Create toolbar container
-    this.toolbarContainer = this.scene.add.container(10, 10);
-    this.container.add(this.toolbarContainer);
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    const toolbarWidth = 56;
+    const toolbarHeight = 300;
+    this.toolbarContainer = this.scene.add.container(0, topBarH + 20);
+    this.toolbarContainer.setScrollFactor(0);
+    this.toolbarContainer.setDepth(85);
 
     // Create toolbar background
-    const toolbarBg = this.scene.add.rectangle(0, 0, 50, 300, 0x333333);
+    const toolbarBg = this.scene.add.rectangle(0, 0, toolbarWidth, toolbarHeight, 0x333333);
     toolbarBg.setOrigin(0, 0);
     toolbarBg.setStrokeStyle(1, 0x555555);
     this.toolbarContainer.add(toolbarBg);
+
+    // Collapse handle, centered just outside the toolbar's right edge
+    const collapse = this.scene.add.container(toolbarWidth + 9, toolbarHeight / 2);
+    collapse.setScrollFactor(0);
+    const collapseBg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
+    collapseBg.setStrokeStyle(1, 0x2b3a4a, 1);
+    const collapseIcon = this.scene.add
+      .text(0, 0, '<', { fontSize: '16px', color: '#9ca3af' })
+      .setOrigin(0.5);
+    collapse.add([collapseBg, collapseIcon]);
+    collapse.setInteractive(
+      new Phaser.Geom.Rectangle(-9, -22, 18, 44),
+      Phaser.Geom.Rectangle.Contains
+    );
+    collapse.on('pointerover', () => collapseBg.setFillStyle(0x1f2937, 1));
+    collapse.on('pointerout', () => collapseBg.setFillStyle(0x111827, 0.9));
+    collapse.on('pointerdown', () => this.toggleToolbar(false));
+    this.toolbarContainer.add(collapse);
 
     // Create tool buttons
     const tools = [
@@ -580,7 +701,7 @@ export class DesignStep {
       const y = 20 + index * 50;
 
       // Button background for selection indicator
-      const buttonBg = this.scene.add.rectangle(25, y, 40, 40, 0x333333);
+      const buttonBg = this.scene.add.rectangle(28, y, 44, 44, 0x333333);
       buttonBg.setOrigin(0.5);
       buttonBg.setStrokeStyle(2, 0x555555, 0);
       this.toolbarContainer.add(buttonBg);
@@ -596,7 +717,7 @@ export class DesignStep {
 
       // Tool button
       const toolButton = this.scene.add
-        .text(25, y, toolInfo.icon, {
+        .text(28, y, toolInfo.icon, {
           fontSize: '24px',
           color: '#ffffff',
         })
@@ -605,22 +726,31 @@ export class DesignStep {
       // Make button interactive
       toolButton.setInteractive({ useHandCursor: true });
 
-      // Add hover effects
+      // Add hover effects with delayed tooltip (~1s)
       toolButton.on('pointerover', () => {
         toolButton.setTint(0x00ffff);
         buttonBg.setStrokeStyle(2, 0x00ffff, 1);
+        // Add a subtle hover background to improve affordance if not selected
+        if (this.manager.getCurrentTool() !== toolInfo.tool) {
+          buttonBg.setFillStyle(0x3a3a3a);
+        }
 
-        // Show tooltip
-        const tooltip = this.scene.add
-          .text(60, y, toolInfo.label, {
-            fontSize: '14px',
-            backgroundColor: '#444444',
-            padding: { x: 5, y: 3 },
-            color: '#ffffff',
-          })
-          .setOrigin(0, 0.5);
-
-        toolButton.setData('tooltip', tooltip);
+        // Schedule tooltip after a delay
+        const timer = this.scene.time.delayedCall(1000, () => {
+          // Create tooltip as a child of the toolbar container so it aligns to the icon
+          const tooltip = this.scene.add
+            .text(60, y, toolInfo.label, {
+              fontSize: '12px',
+              backgroundColor: '#1f2937',
+              padding: { x: 6, y: 4 },
+              color: '#e5e7eb',
+            })
+            .setOrigin(0, 0.5);
+          // Keep tooltip in the same (sticky) coordinate space
+          this.toolbarContainer.add(tooltip);
+          toolButton.setData('tooltip', tooltip);
+        });
+        toolButton.setData('tooltipTimer', timer);
       });
 
       toolButton.on('pointerout', () => {
@@ -629,19 +759,29 @@ export class DesignStep {
         // Only clear stroke if not selected
         if (this.manager.getCurrentTool() !== toolInfo.tool) {
           buttonBg.setStrokeStyle(2, 0x555555, 0);
+          // Restore base background when not hovered and not selected
+          buttonBg.setFillStyle(0x333333);
         }
 
-        // Remove tooltip
-        const tooltip = toolButton.getData('tooltip');
-        if (tooltip) {
-          tooltip.destroy();
-        }
+        // Cancel delayed tooltip and remove if shown
+        const t: Phaser.Time.TimerEvent | undefined = toolButton.getData('tooltipTimer');
+        if (t && !t.hasDispatched) t.remove(false);
+        toolButton.setData('tooltipTimer', undefined);
+        const tooltip = toolButton.getData('tooltip') as Phaser.GameObjects.Text | undefined;
+        if (tooltip) tooltip.destroy();
       });
 
       // Set tool on click
       toolButton.on('pointerdown', () => {
         // Update the tool
         this.manager.setCurrentTool(toolInfo.tool);
+
+        // Dismiss tooltip immediately on click
+        const t: Phaser.Time.TimerEvent | undefined = toolButton.getData('tooltipTimer');
+        if (t && !t.hasDispatched) t.remove(false);
+        toolButton.setData('tooltipTimer', undefined);
+        const tooltip = toolButton.getData('tooltip') as Phaser.GameObjects.Text | undefined;
+        if (tooltip) tooltip.destroy();
 
         // Reset all button backgrounds
         Object.values(toolButtonBackgrounds).forEach((bg) => {
@@ -658,7 +798,8 @@ export class DesignStep {
     });
 
     // Listen for tool changes from the manager
-    this.manager.on('tool:change', (tool: BuildModeTool) => {
+    this.manager.on('tool:change', (...args: unknown[]) => {
+      const tool = args[0] as BuildModeTool;
       // Reset all button backgrounds
       Object.values(toolButtonBackgrounds).forEach((bg) => {
         bg.setFillStyle(0x333333);
@@ -672,37 +813,171 @@ export class DesignStep {
         selectedBg.setStrokeStyle(2, 0x00ffff, 1);
       }
     });
+
+    // Ensure entire toolbar and its children are non-scrolling for correct input mapping
+    this.setScrollFactorDeep(this.toolbarContainer, 0);
+
+    // Restore persisted toolbar open state
+    try {
+      const persisted = window?.localStorage?.getItem('design.toolbar.open');
+      if (persisted === 'false') {
+        this.toggleToolbar(false, true);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Toggle left toolbar (hugging left), mirroring palette animation
+  private toggleToolbar(forceOpen?: boolean, immediate: boolean = false): void {
+    if (this.toolbarAnimating) return;
+    const newState = forceOpen !== undefined ? forceOpen : !this.toolbarOpen;
+    this.toolbarOpen = newState;
+
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    const openX = 0; // hugs left edge
+    const closedX = -64; // hide to the left beyond its width (~56) plus margin
+    const targetY = topBarH + 20;
+    if (!this.toolbarContainer) return;
+    this.toolbarContainer.y = targetY;
+
+    const ensureReveal = () => {
+      if (!this.toolbarRevealButton) {
+        const btn = this.scene.add.container(12, targetY + 150);
+        btn.setScrollFactor(0);
+        const bg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
+        bg.setStrokeStyle(1, 0x2b3a4a, 1);
+        const icon = this.scene.add
+          .text(0, 0, '>', { fontSize: '16px', color: '#9ca3af' })
+          .setOrigin(0.5);
+        btn.add([bg, icon]);
+        btn.setInteractive(
+          new Phaser.Geom.Rectangle(-9, -22, 18, 44),
+          Phaser.Geom.Rectangle.Contains
+        );
+        btn.on('pointerover', () => bg.setFillStyle(0x1f2937, 1));
+        btn.on('pointerout', () => bg.setFillStyle(0x111827, 0.9));
+        btn.on('pointerdown', () => this.toggleToolbar(true));
+        this.toolbarRevealButton = btn;
+      }
+      this.toolbarRevealButton!.x = 12;
+      this.toolbarRevealButton!.y = targetY + 150;
+    };
+
+    if (immediate) {
+      if (newState) {
+        this.toolbarContainer.setVisible(true);
+        this.toolbarContainer.x = openX;
+        this.toolbarContainer.y = targetY;
+      } else {
+        this.toolbarContainer.x = closedX;
+        this.toolbarContainer.setVisible(false);
+        ensureReveal();
+      }
+      try {
+        window?.localStorage?.setItem('design.toolbar.open', String(newState));
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    this.toolbarAnimating = true;
+    if (newState) {
+      this.toolbarContainer.setVisible(true);
+      this.toolbarRevealButton?.setVisible(false);
+      this.scene.tweens.add({
+        targets: this.toolbarContainer,
+        x: openX,
+        duration: 200,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          this.toolbarAnimating = false;
+        },
+      });
+    } else {
+      ensureReveal();
+      this.scene.tweens.add({
+        targets: this.toolbarContainer,
+        x: closedX,
+        duration: 180,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          this.toolbarContainer.setVisible(false);
+          this.toolbarRevealButton!.setVisible(true);
+          this.toolbarAnimating = false;
+        },
+      });
+    }
+    try {
+      window?.localStorage?.setItem('design.toolbar.open', String(newState));
+    } catch {
+      /* ignore */
+    }
   }
 
   /**
    * Create the entity palette for selecting entities to place
    */
   private createEntityPalette(): void {
-    // Create entity palette container - adjusted position for better centering
-    this.entityPaletteContainer = this.scene.add.container(this.scene.scale.width - 150, 200);
-    this.container.add(this.entityPaletteContainer);
+    // Create entity palette container - right drawer sticky to viewport
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    this.entityPaletteContainer = this.scene.add.container(
+      this.scene.scale.width - this.paletteWidth / 2,
+      topBarH + 20 + this.paletteHeight / 2
+    );
+    this.entityPaletteContainer.setScrollFactor(0);
+    this.entityPaletteContainer.setDepth(90);
 
-    // Create palette background with more contrast
-    const paletteBg = this.scene.add.rectangle(0, 0, 240, 460, 0x222222, 0.95);
+    // Create palette background with clean contrast
+    const paletteBg = this.scene.add.rectangle(
+      0,
+      0,
+      this.paletteWidth,
+      this.paletteHeight,
+      0x1f2937,
+      0.98
+    );
     paletteBg.setOrigin(0.5);
-    paletteBg.setStrokeStyle(2, 0x3399ff);
+    paletteBg.setStrokeStyle(1, 0x2b3a4a);
     this.entityPaletteContainer.add(paletteBg);
 
+    // Left divider between canvas and drawer
+    const divider = this.scene.add.rectangle(
+      -this.paletteWidth / 2,
+      0,
+      1,
+      this.paletteHeight,
+      0x2b3a4a,
+      0.8
+    );
+    divider.setOrigin(0.5);
+    this.entityPaletteContainer.add(divider);
+
     // Add a header bar
-    const headerBg = this.scene.add.rectangle(0, -200, 240, 40, 0x3366cc, 1);
+    const headerBg = this.scene.add.rectangle(
+      0,
+      -this.paletteHeight / 2 + 40,
+      this.paletteWidth,
+      40,
+      0x111827,
+      1
+    );
     headerBg.setOrigin(0.5);
     this.entityPaletteContainer.add(headerBg);
 
     // Title with better visibility
     const title = this.scene.add
-      .text(0, -200, 'ENTITY PALETTE', {
-        fontSize: '18px',
-        color: '#ffffff',
+      .text(0, -this.paletteHeight / 2 + 40, 'ENTITY PALETTE', {
+        fontSize: '16px',
+        color: '#e5e7eb',
         fontStyle: 'bold',
         shadow: {
           offsetX: 1,
           offsetY: 1,
-          color: '#000000',
+          color: '#00000088',
           blur: 2,
           fill: true,
         },
@@ -710,193 +985,92 @@ export class DesignStep {
       .setOrigin(0.5);
     this.entityPaletteContainer.add(title);
 
-    // Create tabs for entity categories
-    this.createEntityTabs();
+    // Keep a single list layout for simplicity like the mockup
+    this.createEnemyButtons(true);
 
-    // Create entity buttons
-    this.createEnemyButtons();
-  } /**
-   * Create tabs for different entity categories
-   */
-  private createEntityTabs(): void {
-    // Entity type categories
-    const categories = [
-      { id: 'enemies', label: 'Enemies', active: true },
-      { id: 'obstacles', label: 'Obstacles', active: false },
-      { id: 'powerups', label: 'Power-Ups', active: false },
-      { id: 'decorations', label: 'Decorations', active: false },
-    ];
-
-    // Tab container - moved down for better spacing
-    const tabsContainer = this.scene.add.container(0, -160);
-    this.entityPaletteContainer.add(tabsContainer);
-
-    // Tab separator line
-    const separatorLine = this.scene.add.graphics();
-    separatorLine.lineStyle(2, 0x3399ff, 0.8);
-    separatorLine.lineBetween(-115, 31, 115, 31);
-    tabsContainer.add(separatorLine);
-
-    // Create tabs with better visibility and spacing
-    const tabWidth = 300 / categories.length;
-    categories.forEach((category, index) => {
-      // Tab background with improved colors
-      const tabBg = this.scene.add.rectangle(
-        -110 + tabWidth * index + tabWidth / 2,
-        15,
-        tabWidth - 2, // Small gap between tabs
-        30,
-        category.active ? 0x3399ff : 0x444444
-      );
-
-      // Add top border to active tab
-      if (category.active) {
-        const topBorder = this.scene.add.rectangle(
-          -110 + tabWidth * index + tabWidth / 2,
-          0,
-          tabWidth - 2,
-          3,
-          0x00ffff
-        );
-        topBorder.setOrigin(0.5, 0);
-        tabsContainer.add(topBorder);
-      }
-
-      tabBg.setOrigin(0.5, 0.5);
-      tabBg.setStrokeStyle(1, category.active ? 0x66ccff : 0x666666);
-      tabBg.setData('category', category.id);
-      tabBg.setInteractive({ useHandCursor: true });
-
-      // Tab label with improved visibility
-      const tabLabel = this.scene.add
-        .text(-110 + tabWidth * index + tabWidth / 2, 15, category.label, {
-          fontSize: '13px',
-          color: category.active ? '#ffffff' : '#cccccc',
-          fontStyle: category.active ? 'bold' : 'normal',
-        })
-        .setOrigin(0.5, 0.5);
-
-      // Store active state
-      tabBg.setData('active', category.active);
-
-      // Click handler with improved visual feedback
-      tabBg.on('pointerdown', () => {
-        // Remove top borders from all tabs
-        tabsContainer.list.forEach((child) => {
-          if (child instanceof Phaser.GameObjects.Rectangle && child.height === 3) {
-            child.destroy();
-          }
-        });
-
-        // Deactivate all tabs
-        tabsContainer.list.forEach((child) => {
-          if (
-            child instanceof Phaser.GameObjects.Rectangle &&
-            child.height !== 3 && // Not a top border
-            !(child instanceof Phaser.GameObjects.Graphics)
-          ) {
-            // Not the separator line
-
-            child.setFillStyle(0x444444);
-            child.setStrokeStyle(1, 0x666666);
-            child.setData('active', false);
-
-            // Find and update the label
-            const idx = tabsContainer.list.indexOf(child);
-            if (idx >= 0 && idx + 1 < tabsContainer.list.length) {
-              const label = tabsContainer.list[idx + 1];
-              if (label instanceof Phaser.GameObjects.Text) {
-                label.setColor('#cccccc');
-                label.setFontStyle('normal');
-              }
-            }
-          }
-        });
-
-        // Activate this tab
-        tabBg.setFillStyle(0x3399ff);
-        tabBg.setStrokeStyle(1, 0x66ccff);
-        tabBg.setData('active', true);
-
-        // Add top border to active tab
-        const topBorder = this.scene.add.rectangle(tabBg.x, 0, tabWidth - 2, 3, 0x00ffff);
-        topBorder.setOrigin(0.5, 0);
-        tabsContainer.add(topBorder);
-
-        // Update the label
-        tabLabel.setColor('#ffffff');
-        tabLabel.setFontStyle('bold');
-
-        // Show the corresponding entity category
-        this.showEntityCategory(category.id);
-      });
-
-      tabsContainer.add([tabBg, tabLabel]);
+    // Create a simple geometry mask for scrollable content area
+    this.paletteMaskGraphics = this.scene.add.graphics();
+    this.paletteMaskGraphics.fillStyle(0xffffff);
+    // Mask area below tabs: 300x320
+    const maskWidth = this.paletteWidth - 40;
+    const maskX = this.entityPaletteContainer.x - maskWidth / 2;
+    const maskY = this.entityPaletteContainer.y - 140;
+    this.paletteMaskGraphics.fillRect(maskX, maskY, maskWidth, 320);
+    this.paletteMask = this.paletteMaskGraphics.createGeometryMask();
+    this.paletteMaskGraphics.setVisible(false);
+    this.paletteMaskGraphics.setScrollFactor(0);
+    // Apply mask to known category containers
+    ['enemies', 'obstacles', 'powerups', 'decorations'].forEach((id) => {
+      const c = this.entityPaletteContainer.getByName(id) as Phaser.GameObjects.Container;
+      if (c && this.paletteMask) c.setMask(this.paletteMask);
     });
 
-    // Store reference to tab container
-    this.entityPaletteContainer.setData('tabs', tabsContainer);
+    // Collapse button on the palette edge
+    const collapse = this.scene.add.container(-this.paletteWidth / 2, 0);
+    collapse.setScrollFactor(0);
+    const collapseBg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
+    collapseBg.setStrokeStyle(1, 0x2b3a4a, 1);
+    const collapseIcon = this.scene.add
+      .text(0, 0, '>', { fontSize: '16px', color: '#9ca3af' })
+      .setOrigin(0.5);
+    collapse.add([collapseBg, collapseIcon]);
+    collapse.setInteractive(
+      new Phaser.Geom.Rectangle(-9, -22, 18, 44),
+      Phaser.Geom.Rectangle.Contains
+    );
+    collapse.on('pointerover', () => collapseBg.setFillStyle(0x1f2937, 1));
+    collapse.on('pointerout', () => collapseBg.setFillStyle(0x111827, 0.9));
+    collapse.on('pointerdown', () => this.togglePalette(false));
+    this.entityPaletteContainer.add(collapse);
+
+    // Ensure the entire palette (and children) are non-scrolling for correct input mapping
+    this.setScrollFactorDeep(this.entityPaletteContainer, 0);
   }
 
-  /**
-   * Show a specific entity category
-   * @param categoryId The category ID to show
-   */
-  private showEntityCategory(categoryId: string): void {
-    // Hide all category containers
-    const containers = ['enemies', 'obstacles', 'powerups', 'decorations'];
-    containers.forEach((id) => {
-      const container = this.entityPaletteContainer.getByName(id) as Phaser.GameObjects.Container;
-      if (container) {
-        container.setVisible(false);
+  // Utility to set scrollFactor on a container and all descendants
+  private setScrollFactorDeep(container: Phaser.GameObjects.Container, factor: number): void {
+    container.setScrollFactor(factor);
+    const list = container.list as Phaser.GameObjects.GameObject[];
+    for (const child of list) {
+      if (child instanceof Phaser.GameObjects.Container) {
+        this.setScrollFactorDeep(child, factor);
+      } else if (
+        child instanceof Phaser.GameObjects.Text ||
+        child instanceof Phaser.GameObjects.Image ||
+        child instanceof Phaser.GameObjects.Rectangle ||
+        child instanceof Phaser.GameObjects.Graphics ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (child as any).setScrollFactor
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (child as any).setScrollFactor(factor);
       }
-    });
-
-    // Show the selected category
-    const selectedContainer = this.entityPaletteContainer.getByName(
-      categoryId
-    ) as Phaser.GameObjects.Container;
-    if (selectedContainer) {
-      selectedContainer.setVisible(true);
     }
-
-    console.log(`[DesignStep] Showing entity category: ${categoryId}`);
   }
 
   /**
    * Create enemy entity buttons
    */
-  private createEnemyButtons(): void {
+  private createEnemyButtons(simpleList: boolean = false): void {
     // Create container for enemy buttons with consistent positioning
     const enemiesContainer = this.scene.add.container(0, -120);
     enemiesContainer.setName('enemies');
     this.entityPaletteContainer.add(enemiesContainer);
 
-    // Add subtitle
-    const subtitle = this.scene.add
-      .text(0, -50, 'SELECT ENEMY TYPE', {
-        fontSize: '14px',
-        color: '#aaaaaa',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    enemiesContainer.add(subtitle);
-
-    // Add a separator line below the subtitle
-    const separatorLine = this.scene.add.graphics();
-    separatorLine.lineStyle(1, 0x666666, 0.8);
-    separatorLine.lineBetween(-100, -35, 100, -35);
-    enemiesContainer.add(separatorLine);
-
-    // Add a scroll hint at the bottom
-    const scrollHint = this.scene.add
-      .text(0, 340, '⬍ Scroll for more options ⬍', {
-        fontSize: '12px',
-        color: '#aaaaaa',
-        fontStyle: 'italic',
-      })
-      .setOrigin(0.5);
-    enemiesContainer.add(scrollHint);
+    if (!simpleList) {
+      const subtitle = this.scene.add
+        .text(0, -50, 'SELECT ENEMY TYPE', {
+          fontSize: '14px',
+          color: '#aaaaaa',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      enemiesContainer.add(subtitle);
+      const separatorLine = this.scene.add.graphics();
+      separatorLine.lineStyle(1, 0x666666, 0.8);
+      separatorLine.lineBetween(-100, -35, 100, -35);
+      enemiesContainer.add(separatorLine);
+    }
 
     // Enemy types to display with colors for visual distinction
     const enemies = [
@@ -937,154 +1111,36 @@ export class DesignStep {
       },
     ];
 
-    // Create a clean, card-based UI for enemy selection
+    // Create a simple, list-style UI for enemy selection
     enemies.forEach((enemy, index) => {
-      const y = -20 + index * 70; // Consistent spacing between cards
+      const y = -120 + index * 60;
+      const row = this.scene.add.container(0, y);
+      enemiesContainer.add(row);
 
-      // Button container
-      const buttonContainer = this.scene.add.container(0, y);
-      enemiesContainer.add(buttonContainer);
+      const rowBg = this.scene.add.rectangle(0, 0, this.paletteWidth - 40, 44, 0x111827, 0.0001);
+      rowBg.setOrigin(0.5);
+      rowBg.setInteractive({ useHandCursor: true });
 
-      // Card background
-      const buttonBg = this.scene.add.rectangle(0, 0, 200, 60, 0x222222);
-      buttonBg.setOrigin(0.5);
-      buttonBg.setStrokeStyle(1, 0x444444);
-      buttonBg.setInteractive({ useHandCursor: true });
+      // Sleek icon: smaller circle with subtle stroke for a modern look
+      const iconCircle = this.scene.add.circle(-this.paletteWidth / 2 + 36, 0, 10, enemy.color, 1);
 
-      // Create an accent bar on the left side
-      const accentBar = this.scene.add.rectangle(-95, 0, 10, 60, enemy.color, 0.8);
-      accentBar.setOrigin(0.5);
-
-      // Create a glow graphic for hover and selection effects
-      const glowGraphic = this.scene.add.graphics();
-      glowGraphic.fillStyle(enemy.color, 0.3);
-      glowGraphic.fillCircle(-80, 0, 25);
-
-      // Create a color indicator circle behind the sprite
-      const spriteBg = this.scene.add.circle(-80, 0, 20, enemy.color, 0.9);
-
-      // Enemy sprite in the circle
-      const sprite = this.scene.add.image(-80, 0, enemy.texture);
-      sprite.setScale(1.7);
-
-      // Dark overlay to make sprite more visible
-      const darkOverlay = this.scene.add.circle(-80, 0, 18, 0x000000, 0.3);
-
-      // Enemy name with clean typography
-      const nameText = this.scene.add
-        .text(-50, -12, enemy.name.toUpperCase(), {
-          fontSize: '16px',
-          color: '#ffffff',
-          fontStyle: 'bold',
-        })
+      const label = this.scene.add
+        .text(-this.paletteWidth / 2 + 56, 0, enemy.name, { fontSize: '14px', color: '#e5e7eb' })
         .setOrigin(0, 0.5);
 
-      // Shorter description text
-      const typeDescription = this.scene.add
-        .text(-50, 10, enemy.description, {
-          fontSize: '11px',
-          color: '#aaaaaa',
-          wordWrap: { width: 130 },
-        })
-        .setOrigin(0, 0.5);
-
-      // Button hover effects with enhanced visuals
-      buttonBg.on('pointerover', () => {
-        // Enhanced hover state
-        buttonBg.setFillStyle(0x444444);
-        accentBar.setFillStyle(enemy.color, 1);
-        glowGraphic.clear();
-        glowGraphic.fillStyle(enemy.color, 0.4);
-        glowGraphic.fillCircle(-80, 0, 30);
-
-        // Scale up the sprite slightly for emphasis
-        this.scene.tweens.add({
-          targets: sprite,
-          scaleX: 1.9,
-          scaleY: 1.9,
-          duration: 100,
-        });
-
-        // Highlight the text
-        nameText.setColor('#ffffff');
-        typeDescription.setColor('#ffffff');
+      rowBg.on('pointerover', () => {
+        rowBg.setFillStyle(0x374151, 0.25);
       });
-
-      buttonBg.on('pointerout', () => {
-        // Return to normal state if not selected
-        if (this.manager.getCurrentEntityType() !== enemy.type) {
-          buttonBg.setFillStyle(0x222222);
-          accentBar.setFillStyle(enemy.color, 0.8);
-          glowGraphic.clear();
-          glowGraphic.fillStyle(enemy.color, 0.3);
-          glowGraphic.fillCircle(-80, 0, 25);
-        }
-
-        // Scale down the sprite
-        this.scene.tweens.add({
-          targets: sprite,
-          scaleX: 1.7,
-          scaleY: 1.7,
-          duration: 100,
-        });
-
-        // Return text to normal
-        nameText.setColor('#ffffff');
-        typeDescription.setColor('#aaaaaa');
+      rowBg.on('pointerout', () => {
+        rowBg.setFillStyle(0x111827, 0.0001);
       });
-
-      // Set enemy type on click with enhanced feedback
-      buttonBg.on('pointerdown', () => {
+      rowBg.on('pointerdown', () => {
         this.manager.setCurrentEntityType(enemy.type);
         this.manager.setCurrentTool(BuildModeTool.PLACE);
-
         console.log(`[DesignStep] Selected enemy type: ${enemy.type}`);
-
-        // Reset all buttons first
-        enemiesContainer.list.forEach((child) => {
-          if (child instanceof Phaser.GameObjects.Container && child !== enemiesContainer) {
-            // Find button components in the container
-            child.list.forEach((item) => {
-              if (item instanceof Phaser.GameObjects.Rectangle && item.width === 200) {
-                // This is a button background
-                item.setFillStyle(0x222222);
-                item.setStrokeStyle(1, 0x444444);
-              } else if (item instanceof Phaser.GameObjects.Rectangle && item.width === 10) {
-                // This is an accent bar
-                if (item.fillColor) {
-                  item.setFillStyle(item.fillColor, 0.8);
-                }
-              }
-            });
-          }
-        });
-
-        // Enhanced selection state
-        buttonBg.setFillStyle(0x333333);
-        buttonBg.setStrokeStyle(2, enemy.color, 1);
-        accentBar.setFillStyle(enemy.color, 1);
-
-        // Visual pulse effect on selection
-        this.scene.tweens.add({
-          targets: glowGraphic,
-          alpha: { from: 0.8, to: 0.3 },
-          duration: 500,
-          yoyo: true,
-          repeat: 0,
-        });
       });
 
-      // Add elements to button container in the correct order
-      buttonContainer.add([
-        buttonBg,
-        accentBar,
-        glowGraphic,
-        spriteBg,
-        darkOverlay,
-        sprite,
-        nameText,
-        typeDescription,
-      ]);
+      row.add([rowBg, iconCircle, label]);
     });
 
     // Set initial selection to first enemy type
@@ -1099,40 +1155,69 @@ export class DesignStep {
    * Create the properties panel for editing entity properties
    */
   private createPropertiesPanel(): void {
-    // Create properties panel container
-    this.propertiesContainer = this.scene.add.container(
-      this.scene.scale.width - 160,
-      this.scene.scale.height - 220
-    );
-    this.container.add(this.propertiesContainer);
+    // Left drawer 320px, sticky to viewport like the right palette
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    this.propertiesContainer = this.scene.add.container(160, topBarH + 20 + 230);
+    this.propertiesContainer.setScrollFactor(0);
+    this.propertiesContainer.setDepth(85);
 
-    // Create panel background
-    const panelBg = this.scene.add.rectangle(0, 0, 300, 180, 0x333333, 0.8);
-    panelBg.setOrigin(0.5);
-    panelBg.setStrokeStyle(1, 0x555555);
-    this.propertiesContainer.add(panelBg);
+    // Background + divider
+    const bg = this.scene.add.rectangle(0, 0, 320, 460, 0x222222, 0.95);
+    bg.setOrigin(0.5);
+    bg.setStrokeStyle(2, 0x66ccff);
+    const divider = this.scene.add.rectangle(160, 0, 2, 460, 0x66ccff, 0.5);
+    divider.setOrigin(0.5);
+    this.propertiesContainer.add([bg, divider]);
 
-    // Title
+    // Header
+    const header = this.scene.add.rectangle(0, -200, 320, 40, 0x2b8dd8, 1);
+    header.setOrigin(0.5);
     const title = this.scene.add
-      .text(0, -75, 'Properties', {
-        fontSize: '16px',
+      .text(0, -200, 'PROPERTIES', {
+        fontSize: '18px',
         color: '#ffffff',
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
-    this.propertiesContainer.add(title);
+    this.propertiesContainer.add([header, title]);
 
-    // No selection text
-    const noSelectionText = this.scene.add
-      .text(0, 0, 'No entity selected', {
-        fontSize: '14px',
-        color: '#aaaaaa',
-      })
+    // Content area
+    this.propertiesContent = this.scene.add.container(0, -120);
+    this.propertiesContent.setName('propertiesContent');
+    this.propertiesContainer.add(this.propertiesContent);
+
+    // No selection placeholder
+    const placeholder = this.scene.add
+      .text(0, 0, 'No entity selected', { fontSize: '14px', color: '#aaaaaa' })
       .setOrigin(0.5);
-    this.propertiesContainer.add(noSelectionText);
+    this.propertiesContent.add(placeholder);
 
-    // Initially hide the panel until an entity is selected
-    this.propertiesContainer.setVisible(false);
+    // Mask for scrollable content area
+    this.propertiesMaskGraphics = this.scene.add.graphics();
+    this.propertiesMaskGraphics.fillStyle(0xffffff);
+    const pmx = this.propertiesContainer.x - 150;
+    const pmy = this.propertiesContainer.y - 140;
+    this.propertiesMaskGraphics.fillRect(pmx, pmy, 300, 320);
+    this.propertiesMask = this.propertiesMaskGraphics.createGeometryMask();
+    this.propertiesMaskGraphics.setVisible(false);
+    this.propertiesMaskGraphics.setScrollFactor(0);
+    this.propertiesContent.setMask(this.propertiesMask);
+
+    // Ensure the entire properties panel (and children) are non-scrolling for correct input mapping
+    this.setScrollFactorDeep(this.propertiesContainer, 0);
+
+    // Restore persisted state
+    try {
+      const persisted = window?.localStorage?.getItem('design.properties.open');
+      if (persisted === 'true') {
+        this.toggleProperties(true);
+      } else {
+        this.toggleProperties(false);
+      }
+    } catch {
+      this.toggleProperties(false);
+    }
   }
 
   /**
@@ -1141,14 +1226,13 @@ export class DesignStep {
   private createStepNavigation(): void {
     // Back button (to Setup step)
     const backButton = this.scene.add
-      .text(this.scene.scale.width - 200, this.scene.scale.height - 40, '< Back to Setup', {
-        fontSize: '18px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 10, y: 5 },
+      .text(this.scene.scale.width - 200, this.scene.scale.height - 40, '< Back', {
+        fontSize: '14px',
+        color: '#e5e7eb',
       })
       .setOrigin(0, 0.5);
     this.backNavText = backButton;
+    backButton.setScrollFactor(0);
 
     // Make button interactive
     backButton.setInteractive({ useHandCursor: true });
@@ -1164,14 +1248,13 @@ export class DesignStep {
 
     // Next button (to Test step)
     const nextButton = this.scene.add
-      .text(this.scene.scale.width - 80, this.scene.scale.height - 40, 'Test Level >', {
-        fontSize: '18px',
-        color: '#ffffff',
-        backgroundColor: '#0066cc',
-        padding: { x: 10, y: 5 },
+      .text(this.scene.scale.width - 80, this.scene.scale.height - 40, 'Test ▶', {
+        fontSize: '14px',
+        color: '#93c5fd',
       })
       .setOrigin(0, 0.5);
     this.nextNavText = nextButton;
+    nextButton.setScrollFactor(0);
 
     // Make button interactive
     nextButton.setInteractive({ useHandCursor: true });
@@ -1186,6 +1269,26 @@ export class DesignStep {
     });
 
     this.container.add([backButton, nextButton]);
+
+    // Add header title similar to mockup (top-left)
+    if (!this.headerTitleText) {
+      const headerHeight = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+      this.headerTitleText = this.scene.add
+        .text(
+          20,
+          Math.max(20, Math.floor(headerHeight / 2) + this.topBarPadding),
+          'Build your level',
+          {
+            fontSize: '22px',
+            color: '#e5e7eb',
+            fontStyle: 'bold',
+          }
+        )
+        .setOrigin(0, 0.5);
+      this.headerTitleText.setDepth(100);
+      // Keep the header sticky relative to camera
+      this.headerTitleText.setScrollFactor(0);
+    }
   }
 
   /**
@@ -1197,6 +1300,12 @@ export class DesignStep {
 
     // Entity type change event
     this.manager.events.on('entityType:change', this.handleEntityTypeChange, this);
+
+    // Auto toggle properties drawer based on selection state
+    this.manager.events.on('selection:change', (ids: string[]) => {
+      const hasSelection = Array.isArray(ids) && ids.length > 0;
+      this.toggleProperties(hasSelection);
+    });
 
     // Set up input events for entity placement
     this.setupPlacementEvents();
@@ -1212,7 +1321,8 @@ export class DesignStep {
         this.propertiesContainer?.setVisible(
           newVisible && (this.propertiesContainer?.visible ?? false)
         );
-        this.saveButtonText?.setVisible(newVisible);
+        this.saveButtonContainer?.setVisible(newVisible);
+        this.statusBarContainer?.setVisible(newVisible);
 
         // Redraw grid (not strictly necessary but keeps UX consistent)
         const gridGraphics = this.container.getData('gridGraphics') as
@@ -1222,6 +1332,50 @@ export class DesignStep {
           this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
         }
       });
+
+      // Tool shortcuts 1–6
+      const keyMap: Array<{ code: number; tool: BuildModeTool }> = [
+        { code: Phaser.Input.Keyboard.KeyCodes.ONE, tool: BuildModeTool.SELECT },
+        { code: Phaser.Input.Keyboard.KeyCodes.TWO, tool: BuildModeTool.PLACE },
+        { code: Phaser.Input.Keyboard.KeyCodes.THREE, tool: BuildModeTool.MOVE },
+        { code: Phaser.Input.Keyboard.KeyCodes.FOUR, tool: BuildModeTool.ROTATE },
+        { code: Phaser.Input.Keyboard.KeyCodes.FIVE, tool: BuildModeTool.DELETE },
+        { code: Phaser.Input.Keyboard.KeyCodes.SIX, tool: BuildModeTool.PAN },
+      ];
+      keyMap.forEach(({ code, tool }) => {
+        const k = kb.addKey(code);
+        k.on('down', () => this.manager.setCurrentTool(tool));
+      });
+
+      // Toggle palette with T
+      const tKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+      tKey.on('down', () => this.togglePalette());
+
+      // Center camera on origin with F
+      const fKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+      fKey.on('down', () => {
+        const cam = this.scene.cameras.main;
+        cam.centerOn(0, 0);
+      });
+
+      // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection
+      if (this.scene.input.keyboard)
+        this.scene.input.keyboard.on('keydown', (ev: KeyboardEvent) => {
+          const key = ev.key.toLowerCase();
+          if ((ev.ctrlKey || ev.metaKey) && key === 's') {
+            ev.preventDefault();
+            this.saveProgress();
+            this.updateStatusBarDirty();
+          } else if (!ev.ctrlKey && !ev.metaKey && key === 'g') {
+            this.manager.setGridVisible(!this.manager.isGridVisible());
+          } else if (!ev.ctrlKey && !ev.metaKey && key === 'c') {
+            this.centerCameraOnSelection();
+          }
+        });
+
+      // Toggle properties drawer with P
+      const pKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+      pKey.on('down', () => this.toggleProperties());
     }
   }
 
@@ -1239,6 +1393,8 @@ export class DesignStep {
 
     // Handle pointer move
     this.scene.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      // Update status bar world coordinates
+      this.updateStatusBarCoords(pointer);
       // Only show preview when PLACE tool is active
       if (this.manager.getCurrentTool() !== BuildModeTool.PLACE) {
         placementPreview.setVisible(false);
@@ -1297,6 +1453,9 @@ export class DesignStep {
 
       // Create the entity
       this.placeEntity(entityType, snappedPosition.x, snappedPosition.y);
+
+      // After placement, mark dirty text and selection count
+      this.updateStatusBarDirty();
     });
   }
 
@@ -1309,6 +1468,189 @@ export class DesignStep {
 
     // Entity type change event
     this.manager.events.removeListener('entityType:change', this.handleEntityTypeChange);
+  }
+
+  // Create bottom status bar (sticky, non-scrolling)
+  private createStatusBar(): void {
+    const barHeight = 28;
+    // Place on the scene root so it doesn't scroll with the camera/container
+    this.statusBarContainer = this.scene.add.container(0, this.scene.scale.height - barHeight);
+    // Ensure the status bar remains fixed relative to the camera
+    this.statusBarContainer.setScrollFactor(0);
+
+    this.statusBg = this.scene.add.rectangle(0, 0, this.scene.scale.width, barHeight, 0x1f2937);
+    this.statusBg.setOrigin(0, 0);
+    this.statusBg.setStrokeStyle(1, 0x374151, 1);
+    // Prevent status bar background from parallaxing
+    this.statusBg.setScrollFactor(0);
+    this.statusBarContainer.add(this.statusBg);
+
+    this.statusTextCoords = this.scene.add
+      .text(10, Math.floor(barHeight / 2), '(0, 0)', {
+        fontSize: '12px',
+        color: '#e5e7eb',
+      })
+      .setOrigin(0, 0.5);
+    this.statusTextCoords.setScrollFactor(0);
+
+    this.statusTextSelection = this.scene.add
+      .text(180, Math.floor(barHeight / 2), 'Sel: 0', {
+        fontSize: '12px',
+        color: '#e5e7eb',
+      })
+      .setOrigin(0, 0.5);
+    this.statusTextSelection.setScrollFactor(0);
+
+    this.statusTextDirty = this.scene.add
+      .text(260, Math.floor(barHeight / 2), 'Saved', {
+        fontSize: '12px',
+        color: '#10b981',
+      })
+      .setOrigin(0, 0.5);
+    this.statusTextDirty.setScrollFactor(0);
+
+    this.statusBarContainer.add([
+      this.statusTextCoords,
+      this.statusTextSelection,
+      this.statusTextDirty,
+    ]);
+
+    // Create subtle vertical dividers (initially off-screen; laid out later)
+    this.statusDivider1 = this.scene.add
+      .rectangle(0, 0, 1, barHeight - 8, 0x374151, 0.9)
+      .setOrigin(0.5);
+    this.statusDivider1.setScrollFactor(0);
+    this.statusDivider2 = this.scene.add
+      .rectangle(0, 0, 1, barHeight - 8, 0x374151, 0.9)
+      .setOrigin(0.5);
+    this.statusDivider2.setScrollFactor(0);
+    this.statusBarContainer.add([this.statusDivider1, this.statusDivider2]);
+
+    // If navigation buttons were created earlier, move them into the status bar
+    if (this.backNavText) {
+      // Remove from previous parent if necessary and add to status bar
+      const parent = (
+        this.backNavText as Phaser.GameObjects.GameObject & {
+          parentContainer?: Phaser.GameObjects.Container;
+        }
+      ).parentContainer;
+      if (parent) parent.remove(this.backNavText, false);
+      this.backNavText.setScrollFactor(0);
+      this.backNavText.setOrigin(1, 0.5);
+      this.backNavText.setStyle({ fontSize: '14px' });
+      this.statusBarContainer.add(this.backNavText);
+    }
+    if (this.nextNavText) {
+      const parent = (
+        this.nextNavText as Phaser.GameObjects.GameObject & {
+          parentContainer?: Phaser.GameObjects.Container;
+        }
+      ).parentContainer;
+      if (parent) parent.remove(this.nextNavText, false);
+      this.nextNavText.setScrollFactor(0);
+      this.nextNavText.setOrigin(1, 0.5);
+      this.nextNavText.setStyle({ fontSize: '14px' });
+      this.statusBarContainer.add(this.nextNavText);
+    }
+
+    // Listen for selection changes and dirty state
+    this.statusSelectionListener = (...args: unknown[]) => {
+      const ids = (args[0] as string[]) || [];
+      this.statusTextSelection.setText(`Sel: ${ids.length}`);
+    };
+    this.manager.on('selection:change', this.statusSelectionListener);
+    this.statusDirtyListener = (..._args: unknown[]) => {
+      this.updateStatusBarDirty();
+    };
+    this.manager.on('level:dirtyChange', this.statusDirtyListener);
+
+    // Initialize
+    this.updateStatusBarCoords();
+    this.updateStatusBarDirty();
+    this.layoutStatusBarText();
+  }
+
+  private layoutStatusBarText(): void {
+    const padding = 10;
+    const barHeight = this.statusBg ? this.statusBg.height : 28;
+    const centerY = Math.floor(barHeight / 2);
+
+    // Left side text
+    this.statusTextCoords.x = padding;
+    this.statusTextCoords.y = centerY;
+    this.statusTextSelection.x = this.statusTextCoords.x + this.statusTextCoords.width + 24;
+    this.statusTextSelection.y = centerY;
+
+    // Right side items: Next (far right), Back to its left, Dirty left of those
+    const rightEdge = this.scene.scale.width - padding;
+
+    if (this.nextNavText) {
+      this.nextNavText.x = rightEdge; // right-anchored (origin 1,0.5)
+      this.nextNavText.y = centerY;
+    }
+
+    if (this.backNavText) {
+      const nextLeft = this.nextNavText
+        ? this.nextNavText.x - this.nextNavText.width - 12
+        : rightEdge;
+      this.backNavText.x = nextLeft; // right-anchored
+      this.backNavText.y = centerY;
+    }
+
+    const anchorRightForDirty = this.backNavText
+      ? this.backNavText.x - this.backNavText.width - 16
+      : this.nextNavText
+        ? this.nextNavText.x - this.nextNavText.width - 16
+        : rightEdge;
+    this.statusTextDirty.x = anchorRightForDirty - this.statusTextDirty.width; // left-anchored
+    this.statusTextDirty.y = centerY;
+
+    // Dividers: between Dirty|Back and Back|Next
+    if (this.statusDivider1) {
+      const dirtyRight = this.statusTextDirty.x + this.statusTextDirty.width;
+      const backLeft = this.backNavText
+        ? this.backNavText.x - this.backNavText.width
+        : this.nextNavText
+          ? this.nextNavText.x - this.nextNavText.width
+          : rightEdge;
+      this.statusDivider1.x = (dirtyRight + backLeft) / 2;
+      this.statusDivider1.y = centerY;
+    }
+    if (this.statusDivider2) {
+      if (this.backNavText && this.nextNavText) {
+        const backRight = this.backNavText.x; // right-anchored
+        const nextLeft = this.nextNavText.x - this.nextNavText.width;
+        this.statusDivider2.x = (backRight + nextLeft) / 2;
+        this.statusDivider2.y = centerY;
+        this.statusDivider2.setVisible(true);
+      } else {
+        this.statusDivider2.setVisible(false);
+      }
+    }
+  }
+
+  private updateStatusBarCoords(pointer?: Phaser.Input.Pointer): void {
+    const cam = this.scene.cameras.main;
+    const p = pointer
+      ? cam.getWorldPoint(pointer.x, pointer.y)
+      : cam.getWorldPoint(this.scene.input.activePointer.x, this.scene.input.activePointer.y);
+    const gx = this.manager.getGridSize();
+    const snappedX = Math.round(p.x / gx) * gx;
+    const snappedY = Math.round(p.y / gx) * gx;
+    this.statusTextCoords.setText(`(${snappedX}, ${snappedY})`);
+    this.layoutStatusBarText();
+  }
+
+  private updateStatusBarDirty(): void {
+    const dirty = this.manager.isDirty();
+    if (dirty) {
+      this.statusTextDirty.setText('Unsaved');
+      this.statusTextDirty.setColor('#f59e0b');
+    } else {
+      this.statusTextDirty.setText('Saved');
+      this.statusTextDirty.setColor('#10b981');
+    }
+    this.layoutStatusBarText();
   }
 
   /**
@@ -1803,15 +2145,7 @@ export class DesignStep {
     }
 
     // Clear existing content
-    this.propertiesContainer.each((child: Phaser.GameObjects.GameObject) => {
-      // Keep the background and title
-      if (
-        child !== this.propertiesContainer.list[0] &&
-        child !== this.propertiesContainer.list[1]
-      ) {
-        child.destroy();
-      }
-    });
+    this.propertiesContent.removeAll(true);
 
     // Create properties UI based on entity type
     const commonY = -40; // Starting Y position
@@ -1828,7 +2162,7 @@ export class DesignStep {
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
-    this.propertiesContainer.add(entityTitle);
+    this.propertiesContent.add(entityTitle);
 
     // ID (read-only)
     this.addReadOnlyProperty('ID', entityData.id, currentY);
@@ -1886,7 +2220,7 @@ export class DesignStep {
         const separator = this.scene.add.graphics();
         separator.lineStyle(1, 0x555555, 1);
         separator.lineBetween(-120, currentY + 10, 120, currentY + 10);
-        this.propertiesContainer.add(separator);
+        this.propertiesContent.add(separator);
         currentY += 25;
 
         // Enemy Type (dropdown)
@@ -2019,7 +2353,7 @@ export class DesignStep {
         })
         .setOrigin(0.5);
 
-      this.propertiesContainer.add(message);
+      this.propertiesContent.add(message);
 
       // Hide message after 2 seconds
       this.scene.time.delayedCall(2000, () => {
@@ -2027,13 +2361,13 @@ export class DesignStep {
       });
     });
 
-    this.propertiesContainer.add(applyButton);
+    this.propertiesContent.add(applyButton);
 
     // Store the entity reference
     this.propertiesContainer.setData('entity', entity);
 
     // Show the properties panel
-    this.propertiesContainer.setVisible(true);
+    this.toggleProperties(true);
   }
 
   /**
@@ -2060,7 +2394,7 @@ export class DesignStep {
       })
       .setOrigin(0, 0.5);
 
-    this.propertiesContainer.add([labelText, valueText]);
+    this.propertiesContent.add([labelText, valueText]);
   }
 
   /**
@@ -2144,7 +2478,7 @@ export class DesignStep {
     inputContainer.add([valueBg, valueText, decButton, incButton]);
 
     // Add to properties container
-    this.propertiesContainer.add([labelText, inputContainer]);
+    this.propertiesContent.add([labelText, inputContainer]);
 
     return inputContainer;
   }
@@ -2589,45 +2923,263 @@ export class DesignStep {
    * Creates a save button in the top toolbar
    */
   private createSaveButton(): void {
-    // Get scene reference
     const scene = this.scene as Phaser.Scene;
     const headerHeight = (scene.data && scene.data.get('headerHeight')) || 0;
 
-    // Create a save button in the top-right corner
-    const saveButton = scene.add.text(
-      scene.scale.width - 160,
-      Math.max(8, Math.floor(headerHeight / 2)),
-      'Save Level',
-      {
-        fontSize: '18px',
+    const y = Math.max(16, Math.floor(headerHeight / 2) + this.topBarPadding);
+
+    // Create label first to measure width
+    const label = scene.add
+      .text(0, 0, 'Save Level', {
+        fontSize: '14px',
         color: '#ffffff',
-        backgroundColor: '#4c7edb',
-        padding: { x: 12, y: 8 },
-        align: 'center',
-        stroke: '#000000',
-        strokeThickness: 1,
-      }
-    );
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    label.setScrollFactor(0);
+    const horizontalPadding = 24; // 12px left/right
+    const computedWidth = Math.ceil(label.width + horizontalPadding);
+    this.saveButtonWidth = computedWidth;
 
-    // Make the button interactive
-    saveButton.setInteractive({ useHandCursor: true });
+    const leftPad = this.headerTitleText ? this.headerTitleText.x : 20;
+    const x = scene.scale.width - (leftPad + this.saveButtonWidth / 2);
 
-    // Add hover effect
-    saveButton.on('pointerover', () => {
-      saveButton.setStyle({ backgroundColor: '#6497ff' });
-    });
+    // Button group: rounded rect + label
+    const btnContainer = scene.add.container(x, y);
+    btnContainer.setScrollFactor(0);
+    const bg = scene.add.rectangle(0, 0, this.saveButtonWidth, 34, 0x3b82f6, 1);
+    bg.setScrollFactor(0);
+    bg.setStrokeStyle(1, 0x1f2937, 1);
+    bg.setOrigin(0.5);
+    bg.setInteractive({ useHandCursor: true, pixelPerfect: false });
 
-    saveButton.on('pointerout', () => {
-      saveButton.setStyle({ backgroundColor: '#4c7edb' });
-    });
+    // Add to container (bg behind label)
+    btnContainer.add([bg, label]);
+    btnContainer.setDepth(100);
 
-    // Add click handler
-    saveButton.on('pointerdown', () => {
+    // Hover/press states
+    bg.on('pointerover', () => bg.setFillStyle(0x60a5fa, 1));
+    bg.on('pointerout', () => bg.setFillStyle(0x3b82f6, 1));
+    bg.on('pointerdown', () => {
+      bg.setFillStyle(0x2563eb, 1);
       this.saveProgress();
+      this.updateStatusBarDirty();
     });
+    bg.on('pointerup', () => bg.setFillStyle(0x60a5fa, 1));
 
-    // Button should be above the step UI
-    saveButton.setDepth(100);
-    this.saveButtonText = saveButton;
+    // Keep references for later layout
+    this.saveButtonContainer = btnContainer;
+  }
+
+  // Center camera on the average position of current selection (fallback to origin)
+  private centerCameraOnSelection(): void {
+    const ids = this.manager.getSelectedEntityIds();
+    if (!ids.length) {
+      this.scene.cameras.main.centerOn(0, 0);
+      return;
+    }
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    this.entities.forEach((e) => {
+      const id = e.getData('id');
+      if (ids.includes(id)) {
+        sumX += e.x;
+        sumY += e.y;
+        count += 1;
+      }
+    });
+    if (count === 0) {
+      this.scene.cameras.main.centerOn(0, 0);
+      return;
+    }
+    const cx = sumX / count;
+    const cy = sumY / count;
+    this.scene.cameras.main.centerOn(cx, cy);
+  }
+
+  // === Phase 2: Properties drawer helpers ===
+  private toggleProperties(forceOpen?: boolean): void {
+    const newState = forceOpen !== undefined ? forceOpen : !this.propertiesOpen;
+    this.propertiesOpen = newState;
+    if (this.propertiesContainer) {
+      const uiVisible = this.toolbarContainer?.visible ?? true;
+      this.propertiesContainer.setVisible(newState && uiVisible);
+    }
+    try {
+      window?.localStorage?.setItem('design.properties.open', String(newState));
+    } catch {
+      // ignore
+    }
+  }
+
+  private isPointerOverProperties(pointer: Phaser.Input.Pointer): boolean {
+    if (!this.propertiesContainer?.visible) return false;
+    // Properties panel is sticky (screen-space), so compare to pointer screen coords
+    const cx = this.propertiesContainer.x;
+    const cy = this.propertiesContainer.y;
+    const halfW = 160;
+    const halfH = 230;
+    return (
+      pointer.x >= cx - halfW &&
+      pointer.x <= cx + halfW &&
+      pointer.y >= cy - halfH &&
+      pointer.y <= cy + halfH
+    );
+  }
+
+  private scrollPropertiesContent(dy: number): void {
+    if (!this.propertiesContainer?.visible || !this.propertiesContent) return;
+    const step = Math.sign(dy) * 20;
+    const targetY = this.propertiesContent.y - step;
+    const b = this.propertiesContent.getBounds();
+    const contentHeight = b.height || 300;
+    const viewportHeight = 320;
+    const maxY = -120;
+    const minY = Math.min(maxY, maxY - (contentHeight - viewportHeight));
+    this.propertiesContent.y = Phaser.Math.Clamp(targetY, minY, maxY);
+  }
+
+  // === Phase 1 helpers: palette drawer behavior ===
+  private togglePalette(forceOpen?: boolean, immediate: boolean = false): void {
+    if (this.paletteAnimating) return;
+    const newState = forceOpen !== undefined ? forceOpen : !this.paletteOpen;
+    this.paletteOpen = newState;
+    // Palette visibility must be independent of the left toolbar visibility
+
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    const openX = this.scene.scale.width - this.paletteWidth / 2;
+    const closedX = this.scene.scale.width + this.paletteWidth / 2 + 8;
+    const targetY = topBarH + 20 + this.paletteHeight / 2;
+
+    if (!this.entityPaletteContainer) return;
+    this.entityPaletteContainer.y = targetY;
+
+    const updateMask = () => {
+      if (this.paletteMaskGraphics) {
+        const maskWidth = this.paletteWidth - 40;
+        const maskX = this.entityPaletteContainer.x - maskWidth / 2;
+        const maskY = this.entityPaletteContainer.y - 140;
+        this.paletteMaskGraphics.clear();
+        this.paletteMaskGraphics.fillStyle(0xffffff);
+        this.paletteMaskGraphics.fillRect(maskX, maskY, maskWidth, 320);
+      }
+    };
+
+    const ensureReveal = () => {
+      if (!this.paletteRevealButton) {
+        const btn = this.scene.add.container(this.scene.scale.width - 12, targetY);
+        btn.setScrollFactor(0);
+        const bg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
+        bg.setStrokeStyle(1, 0x2b3a4a, 1);
+        const icon = this.scene.add
+          .text(0, 0, '<', { fontSize: '16px', color: '#9ca3af' })
+          .setOrigin(0.5);
+        btn.add([bg, icon]);
+        btn.setInteractive(
+          new Phaser.Geom.Rectangle(-9, -22, 18, 44),
+          Phaser.Geom.Rectangle.Contains
+        );
+        btn.on('pointerover', () => bg.setFillStyle(0x1f2937, 1));
+        btn.on('pointerout', () => bg.setFillStyle(0x111827, 0.9));
+        btn.on('pointerdown', () => this.togglePalette(true));
+        this.paletteRevealButton = btn;
+      }
+      this.paletteRevealButton!.x = this.scene.scale.width - 12;
+      this.paletteRevealButton!.y = targetY;
+    };
+
+    if (immediate) {
+      if (newState) {
+        this.entityPaletteContainer.setVisible(true);
+        this.entityPaletteContainer.x = openX;
+        updateMask();
+        this.paletteRevealButton?.setVisible(false);
+      } else {
+        this.entityPaletteContainer.x = closedX;
+        this.entityPaletteContainer.setVisible(false);
+        ensureReveal();
+        this.paletteRevealButton!.setVisible(true);
+      }
+      try {
+        window?.localStorage?.setItem('design.palette.open', String(newState));
+      } catch {
+        // ignore persistence errors
+      }
+      return;
+    }
+
+    this.paletteAnimating = true;
+    if (newState) {
+      // Opening animation
+      this.entityPaletteContainer.setVisible(true);
+      this.paletteRevealButton?.setVisible(false);
+      this.scene.tweens.add({
+        targets: this.entityPaletteContainer,
+        x: openX,
+        duration: 200,
+        ease: 'Cubic.easeOut',
+        onUpdate: updateMask,
+        onComplete: () => {
+          this.paletteAnimating = false;
+        },
+      });
+    } else {
+      // Closing animation
+      ensureReveal();
+      this.scene.tweens.add({
+        targets: this.entityPaletteContainer,
+        x: closedX,
+        duration: 180,
+        ease: 'Cubic.easeIn',
+        onUpdate: updateMask,
+        onComplete: () => {
+          this.entityPaletteContainer.setVisible(false);
+          this.paletteRevealButton!.setVisible(true);
+          this.paletteAnimating = false;
+        },
+      });
+    }
+    try {
+      window?.localStorage?.setItem('design.palette.open', String(newState));
+    } catch {
+      // ignore
+    }
+  }
+
+  private isPointerOverPalette(pointer: Phaser.Input.Pointer): boolean {
+    if (!this.entityPaletteContainer?.visible) return false;
+    // Palette is sticky (screen-space), so compare against pointer screen coords directly
+    const cx = this.entityPaletteContainer.x;
+    const cy = this.entityPaletteContainer.y;
+    const halfW = this.paletteWidth / 2;
+    const halfH = this.paletteHeight / 2;
+    return (
+      pointer.x >= cx - halfW &&
+      pointer.x <= cx + halfW &&
+      pointer.y >= cy - halfH &&
+      pointer.y <= cy + halfH
+    );
+  }
+
+  private scrollPaletteContent(dy: number): void {
+    if (!this.entityPaletteContainer?.visible) return;
+    const ids = ['enemies', 'obstacles', 'powerups', 'decorations'];
+    const active = ids
+      .map((id) => this.entityPaletteContainer.getByName(id) as Phaser.GameObjects.Container | null)
+      .find((c) => c && c.visible);
+    if (!active) return;
+
+    const step = Math.sign(dy) * 20;
+    const targetY = active.y - step;
+
+    // Estimate content height from bounds
+    const b = active.getBounds();
+    const contentHeight = b.height || 400;
+    const viewportHeight = 320;
+    const maxY = -120; // top anchor baseline
+    const minY = Math.min(maxY, maxY - (contentHeight - viewportHeight));
+    active.y = Phaser.Math.Clamp(targetY, minY, maxY);
   }
 }

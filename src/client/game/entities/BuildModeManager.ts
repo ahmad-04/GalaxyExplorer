@@ -4,7 +4,6 @@
  */
 
 import * as Phaser from 'phaser';
-import { LevelData } from '../../../shared/types/buildMode';
 import BuildModeService from '../services/BuildModeService';
 
 // Tool types for the editor
@@ -35,25 +34,40 @@ export interface BuildModeState {
  * Handles editor state, tool selection, and grid settings
  */
 export class BuildModeManager {
-  private scene: Phaser.Scene;
   private service: BuildModeService;
   public events: Phaser.Events.EventEmitter;
+  private static readonly FIXED_GRID_SIZE = 32;
 
   // Current state of the editor
   private state: BuildModeState = {
     currentTool: BuildModeTool.SELECT,
     selectedEntityIds: [],
     isGridVisible: true,
-    gridSize: 32,
+    gridSize: BuildModeManager.FIXED_GRID_SIZE,
     snapToGrid: true,
     isDirty: false,
     cameraZoom: 1,
   };
 
   constructor(scene: Phaser.Scene) {
-    this.scene = scene;
+    // Parameter kept for future use; mark as used to satisfy lints
+    void scene;
     this.service = new BuildModeService();
     this.events = new Phaser.Events.EventEmitter();
+
+    // Restore persisted tool selection if available
+    try {
+      const persistedTool = (window?.localStorage?.getItem('design.tool') || '') as string;
+      const validTools = Object.values(BuildModeTool) as string[];
+      if (persistedTool && validTools.includes(persistedTool)) {
+        // Initialize state without double-emitting
+        this.state.currentTool = persistedTool as BuildModeTool;
+        // Inform listeners of initial tool for UI sync
+        this.events.emit('tool:change', this.state.currentTool);
+      }
+    } catch {
+      // ignore storage access issues
+    }
 
     console.log('[BuildModeManager] Initialized');
   }
@@ -65,6 +79,12 @@ export class BuildModeManager {
   setCurrentTool(tool: BuildModeTool): void {
     this.state.currentTool = tool;
     this.events.emit('tool:change', tool);
+    // Persist selection for future sessions
+    try {
+      window?.localStorage?.setItem('design.tool', String(tool));
+    } catch {
+      // ignore storage access issues
+    }
     console.log(`[BuildModeManager] Tool changed to ${tool}`);
   }
 
@@ -117,9 +137,14 @@ export class BuildModeManager {
    * @param size The size of the grid cells
    */
   setGridSize(size: number): void {
-    this.state.gridSize = size;
-    this.events.emit('grid:sizeChange', size);
-    console.log(`[BuildModeManager] Grid size set to ${size}`);
+    // Enforce fixed grid size regardless of input
+    const fixed = BuildModeManager.FIXED_GRID_SIZE;
+    const changed = this.state.gridSize !== fixed;
+    this.state.gridSize = fixed;
+    if (changed) {
+      this.events.emit('grid:sizeChange', fixed);
+    }
+    console.log(`[BuildModeManager] Grid size fixed at ${fixed}; ignoring input ${size}`);
   }
 
   /**
@@ -285,7 +310,7 @@ export class BuildModeManager {
    * @param event The event to subscribe to
    * @param callback The callback to call when the event is emitted
    */
-  on(event: string, callback: (...args: any[]) => void): void {
+  on(event: string, callback: (...args: unknown[]) => void): void {
     this.events.on(event, callback);
   }
 
@@ -294,7 +319,7 @@ export class BuildModeManager {
    * @param event The event to unsubscribe from
    * @param callback The callback to remove
    */
-  off(event: string, callback: (...args: any[]) => void): void {
+  off(event: string, callback: (...args: unknown[]) => void): void {
     this.events.off(event, callback);
   }
 
