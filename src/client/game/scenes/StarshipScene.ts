@@ -53,10 +53,17 @@ export class StarshipScene extends Phaser.Scene {
   private isShieldActive = false;
   private shieldObject: Phaser.GameObjects.Sprite | undefined;
 
-  // Power-up timer UI
-  private powerUpIcon?: Phaser.GameObjects.Sprite;
-  private powerUpLabel?: Phaser.GameObjects.Text;
-  private powerUpTimerCircle?: Phaser.GameObjects.Graphics;
+  // Power-up timer UI (multi-powerup support)
+  private powerUpUI: Map<
+    PowerUpType,
+    {
+      icon: Phaser.GameObjects.Sprite;
+      circle: Phaser.GameObjects.Graphics;
+      label: Phaser.GameObjects.Text;
+    }
+  > = new Map();
+  private powerUpBasePos = { x: 70, y: 70 };
+  private powerUpSpacing = 60; // horizontal spacing between power-up icons
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
@@ -1397,28 +1404,72 @@ export class StarshipScene extends Phaser.Scene {
         break;
     }
 
-    // Show the power-up icon with animation
-    if (this.powerUpIcon) {
-      this.ensurePowerUpTexture(iconTexture);
-      this.powerUpIcon.setTexture(iconTexture);
-      this.powerUpIcon.setAlpha(1); // Make visible
-
-      // Update the power-up label text
-      if (this.powerUpLabel) {
-        this.powerUpLabel.setText(labelText);
-        this.powerUpLabel.setAlpha(1); // Make visible
+    // Create or update UI entry for this power-up
+    this.ensurePowerUpTexture(iconTexture);
+    let ui = this.powerUpUI.get(type);
+    if (!ui) {
+  const index = this.powerUpUI.size; // zero-based index for layout
+  // Vertical list positioning
+  const x = this.powerUpBasePos.x;
+  const y = this.powerUpBasePos.y + index * this.powerUpSpacing;
+  // Background plate for better contrast against starfield
+  const circle = this.add.graphics().setDepth(99);
+  circle.fillStyle(0x000000, 0.55);
+  circle.lineStyle(2, 0x555555, 0.8);
+  circle.fillCircle(x, y, 26);
+  circle.strokeCircle(x, y, 26);
+  // Larger, clearer icon; ensure texture exists (fallback created earlier if missing)
+  const icon = this.add.sprite(x, y, iconTexture).setScale(0.75).setAlpha(0).setDepth(101);
+  // Add a subtle outline via tint flash approach (first frame only)
+  icon.setTint(0xffffff);
+      const label = this.add
+        .text(x + 25, y, labelText, {
+          fontSize: '16px',
+          color: '#ffcc00',
+          fontStyle: 'bold',
+          stroke: '#000000',
+          strokeThickness: 2,
+        })
+        .setOrigin(0, 0.5)
+        .setAlpha(0);
+      ui = { icon, circle, label };
+      this.powerUpUI.set(type, ui);
+    } else {
+      // Re-activating existing power-up before fade-out destroy finished can cause race conditions.
+      // Stop any active tweens affecting icon/label (especially fade-out) to keep them visible.
+      try {
+        const iconTweens = this.tweens.getTweensOf(ui.icon);
+        iconTweens.forEach((t) => t.stop());
+        const labelTweens = this.tweens.getTweensOf(ui.label);
+        labelTweens.forEach((t) => t.stop());
+      } catch (e) {
+        // Safe guard – ignore if tween manager API differs.
       }
-
-      // Add a "pop" scale animation
-      this.tweens.add({
-        targets: this.powerUpIcon,
-        scale: { from: 0.7, to: 0.5 },
-        duration: 300,
-        ease: 'Bounce.Out',
-      });
+      ui.icon.setTexture(iconTexture);
+      ui.label.setText(labelText);
+      ui.icon.setAlpha(1);
+      ui.label.setAlpha(1);
     }
 
-    // Draw the initial timer circle
+    // Re-layout all existing power-up UI entries (compact them)
+    Array.from(this.powerUpUI.entries()).forEach(([_ignoredType, entry], idx) => {
+      const targetX = this.powerUpBasePos.x;
+      const targetY = this.powerUpBasePos.y + idx * this.powerUpSpacing;
+      this.tweens.add({ targets: entry.icon, x: targetX, y: targetY, duration: 200, ease: 'Sine.Out' });
+      this.tweens.add({ targets: entry.label, x: targetX + 25, y: targetY, duration: 200, ease: 'Sine.Out' });
+      entry.circle.x = 0; // circle will be redrawn relative to icon position
+    });
+
+    // Reveal / bounce icon & ensure label visible
+  ui.icon.setScale(0.85); // start slightly larger before bounce
+    ui.icon.setAlpha(1);
+    ui.label.setAlpha(1);
+  this.tweens.add({ targets: ui.icon, scale: 0.75, duration: 300, ease: 'Bounce.Out' });
+    if (ui.label.alpha < 1) {
+      this.tweens.add({ targets: ui.label, alpha: 1, duration: 200 });
+    }
+
+    // Draw initial timer arc for this power-up
     this.updatePowerUpTimerUI();
 
     // Set up the timer to deactivate power-up
@@ -1452,25 +1503,22 @@ export class StarshipScene extends Phaser.Scene {
     this.activePowerUps.get(type)?.remove();
     this.activePowerUps.delete(type);
 
-    // Hide the power-up icon with fade out
-    if (this.powerUpIcon) {
-      this.tweens.add({
-        targets: this.powerUpIcon,
-        alpha: 0,
-        duration: 300,
-        ease: 'Power1',
+    // Immediate removal of UI to avoid race conditions with rapid re-activation
+    const ui = this.powerUpUI.get(type);
+    if (ui) {
+      ui.icon.destroy();
+      ui.label.destroy();
+      ui.circle.destroy();
+      this.powerUpUI.delete(type);
+      // Re-layout remaining entries
+      Array.from(this.powerUpUI.values()).forEach((entry, idx) => {
+        const targetX = this.powerUpBasePos.x;
+        const targetY = this.powerUpBasePos.y + idx * this.powerUpSpacing;
+        this.tweens.add({ targets: entry.icon, x: targetX, y: targetY, duration: 200, ease: 'Sine.Out' });
+        this.tweens.add({ targets: entry.label, x: targetX + 25, y: targetY, duration: 200, ease: 'Sine.Out' });
       });
     }
-
-    // Hide the power-up label
-    if (this.powerUpLabel) {
-      this.powerUpLabel.setAlpha(0);
-    }
-
-    // Clear the timer circle
-    if (this.powerUpTimerCircle) {
-      this.powerUpTimerCircle.clear();
-    }
+    this.updatePowerUpTimerUI();
   }
 
   private deactivateAllPowerUps(): void {
@@ -1534,81 +1582,64 @@ export class StarshipScene extends Phaser.Scene {
    * Sets up the power-up UI with icon and timer circle
    */
   private setupPowerUpUI(): void {
-    // Ensure the power-up texture exists before creating the icon
-    this.ensurePowerUpTexture('powerup_score');
-
-    // Create the power-up icon sprite (initially hidden)
-    this.powerUpIcon = this.add.sprite(70, 70, 'powerup_score');
-
-    // Double-check the texture to be extra safe
-    if (!this.powerUpIcon.texture.key || this.powerUpIcon.frame.name === '__MISSING') {
-      console.log('[StarshipScene] Power-up texture still missing, creating now');
-      this.createPowerUpFallback('powerup_score');
-      this.powerUpIcon.setTexture('powerup_score');
-    }
-
-    this.powerUpIcon.setScale(0.5);
-    this.powerUpIcon.setAlpha(0); // Initially invisible
-    this.powerUpIcon.setDepth(100); // Make sure it appears above other elements
-
-    // Create the timer circle graphic
-    this.powerUpTimerCircle = this.add.graphics();
-    this.powerUpTimerCircle.setDepth(99); // Just below the icon
-
-    // Initialize the power-up label with empty text to prevent null errors later
-    this.powerUpLabel = this.add.text(this.powerUpIcon.x + 25, this.powerUpIcon.y, '', {
-      fontSize: '20px',
-      color: '#ffcc00',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 2,
-    });
-    this.powerUpLabel.setOrigin(0, 0.5);
-    this.powerUpLabel.setAlpha(0); // Initially invisible
+    // Legacy single UI replaced by dynamic multi-powerup system.
+    // Nothing needed at scene start; entries are created on activation.
   }
 
   private updatePowerUpTimerUI(): void {
-    if (this.activePowerUps.size === 0 || !this.powerUpIcon || !this.powerUpTimerCircle) {
-      if (this.powerUpTimerCircle) this.powerUpTimerCircle.clear();
-      if (this.powerUpIcon) this.powerUpIcon.setAlpha(0);
-      if (this.powerUpLabel) this.powerUpLabel.setAlpha(0);
-      return;
-    }
+    // For each active power-up, draw / update its timer arc
+    this.powerUpUI.forEach((ui, type) => {
+      const timer = this.activePowerUps.get(type);
+      ui.circle.clear();
+      if (!timer) {
+        ui.icon.setAlpha(0);
+        ui.label.setAlpha(0);
+        return;
+      }
+      // Defensive: ensure texture still valid (some browsers may purge or a race might have destroyed and re-added incorrectly)
+      if (!ui.icon.texture || ui.icon.frame.name === '__MISSING') {
+        const fallbackKey = this.resolvePowerUpTexture(type);
+        this.ensurePowerUpTexture(fallbackKey);
+        ui.icon.setTexture(fallbackKey);
+        ui.icon.setAlpha(1);
+      }
+      // Defensive: if alpha got set to 0 unexpectedly but timer still active, restore
+      if (ui.icon.alpha === 0) ui.icon.setAlpha(1);
+      if (ui.label.alpha === 0) ui.label.setAlpha(1);
+      const progress = timer.getRemaining() / this.powerUpDuration; // 1 -> 0
+      const x = ui.icon.x;
+      const y = ui.icon.y;
+      // Background circle (solid + stroke for consistency)
+      ui.circle.fillStyle(0x000000, 0.4);
+      ui.circle.fillCircle(x, y, 22);
+      ui.circle.lineStyle(2, 0x222222, 0.9);
+      ui.circle.strokeCircle(x, y, 22);
+      if (progress > 0) {
+        // Per-type accent colors
+        let color = 0xffff00; // default (score/x2)
+        if (type === PowerUpType.SHIELD) color = 0x00b7ff;
+        else if (type === PowerUpType.RAPID_FIRE) color = 0xff6600;
+        else if (type === PowerUpType.SCORE_MULTIPLIER) color = 0xf7c94d;
+        ui.circle.lineStyle(3, color, 1);
+        const startAngle = -Math.PI / 2;
+        const endAngle = startAngle + Math.PI * 2 * progress;
+        ui.circle.beginPath();
+        ui.circle.arc(x, y, 22, startAngle, endAngle, false);
+        ui.circle.strokePath();
+      }
+    });
+  }
 
-    // For now, just display the timer for the most recent power-up
-    const lastPowerUpTimer = Array.from(this.activePowerUps.values()).pop();
-    if (!lastPowerUpTimer) return;
-
-    // Calculate the progress (0 to 1, where 0 is empty and 1 is full)
-    const progress = lastPowerUpTimer.getRemaining() / this.powerUpDuration;
-
-    // Clear previous drawing
-    this.powerUpTimerCircle.clear();
-
-    // Draw background circle
-    this.powerUpTimerCircle.lineStyle(3, 0x333333, 0.5);
-    this.powerUpTimerCircle.strokeCircle(this.powerUpIcon.x, this.powerUpIcon.y, 22);
-
-    // Draw progress circle (only if there's time remaining)
-    if (progress > 0) {
-      // Draw the progress arc
-      this.powerUpTimerCircle.lineStyle(3, 0xffff00, 1);
-
-      // Calculate the angles for the arc (in radians)
-      const startAngle = -Math.PI / 2; // Start at top (270 degrees)
-      const endAngle = startAngle + Math.PI * 2 * progress; // Progress clockwise
-
-      // Draw the arc
-      this.powerUpTimerCircle.beginPath();
-      this.powerUpTimerCircle.arc(
-        this.powerUpIcon.x,
-        this.powerUpIcon.y,
-        22, // Radius
-        startAngle,
-        endAngle, // Start and end angles
-        false // Counter-clockwise
-      );
-      this.powerUpTimerCircle.strokePath();
+  // Resolve canonical texture key for a power-up type
+  private resolvePowerUpTexture(type: PowerUpType): string {
+    switch (type) {
+      case PowerUpType.SHIELD:
+        return 'powerup_shield';
+      case PowerUpType.RAPID_FIRE:
+        return 'powerup_rapidfire';
+      case PowerUpType.SCORE_MULTIPLIER:
+      default:
+        return 'powerup_score';
     }
   }
 
@@ -1713,18 +1744,13 @@ export class StarshipScene extends Phaser.Scene {
       this.shieldObject.destroy();
       this.shieldObject = undefined;
     }
-    if (this.powerUpIcon) {
-      this.powerUpIcon.destroy();
-      this.powerUpIcon = null as unknown as Phaser.GameObjects.Sprite;
-    }
-    if (this.powerUpLabel) {
-      this.powerUpLabel.destroy();
-      this.powerUpLabel = null as unknown as Phaser.GameObjects.Text;
-    }
-    if (this.powerUpTimerCircle) {
-      this.powerUpTimerCircle.destroy();
-      this.powerUpTimerCircle = null as unknown as Phaser.GameObjects.Graphics;
-    }
+    // Cleanup multi power-up UI entries
+    this.powerUpUI.forEach((ui) => {
+      ui.icon.destroy();
+      ui.label.destroy();
+      ui.circle.destroy();
+    });
+    this.powerUpUI.clear();
 
     // Reset game state variables
     this.score = 0;
