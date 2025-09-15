@@ -15,7 +15,7 @@ import { isFeatureEnabled } from '../../../../shared/config';
  */
 export class PublishStep {
   private scene: Phaser.Scene;
-  private manager: BuildModeManager;
+  private manager: BuildModeManager; // stored for future navigation / feature flags
   private service: BuildModeService;
 
   // UI elements
@@ -43,6 +43,8 @@ export class PublishStep {
    */
   activate(levelId?: string): void {
     console.log(`[PublishStep] Activating with levelId: ${levelId || 'none'}`);
+    // Reference manager (reserved for future publish policies / permissions)
+    void this.manager;
     this.levelId = levelId;
 
     // Load level data
@@ -185,8 +187,8 @@ export class PublishStep {
       })
       .setOrigin(0.5);
 
-    // Add glow effect to title
-    const titleGlow = this.scene.tweens.add({
+    // Add glow effect to title (no variable retained to avoid unused warning)
+    this.scene.tweens.add({
       targets: formTitle,
       alpha: 0.8,
       duration: 1500,
@@ -835,114 +837,7 @@ export class PublishStep {
       });
   }
 
-  /**
-   * Save level locally
-   * @param publish Whether to also publish the level
-   * @returns The level ID
-   */
-  private async saveLevel(publish: boolean = false): Promise<string | undefined> {
-    if (!this.levelId) {
-      this.showToast('Error: No level selected', 'error');
-      return undefined;
-    }
-
-    console.log(`[PublishStep] Saving level ${this.levelId}`);
-
-    // Show loading toast
-    this.showToast('Saving level...', 'info');
-
-    try {
-      // Save the level
-      const levelId = await this.service.saveLevel(this.levelId);
-
-      // Show success toast
-      this.showToast('Level saved successfully!', 'success');
-
-      // Publish if requested
-      if (publish) {
-        await this.publishLevel();
-      }
-
-      return levelId;
-    } catch (error) {
-      console.error('[PublishStep] Failed to save level:', error);
-      this.showToast('Failed to save level', 'error');
-      return undefined;
-    }
-  }
-
-  /**
-   * Export level as a JSON file
-   */
-  private exportLevel(): void {
-    if (!this.levelId) {
-      // Create notification for error
-      this.showToast('Error: No level to export', 'error');
-      return;
-    }
-
-    console.log(`[PublishStep] Exporting level ${this.levelId}`);
-
-    // Show loading indicator
-    const loadingOverlay = this.createLoadingOverlay('Preparing level export...');
-    this.container.add(loadingOverlay);
-
-    try {
-      // Get level data
-      const levelData = this.service.loadLevel(this.levelId);
-
-      if (!levelData) {
-        throw new Error('Level data not found');
-      }
-
-      // Convert to JSON
-      const levelJson = JSON.stringify(levelData, null, 2);
-
-      // Create a blob
-      const blob = new Blob([levelJson], { type: 'application/json' });
-
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${levelData.settings.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_level.json`;
-
-      // Auto-hide loading overlay after a short delay
-      this.scene.time.delayedCall(500, () => {
-        // Hide loading overlay with fade
-        this.scene.tweens.add({
-          targets: loadingOverlay,
-          alpha: 0,
-          duration: 300,
-          onComplete: () => {
-            loadingOverlay.destroy();
-
-            // Trigger download
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            // Show success toast
-            this.showToast('Level exported successfully!', 'success');
-          },
-        });
-      });
-    } catch (error) {
-      console.error('[PublishStep] Failed to export level:', error);
-
-      // Hide loading overlay
-      this.scene.tweens.add({
-        targets: loadingOverlay,
-        alpha: 0,
-        duration: 300,
-        onComplete: () => loadingOverlay.destroy(),
-      });
-
-      // Show error toast
-      this.showToast('Failed to export level: ' + (error as Error).message, 'error');
-    }
-  }
+  // (Removed unused saveLevel/exportLevel helper methods to satisfy type-check)
 
   /**
    * Share the level (when sharing is enabled)

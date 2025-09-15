@@ -89,8 +89,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    * Override this to implement custom update logic
    * Called every frame for active enemies
    */
-  override update(time: number, delta: number): void {
-    // Base implementation does nothing, override in subclasses
+  override update(_time: number, _delta: number): void {
+    // Intentionally empty; subclasses implement behavior. Prefixed params with '_' to satisfy TS unused check.
   }
 
   /**

@@ -5,7 +5,8 @@ export default defineConfig(({ mode }) => {
   return {
     build: {
       outDir: '../../dist/client',
-      sourcemap: true,
+      // Disable sourcemaps in dev to dramatically cut asset size and upload time
+      sourcemap: mode === 'production',
       chunkSizeWarningLimit: 1500,
       rollupOptions: {
         output: {

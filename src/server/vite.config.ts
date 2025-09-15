@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import { builtinModules } from 'node:module';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   ssr: {
     noExternal: true,
   },
@@ -9,7 +9,8 @@ export default defineConfig({
     ssr: 'index.ts',
     outDir: '../../dist/server',
     target: 'node22',
-    sourcemap: true,
+    // Disable sourcemaps during dev to reduce artifact size and upload time
+    sourcemap: mode === 'production',
     rollupOptions: {
       external: [...builtinModules],
 
@@ -20,4 +21,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

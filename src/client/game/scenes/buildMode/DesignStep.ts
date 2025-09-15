@@ -930,6 +930,8 @@ export class DesignStep {
     if (kb) {
       const hKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.H);
       hKey.on('down', () => {
+        // Ignore editor hotkeys while inline testing
+        if (this.inlineTesting) return;
         const anyVisible = this.entityPaletteContainer?.visible ?? true;
         const newVisible = !anyVisible;
         this.entityPaletteContainer?.setVisible(newVisible);
@@ -945,20 +947,26 @@ export class DesignStep {
 
       // Toggle palette with T
       const tKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.T);
-      tKey.on('down', () => this.togglePalette());
+      tKey.on('down', () => {
+        if (this.inlineTesting) return;
+        this.togglePalette();
+      });
 
       // Center camera on origin with F
       const fKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F);
       fKey.on('down', () => {
+        if (this.inlineTesting) return;
         const cam = this.scene.cameras.main;
         // Center vertically on origin only; keep X locked
         const desiredY = 0 - cam.height / 2;
         cam.setScroll(0, Math.min(desiredY, 0));
       });
 
-      // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection, Delete/D to delete, L to lock
+      // Keyboard shortcuts: Ctrl+S save, G toggle grid, C center selection, Delete/X to delete, L to lock
       if (this.scene.input.keyboard)
         this.scene.input.keyboard.on('keydown', (ev: KeyboardEvent) => {
+          // Prevent editor keybinds (e.g., D/Delete) from affecting design while testing gameplay
+          if (this.inlineTesting) return;
           const key = ev.key.toLowerCase();
           if ((ev.ctrlKey || ev.metaKey) && key === 's') {
             ev.preventDefault();
@@ -968,7 +976,7 @@ export class DesignStep {
             this.manager.setGridVisible(!this.manager.isGridVisible());
           } else if (!ev.ctrlKey && !ev.metaKey && key === 'c') {
             this.centerCameraOnSelection();
-          } else if (!ev.ctrlKey && !ev.metaKey && (key === 'delete' || key === 'd')) {
+          } else if (!ev.ctrlKey && !ev.metaKey && (key === 'delete' || key === 'x')) {
             // Delete selected entities, skipping locked
             const ids = this.manager.getSelectedEntityIds();
             if (ids.length > 0) {
@@ -1279,6 +1287,8 @@ export class DesignStep {
    * Handle clicks when using the delete tool
    */
   private handleDeleteToolClick(pointer: Phaser.Input.Pointer): void {
+    // Do not allow editor deletes during inline testing
+    if (this.inlineTesting) return;
     // Only process left clicks with DELETE tool and ignore UI clicks
     if (
       this.manager.getCurrentTool() !== BuildModeTool.DELETE ||
@@ -1324,6 +1334,8 @@ export class DesignStep {
    * @param entity The entity to delete
    */
   private deleteEntity(entity: Phaser.GameObjects.Container): void {
+    // Safety: never delete design entities while inline testing is active
+    if (this.inlineTesting) return;
     // Do not delete locked entities
     if (entity.getData('locked')) return;
     // Get entity ID
@@ -1519,6 +1531,7 @@ export class DesignStep {
 
     // Entity selection
     sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.inlineTesting) return;
       if (entityContainer.getData('locked')) return;
       const addToSelection = pointer.event.shiftKey;
       this.selectEntity(entityContainer, addToSelection);
@@ -1530,6 +1543,7 @@ export class DesignStep {
 
     // Drag start
     sprite.on('dragstart', () => {
+      if (this.inlineTesting) return;
       if (entityContainer.getData('locked')) return;
       if (!this.manager.getSelectedEntityIds().includes(entityContainer.getData('id'))) {
         this.selectEntity(entityContainer);
@@ -1538,6 +1552,7 @@ export class DesignStep {
 
     // Drag movement
     sprite.on('drag', (pointer: Phaser.Input.Pointer) => {
+      if (this.inlineTesting) return;
       if (entityContainer.getData('locked')) return;
       // Get the drag offset
       const offsetX = entityContainer.getData('dragOffsetX') || 0;
@@ -1562,6 +1577,7 @@ export class DesignStep {
 
     // Drag end
     sprite.on('dragend', () => {
+      if (this.inlineTesting) return;
       if (entityContainer.getData('locked')) return;
       // Update the entity data with the new position
       const entityData = entityContainer.getData('entityData');
@@ -2035,6 +2051,10 @@ export class DesignStep {
     this.paletteRevealButton?.setVisible(false);
     this.topBackButtonContainer?.setVisible(false);
 
+  // Hide placed entity icons (they live on the scene root, not inside the main UI container)
+  // so they otherwise remain visible when testing scene is launched.
+  this.entities.forEach((e) => e.setVisible(false));
+
     // Ensure test data is prepared like TestStep
     const levelData = this.prepareTestEnvironmentData();
     if (!levelData) {
@@ -2115,6 +2135,8 @@ export class DesignStep {
     if (!this.paletteOpen) this.togglePalette(false, true);
     // Reset nav text label if present
     if (this.nextNavText) this.nextNavText.setText('Test ▶');
+  // Restore entity icons visibility for editing
+  this.entities.forEach((e) => e.setVisible(true));
     // Remove floating stop
     if (this.floatingStopButton) {
       this.scene.scale.off('resize', this.positionFloatingStopButton, this);
@@ -2143,12 +2165,18 @@ export class DesignStep {
     this.entities.forEach((container) => {
       const existing = container.getData('entityData') as BaseEntity | undefined;
       if (existing) {
-        // Update position/rotation on existing object to keep type-specific fields (e.g., enemyType)
-        existing.position = { x: container.x, y: container.y };
-        existing.rotation = container.rotation || 0;
-        entities.push(existing);
+        // Explicit clone of required BaseEntity fields + any extra properties
+        const clone: BaseEntity = ({
+          id: existing.id,
+          type: existing.type,
+          position: { x: container.x, y: container.y },
+          rotation: container.rotation || 0,
+          scale: existing.scale ?? 1,
+          // Spread any additional dynamic props (enemyType, etc.)
+          ...(existing as unknown as Record<string, unknown>),
+        }) as BaseEntity;
+        entities.push(clone);
       } else {
-        // Fallback minimal entity
         entities.push({
           id: container.getData('id'),
           type: container.getData('type'),
@@ -2245,10 +2273,26 @@ export class DesignStep {
       entities: levelData.entities?.length || 0,
     });
 
-    // Normalize entity positions into visible area for gameplay
-    // Store original; StarshipScene will translate using testTranslate
-    this.scene.registry.set('testLevelData', levelData);
-    return levelData;
+    // Store a deep clone so gameplay cannot mutate editor state
+    const cloned = this.cloneLevelData(levelData as LevelData);
+    this.scene.registry.set('testLevelData', cloned);
+    return levelData; // Return original for any local logic
+  }
+
+  // Simple deep clone utility (falls back to JSON if structuredClone unavailable)
+  private cloneLevelData(src: LevelData): LevelData {
+    try {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      if (typeof structuredClone === 'function') {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        return structuredClone(src);
+      }
+    } catch {
+      // ignore and fallback
+    }
+    return JSON.parse(JSON.stringify(src)) as LevelData;
   }
 
   // normalizeLevelForTest removed; StarshipScene applies translation using 'testTranslate'.

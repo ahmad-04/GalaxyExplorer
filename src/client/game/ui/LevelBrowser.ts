@@ -291,9 +291,9 @@ export class LevelBrowser {
    * @returns Text representation
    */
   private getDifficultyText(difficulty: number): string {
-    const levels = ['Easy', 'Normal', 'Challenging', 'Hard', 'Extreme'] as const;
-    const index = Math.min(Math.max(Math.floor(difficulty) - 1, 0), 4);
-    return levels[index];
+    const levels: string[] = ['Easy', 'Normal', 'Challenging', 'Hard', 'Extreme'];
+    const index = Math.min(Math.max(Math.floor(difficulty) - 1, 0), levels.length - 1);
+    return levels[index]!;
   }
   
   /**
@@ -302,8 +302,8 @@ export class LevelBrowser {
    * @returns Color in hex format
    */
   private getDifficultyColor(difficulty: number): string {
-    const colors = ['#00cc00', '#88cc00', '#cccc00', '#cc6600', '#cc0000'] as const;
-    const index = Math.min(Math.max(Math.floor(difficulty) - 1, 0), 4);
-    return colors[index];
+    const colors: string[] = ['#00cc00', '#88cc00', '#cccc00', '#cc6600', '#cc0000'];
+    const index = Math.min(Math.max(Math.floor(difficulty) - 1, 0), colors.length - 1);
+    return colors[index]!;
   }
 }
