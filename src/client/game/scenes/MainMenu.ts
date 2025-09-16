@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { getLeaderboard } from '../api';
+import { getLeaderboard, getPublishedLevel } from '../api';
 import { isFeatureEnabled } from '../../../shared/config';
 
 export class MainMenu extends Phaser.Scene {
@@ -24,6 +24,15 @@ export class MainMenu extends Phaser.Scene {
   }
 
   create() {
+    // If we have a published-level context, prompt to start it
+    const publishedPtr = this.registry.get('publishedLevelPointer') as
+      | { postId: string; title: string }
+      | undefined;
+    if (publishedPtr) {
+      this.promptStartPublishedLevel(publishedPtr).catch((e) =>
+        console.warn('[MainMenu] Failed published-level prompt:', e)
+      );
+    }
     // --- 1. Draw the scene immediately with defaults ---
 
     this.ensureStarsTexture(); // Make sure a texture is available
@@ -440,6 +449,94 @@ export class MainMenu extends Phaser.Scene {
 
     // Add parallax elements to the background
     this.addParallaxElements();
+  }
+
+  private async promptStartPublishedLevel(ptr: { postId: string; title: string }): Promise<void> {
+    // Build a simple modal overlay
+    const overlay = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(1000);
+    const bg = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.5);
+    bg.setInteractive();
+    overlay.add(bg);
+
+    const panelW = Math.min(520, this.scale.width * 0.9);
+    const panelH = 220;
+    const panel = this.add.rectangle(0, 0, panelW, panelH, 0x001133, 0.95);
+    panel.setStrokeStyle(2, 0x0088ff, 1);
+    overlay.add(panel);
+
+    const title = this.add
+      .text(0, -60, 'Start Published Level?', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '28px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    overlay.add(title);
+
+    const subtitle = this.add
+      .text(0, -20, ptr.title, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '18px',
+        color: '#aaccff',
+        align: 'center',
+        wordWrap: { width: panelW - 40 },
+      })
+      .setOrigin(0.5);
+    overlay.add(subtitle);
+
+    const makeBtn = (x: number, text: string) => {
+      const btn = this.add.container(x, 50);
+      const r = this.add.rectangle(0, 0, 140, 42, 0x002255, 1).setStrokeStyle(2, 0x00aaff);
+      const t = this.add
+        .text(0, 0, text, { fontFamily: 'Arial, sans-serif', fontSize: '18px', color: '#ffffff' })
+        .setOrigin(0.5);
+      btn.add([r, t]);
+      btn.setInteractive(
+        new Phaser.Geom.Rectangle(-70, -21, 140, 42),
+        Phaser.Geom.Rectangle.Contains
+      );
+      btn.on('pointerover', () => r.setFillStyle(0x003377));
+      btn.on('pointerout', () => r.setFillStyle(0x002255));
+      return { btn, r, t };
+    };
+
+    const { btn: playBtn } = makeBtn(-80, 'Play');
+    const { btn: cancelBtn } = makeBtn(80, 'Cancel');
+    overlay.add([playBtn, cancelBtn]);
+
+    const close = () => {
+      overlay.destroy(true);
+      // Clear pointer so it doesn't prompt again
+      this.registry.set('publishedLevelPointer', undefined);
+    };
+
+    await new Promise<void>((resolve) => {
+      cancelBtn.on('pointerdown', () => {
+        close();
+        resolve();
+      });
+      playBtn.on('pointerdown', async () => {
+        try {
+          // Small loading indicator
+          title.setText('Loading level...');
+          subtitle.setText('Fetching from server');
+          const resp = await getPublishedLevel(ptr.postId);
+          // Start the game with this level data in registry for StarshipScene
+          this.registry.set('testLevelData', resp.level);
+          this.registry.set('buildModeTest', false);
+          this.registry.set('testMode', false);
+          close();
+          this.scene.start('StarshipScene');
+        } catch (e) {
+          title.setText('Failed to load level');
+          subtitle.setText('Please try again');
+          this.time.delayedCall(1200, () => close());
+        }
+        resolve();
+      });
+    });
   }
 
   private async loadConfigFromServer(): Promise<void> {

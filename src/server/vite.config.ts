@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     ssr: 'index.ts',
     outDir: '../../dist/server',
+    emptyOutDir: false,
     target: 'node22',
     // Disable sourcemaps during dev to reduce artifact size and upload time
     sourcemap: mode === 'production',

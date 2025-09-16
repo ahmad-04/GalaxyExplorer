@@ -417,7 +417,7 @@ export class StarshipScene extends Phaser.Scene {
 
     console.log('[StarshipScene] isBuildModeTest flag:', isBuildModeTest);
 
-    const usingCustomLevel = !!(testLevelData && isBuildModeTest);
+    const usingCustomLevel = !!testLevelData;
 
     if (usingCustomLevel) {
       console.log(
@@ -425,8 +425,10 @@ export class StarshipScene extends Phaser.Scene {
         testLevelData.settings.name
       );
       this.setupCustomLevel(testLevelData);
-      // Start monitoring for completion when all custom enemies are cleared
-      this.startTestCompletionMonitor();
+      // Start monitoring for completion when all custom enemies are cleared (Build Mode only)
+      if (isBuildModeTest) {
+        this.startTestCompletionMonitor();
+      }
     } else {
       // Log detailed reason why not using custom level
       if (!testLevelData) {
@@ -865,7 +867,7 @@ export class StarshipScene extends Phaser.Scene {
       return; // Player is protected by shield
     }
 
-    console.log('[StarshipScene] No shield, starting game over sequence');
+    console.log('[StarshipScene] No shield, handling player death');
 
     // If the enemy is still present and active at collision, count as destroyed-by-crash
     if (enemy && enemy.active) {
@@ -897,6 +899,21 @@ export class StarshipScene extends Phaser.Scene {
 
     // Only deactivate power-ups once (they'll also be cleaned up in shutdown)
     this.deactivateAllPowerUps();
+
+    // If running a build mode verification, fail the test immediately
+    if (this.registry.get('buildModeTest') === true) {
+      console.log('[StarshipScene] Build Mode verification failed: player died');
+      // Notify BuildModeScene / PublishStep
+      const buildModeScene = this.scene.get('BuildModeScene');
+      if (buildModeScene) {
+        buildModeScene.events.emit('test:failed');
+      } else {
+        this.events.emit('test:failed');
+      }
+      // Stop StarshipScene promptly
+      this.scene.stop('StarshipScene');
+      return;
+    }
 
     console.log('[StarshipScene] Stopping enemies and bullets');
     // Stop enemies and bullets - just make them inactive but don't destroy yet
@@ -2293,6 +2310,9 @@ export class StarshipScene extends Phaser.Scene {
 
   private checkForTestCompletion(): void {
     if (this.registry.get('buildModeTest') === true && !this.testCompleted) {
+      // If player has died in this run, do not allow completion
+      const deaths = this.registry.get('playerDeaths') || 0;
+      if (deaths > 0) return;
       const expected = this.expectedEnemiesToDefeat || 0;
       if (expected <= 0) return; // Do not auto-complete when nothing was placed
       const defeated = this.registry.get('enemiesDefeated') || 0;

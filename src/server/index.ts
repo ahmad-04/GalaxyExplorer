@@ -1,7 +1,14 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
+import {
+  InitResponse,
+  IncrementResponse,
+  DecrementResponse,
+  PublishLevelRequest,
+  PublishLevelResponse,
+  GetLevelResponse,
+} from '../shared/types/api';
 import { redis, createServer, context, reddit } from '@devvit/web/server';
-import { createPost } from './core/post';
+import { createPost, createLevelPost } from './core/post';
 
 const app = express();
 
@@ -30,11 +37,25 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
 
     try {
       const count = await redis.get('count');
-      res.json({
-        type: 'init',
+
+      // If this app is opened from a Reddit post, we may have a published level stored
+      let publishedLevel: InitResponse['publishedLevel'] | undefined = undefined;
+      if (postId) {
+        const levelExists = await redis.exists(`level:${postId}`);
+        if (levelExists) {
+          // Try to fetch a compact title we stored alongside the level
+          const title = (await redis.get(`level:title:${postId}`)) || 'Published Level';
+          publishedLevel = { postId, title };
+        }
+      }
+
+      const base = {
+        type: 'init' as const,
         postId: postId,
         count: count ? parseInt(count) : 0,
-      });
+        ...(publishedLevel ? { publishedLevel } : {}),
+      };
+      res.json(base);
     } catch (error) {
       console.error(`API Init Error for post ${postId}:`, error);
       let errorMessage = 'Unknown error during initialization';
@@ -42,6 +63,162 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
         errorMessage = `Initialization failed: ${error.message}`;
       }
       res.status(400).json({ status: 'error', message: errorMessage });
+    }
+  }
+);
+
+// Publish a level: create a Reddit post and store level JSON in Redis
+router.post<
+  Record<string, never>,
+  PublishLevelResponse | { status: string; message: string; code?: string },
+  PublishLevelRequest
+>('/api/publish-level', async (req, res): Promise<void> => {
+  try {
+    const { subredditName, userId } = context;
+    if (!subredditName) {
+      res
+        .status(400)
+        .json({ status: 'error', message: 'Missing subreddit context', code: 'no_subreddit' });
+      return;
+    }
+    if (!userId) {
+      res.status(401).json({ status: 'error', message: 'User not authenticated', code: 'no_user' });
+      return;
+    }
+
+    const { levelId, name, description, authorDisplay, levelData, clientPublishToken } =
+      req.body || {};
+    if (!levelId || !name || !levelData) {
+      res
+        .status(400)
+        .json({ status: 'error', message: 'Missing required fields', code: 'bad_request' });
+      return;
+    }
+
+    // Idempotency: if a token is provided, check if we already published for it
+    if (clientPublishToken) {
+      const existingPostId = await redis.get(`publish:token:${clientPublishToken}`);
+      if (existingPostId) {
+        // Return existing record if possible
+        const permalink = await redis.get(`level:permalink:${existingPostId}`);
+        const title = (await redis.get(`level:title:${existingPostId}`)) || `${name}`;
+        res
+          .status(200)
+          .json({
+            postId: existingPostId,
+            permalink: permalink || '',
+            title,
+            createdAt: new Date().toISOString(),
+          });
+        return;
+      }
+    }
+
+    // Size guard: prevent huge payloads
+    const rawSize = Buffer.byteLength(JSON.stringify(levelData), 'utf8');
+    const MAX_BYTES = 200 * 1024; // 200 KB
+    if (rawSize > MAX_BYTES) {
+      res
+        .status(413)
+        .json({
+          status: 'error',
+          message: 'Level too large to publish',
+          code: 'payload_too_large',
+        });
+      return;
+    }
+
+    // Derive username for title
+    let username = 'Anonymous';
+    try {
+      const user = await reddit.getCurrentUser();
+      if (user?.username) username = user.username;
+    } catch {
+      /* ignore */
+    }
+    const author = (authorDisplay || username).replace(/^u\//, '');
+    const title = `${author} (u/${author})’s ${name}`; // uses right single quote
+
+    // Create a temporary key for level; postId not known yet, so store after creation
+    // Create the Reddit post first (postData must be tiny)
+    const post = await createLevelPost({
+      title,
+      splash: {
+        heading: name,
+        description: description || `Play ${name} by u/${author}`,
+        buttonLabel: 'Start Game',
+      },
+      postData: { type: 'published-level' },
+    });
+
+    // Persist level JSON keyed by postId; also store helpers
+    const postId = post.id;
+    const permalink = `https://www.reddit.com${post.permalink}`;
+    await redis.set(`level:${postId}`, JSON.stringify(levelData));
+    await redis.set(`level:title:${postId}`, title);
+    await redis.set(`level:permalink:${postId}`, permalink);
+    // Optional TTL
+    const TTL_SECONDS = 90 * 24 * 60 * 60; // 90 days
+    await redis.expire(`level:${postId}`, TTL_SECONDS);
+    await redis.expire(`level:title:${postId}`, TTL_SECONDS);
+    await redis.expire(`level:permalink:${postId}`, TTL_SECONDS);
+    if (clientPublishToken) {
+      await redis.set(`publish:token:${clientPublishToken}`, postId);
+      await redis.expire(`publish:token:${clientPublishToken}`, TTL_SECONDS);
+    }
+
+    const response: PublishLevelResponse = {
+      postId,
+      permalink,
+      title,
+      createdAt: new Date().toISOString(),
+    };
+    res.status(201).json(response);
+  } catch (error: unknown) {
+    console.error('[API] Error in /api/publish-level:', error);
+    // Best-effort error mapping
+    let code = 'unknown_error';
+    let message = 'Failed to publish level';
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'message' in error &&
+      typeof (error as { message?: unknown }).message === 'string'
+    ) {
+      message = (error as { message: string }).message;
+    }
+    if (/rate|quota/i.test(message)) code = 'rate_limited';
+    if (/auth|permission/i.test(message)) code = 'auth_error';
+    res.status(code === 'rate_limited' ? 429 : 500).json({ status: 'error', message, code });
+  }
+});
+
+// Fetch stored level JSON for a given post
+router.get<Record<string, never>, GetLevelResponse | { status: string; message: string }, unknown>(
+  '/api/level',
+  async (req, res): Promise<void> => {
+    try {
+      const query = req.query as { postId?: string };
+      const effectivePostId = query.postId || context.postId;
+      if (!effectivePostId) {
+        res.status(400).json({ status: 'error', message: 'postId is required' });
+        return;
+      }
+      const levelStr = await redis.get(`level:${effectivePostId}`);
+      if (!levelStr) {
+        res.status(404).json({ status: 'error', message: 'Level not found' });
+        return;
+      }
+      const etag = `W/"${Buffer.byteLength(levelStr, 'utf8')}-${(await redis.get(`level:title:${effectivePostId}`)) ?? ''}"`;
+      res.setHeader('ETag', etag);
+      if (req.headers['if-none-match'] === etag) {
+        res.status(304).end();
+        return;
+      }
+      res.json({ postId: effectivePostId, level: JSON.parse(levelStr), etag });
+    } catch (error) {
+      console.error('[API] Error in /api/level:', error);
+      res.status(500).json({ status: 'error', message: 'Failed to load level' });
     }
   }
 );

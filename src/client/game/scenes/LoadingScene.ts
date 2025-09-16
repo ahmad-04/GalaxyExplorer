@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { getInit } from '../api';
 
 export class LoadingScene extends Phaser.Scene {
   private loadingDots!: Phaser.GameObjects.Text;
@@ -13,59 +14,67 @@ export class LoadingScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
-    
+
     // Create a simple dark background
     this.add.rectangle(width / 2, height / 2, width, height, 0x000011);
-    
+
     // Add title
-    this.add.text(width / 2, height / 2 - 100, 'GALAXY EXPLORER', {
-      fontFamily: 'Arial Black, sans-serif',
-      fontSize: '48px',
-      color: '#ffffff',
-      stroke: '#0066ff',
-      strokeThickness: 4,
-      align: 'center'
-    }).setOrigin(0.5);
-    
+    this.add
+      .text(width / 2, height / 2 - 100, 'GALAXY EXPLORER', {
+        fontFamily: 'Arial Black, sans-serif',
+        fontSize: '48px',
+        color: '#ffffff',
+        stroke: '#0066ff',
+        strokeThickness: 4,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
     // Loading text
-    this.add.text(width / 2, height / 2 + 50, 'Loading', {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '24px',
-      color: '#88ccff',
-      align: 'center'
-    }).setOrigin(0.5);
-    
+    this.add
+      .text(width / 2, height / 2 + 50, 'Loading', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '24px',
+        color: '#88ccff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
     // Animated dots
-    this.loadingDots = this.add.text(width / 2 + 60, height / 2 + 50, '', {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '24px',
-      color: '#88ccff',
-      align: 'center'
-    }).setOrigin(0.5);
-    
+    this.loadingDots = this.add
+      .text(width / 2 + 60, height / 2 + 50, '', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '24px',
+        color: '#88ccff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
     // Status text to show current loading step
-    this.statusText = this.add.text(width / 2, height / 2 + 90, 'Initializing...', {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '16px',
-      color: '#aaccff',
-      align: 'center'
-    }).setOrigin(0.5);
-    
+    this.statusText = this.add
+      .text(width / 2, height / 2 + 90, 'Initializing...', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        color: '#aaccff',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
     // Simple spinner
     this.spinner = this.add.graphics();
     this.spinner.x = width / 2;
     this.spinner.y = height / 2 + 130;
-    
+
     // Animate loading dots
     this.time.addEvent({
       delay: 500,
       callback: this.updateLoadingDots,
       callbackScope: this,
-      loop: true
+      loop: true,
     });
-    
+
     // Start loading process
-    this.startLoading();
+    void this.startLoading();
   }
 
   private updateLoadingDots() {
@@ -75,19 +84,19 @@ export class LoadingScene extends Phaser.Scene {
 
   private drawSpinner() {
     this.spinner.clear();
-    
+
     // Draw spinning circle
     this.spinner.lineStyle(4, 0x0088ff, 0.8);
     this.spinner.beginPath();
     this.spinner.arc(0, 0, 20, 0, this.spinnerAngle);
     this.spinner.strokePath();
-    
+
     // Add a dot at the end
     const dotX = Math.cos(this.spinnerAngle) * 20;
     const dotY = Math.sin(this.spinnerAngle) * 20;
     this.spinner.fillStyle(0x00aaff);
     this.spinner.fillCircle(dotX, dotY, 3);
-    
+
     this.spinnerAngle += 0.15;
     if (this.spinnerAngle > Math.PI * 2) {
       this.spinnerAngle = 0;
@@ -102,46 +111,58 @@ export class LoadingScene extends Phaser.Scene {
     // Simplified loading process - faster since no config loading needed
     const minLoadTime = 1200; // Minimum 1.2 seconds to show loading screen
     const startTime = Date.now();
-    
+
     try {
       console.log('[LoadingScene] Starting loading process...');
       this.statusText.setText('Loading assets...');
-      
+
       // Step 1: Wait for essential assets
       console.log('[LoadingScene] Checking assets...');
       await this.waitForAssetsReady();
-      
+
+      // Step 1.5: Fetch init info to detect published-level context
+      try {
+        const init = await getInit();
+        if (init.publishedLevel) {
+          this.registry.set('publishedLevelPointer', init.publishedLevel);
+        }
+      } catch (e) {
+        // Non-fatal; proceed without published level context
+        console.warn('[LoadingScene] init check failed:', e);
+      }
+
       // Step 2: Preload MainMenu scene to ensure it's ready
       console.log('[LoadingScene] Preloading MainMenu scene...');
       this.statusText.setText('Preparing main menu...');
       await this.preloadMainMenuScene();
-      
+
       // Step 3: Simple finalization (no config loading needed for main menu)
       console.log('[LoadingScene] Finalizing initialization...');
       this.statusText.setText('Finalizing...');
       await this.simpleFinalization();
-      
+
       // Ensure minimum loading time for smooth UX
       const elapsedTime = Date.now() - startTime;
       const remainingTime = Math.max(0, minLoadTime - elapsedTime);
-      
+
       if (remainingTime > 0) {
-        console.log(`[LoadingScene] Waiting additional ${remainingTime}ms for smooth transition...`);
+        console.log(
+          `[LoadingScene] Waiting additional ${remainingTime}ms for smooth transition...`
+        );
         this.statusText.setText('Ready!');
-        await new Promise(resolve => setTimeout(resolve, remainingTime));
+        await new Promise((resolve) => setTimeout(resolve, remainingTime));
       }
-      
+
       console.log('[LoadingScene] Loading complete, transitioning to MainMenu...');
       this.statusText.setText('Starting...');
-      
+
       // Fade out effect
       this.cameras.main.fadeOut(500, 0, 0, 0);
-      
+
       // Start main menu after fade
       this.time.delayedCall(500, () => {
         this.scene.start('MainMenu');
       });
-      
     } catch (error) {
       console.error('[LoadingScene] Error during loading:', error);
       // Even if there's an error, proceed to main menu after a delay
@@ -154,13 +175,13 @@ export class LoadingScene extends Phaser.Scene {
   private async waitForAssetsReady(): Promise<void> {
     // Check if all essential textures are loaded
     const essentialTextures = ['ship', 'bullet', 'enemy'];
-    
+
     return new Promise((resolve) => {
       const checkAssets = () => {
-        const allLoaded = essentialTextures.every(key => 
-          this.textures.exists(key) || this.load.textureManager.exists(key)
+        const allLoaded = essentialTextures.every(
+          (key) => this.textures.exists(key) || this.load.textureManager.exists(key)
         );
-        
+
         if (allLoaded) {
           console.log('[LoadingScene] All essential assets are ready');
           resolve();
@@ -169,7 +190,7 @@ export class LoadingScene extends Phaser.Scene {
           this.time.delayedCall(100, checkAssets);
         }
       };
-      
+
       checkAssets();
     });
   }
@@ -211,7 +232,9 @@ export class LoadingScene extends Phaser.Scene {
       try {
         const gameRegistry = this.game.registry;
         if (gameRegistry) {
-          console.log('[LoadingScene] Game registry is ready - no config loading needed for main menu');
+          console.log(
+            '[LoadingScene] Game registry is ready - no config loading needed for main menu'
+          );
           resolve();
         } else {
           // Wait a bit and resolve anyway

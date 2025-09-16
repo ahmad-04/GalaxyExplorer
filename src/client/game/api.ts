@@ -1,4 +1,10 @@
-import { LeaderboardResponse } from '../../shared/types/api';
+import {
+  LeaderboardResponse,
+  PublishLevelRequest,
+  PublishLevelResponse,
+  GetLevelResponse,
+  InitResponse,
+} from '../../shared/types/api';
 
 export const submitScore = async (score: number): Promise<void> => {
   console.log(`[API] Submitting score: ${score}`);
@@ -45,4 +51,43 @@ export const getLeaderboard = async (limit: number = 10): Promise<LeaderboardRes
   console.log(`[API] Retrieved ${data.scores.length} score entries`);
 
   return data;
+};
+
+export const publishLevelToReddit = async (
+  req: PublishLevelRequest
+): Promise<PublishLevelResponse> => {
+  const response = await fetch('/api/publish-level', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(req),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to publish level');
+  }
+  return (await response.json()) as PublishLevelResponse;
+};
+
+export const getPublishedLevel = async (postId?: string): Promise<GetLevelResponse> => {
+  const url = postId ? `/api/level?postId=${encodeURIComponent(postId)}` : '/api/level';
+  const response = await fetch(url, { credentials: 'include' });
+  if (response.status === 304) {
+    // Not modified; caller can decide what to do
+    throw new Error('Not modified');
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to fetch level');
+  }
+  return (await response.json()) as GetLevelResponse;
+};
+
+export const getInit = async (): Promise<InitResponse> => {
+  const response = await fetch('/api/init', { credentials: 'include' });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to initialize');
+  }
+  return (await response.json()) as InitResponse;
 };

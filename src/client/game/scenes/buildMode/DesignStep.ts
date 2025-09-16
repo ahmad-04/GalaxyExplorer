@@ -119,6 +119,10 @@ export class DesignStep {
 
     // Set up events
     this.setupEvents();
+
+    // Keep inline test utilities referenced for optional developer use
+    void this.startInlineTest;
+    void this.stopInlineTest;
   }
 
   /**
@@ -201,6 +205,9 @@ export class DesignStep {
     }
     if (this.saveButtonContainer) {
       this.saveButtonContainer.destroy(true);
+    }
+    if (this.topBackButtonContainer) {
+      this.topBackButtonContainer.destroy(true);
     }
 
     // Remove any active tool listeners
@@ -913,11 +920,11 @@ export class DesignStep {
    * Create navigation buttons between steps
    */
   private createStepNavigation(): void {
-    // Back button (to Setup step)
+    // Test button (replaces Back)
     const backButton = this.scene.add
-      .text(this.scene.scale.width - 200, this.scene.scale.height - 40, '< Back', {
+      .text(this.scene.scale.width - 200, this.scene.scale.height - 40, 'Test ▶', {
         fontSize: '14px',
-        color: '#e5e7eb',
+        color: '#93c5fd',
       })
       .setOrigin(0, 0.5);
     this.backNavText = backButton;
@@ -926,15 +933,14 @@ export class DesignStep {
     // Make button interactive
     backButton.setInteractive({ useHandCursor: true });
 
-    // Navigate back to Main Menu (Setup removed)
+    // Start inline test from Design
     backButton.on('pointerdown', () => {
-      this.saveProgress();
-      this.scene.scene.start('MainMenu');
+      this.startInlineTest();
     });
 
-    // Test button (inline test)
+    // Next button -> Publish step
     const nextButton = this.scene.add
-      .text(this.scene.scale.width - 80, this.scene.scale.height - 40, 'Test ▶', {
+      .text(this.scene.scale.width - 80, this.scene.scale.height - 40, 'Publish ▶', {
         fontSize: '14px',
         color: '#93c5fd',
       })
@@ -945,16 +951,11 @@ export class DesignStep {
     // Make button interactive
     nextButton.setInteractive({ useHandCursor: true });
 
-    // Start/Stop inline test
+    // Go to Publish step (verify happens there)
     nextButton.on('pointerdown', () => {
       this.saveProgress();
-      if (!this.inlineTesting) {
-        this.startInlineTest();
-        nextButton.setText('Stop ■');
-      } else {
-        this.stopInlineTest();
-        nextButton.setText('Test ▶');
-      }
+      const levelIdToPass = this.levelId || this.manager.getCurrentLevelId();
+      this.scene.events.emit('step:change', 'publish', levelIdToPass);
     });
 
     this.container.add([backButton, nextButton]);
@@ -2180,8 +2181,6 @@ export class DesignStep {
     this.topBackButtonContainer?.setVisible(true);
     // Reveal button depends on palette state
     if (!this.paletteOpen) this.togglePalette(false, true);
-    // Reset nav text label if present
-    if (this.nextNavText) this.nextNavText.setText('Test ▶');
     // Restore entity icons visibility for editing
     this.entities.forEach((e) => e.setVisible(true));
     // Remove floating stop

@@ -106,7 +106,7 @@ export interface Trigger extends BaseEntity {
 
 export interface TriggerAction {
   type: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
 }
 
 // Level settings interface
@@ -146,6 +146,7 @@ export interface LevelMetadata {
   lastModified: number;
   isPublished: boolean;
   publishId?: string;
+  permalink?: string;
 }
 
 // Build mode user settings

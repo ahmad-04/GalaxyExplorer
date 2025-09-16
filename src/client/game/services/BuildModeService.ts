@@ -131,7 +131,7 @@ export class BuildModeService {
                   : existing.description !== undefined
                     ? existing.description
                     : '';
-              return {
+              const baseUpdated: LevelMetadata = {
                 id: existing.id,
                 name: levelData.settings.name || existing.name,
                 author: levelData.settings.author || existing.author,
@@ -142,6 +142,9 @@ export class BuildModeService {
                 isPublished: existing.isPublished,
                 publishId: existing.publishId ?? '',
               };
+              return existing.permalink
+                ? { ...baseUpdated, permalink: existing.permalink }
+                : baseUpdated;
             })()
           : {
               id,

@@ -8,6 +8,7 @@ import * as Phaser from 'phaser';
 import { BuildModeManager } from '../../entities/BuildModeManager';
 import BuildModeService from '../../services/BuildModeService';
 import { isFeatureEnabled } from '../../../../shared/config';
+import { publishLevelToReddit } from '../../api';
 
 /**
  * Publish step in the Build Mode workflow
@@ -22,6 +23,18 @@ export class PublishStep {
   private container!: Phaser.GameObjects.Container;
   private publishContainer!: Phaser.GameObjects.Container;
   private successContainer!: Phaser.GameObjects.Container;
+  private verifyContainer?: Phaser.GameObjects.Container;
+  private verifyState: 'idle' | 'running' | 'passed' | 'failed' = 'idle';
+  private detachVerifyListeners: (() => void) | undefined;
+  private everPassed: boolean = false;
+  private verifyOverlay?: Phaser.GameObjects.Container;
+  private navBackBtn?: Phaser.GameObjects.Container;
+  private navMenuBtn?: Phaser.GameObjects.Container;
+  private verifyStatusText?: Phaser.GameObjects.Text;
+
+  // Publish button visuals for enabled/disabled state
+  private publishBtnBg?: Phaser.GameObjects.Graphics;
+  private publishBtnContainer?: Phaser.GameObjects.Container;
 
   // Level data
   private levelId: string | undefined;
@@ -31,6 +44,7 @@ export class PublishStep {
   // Publishing state
   private isPublished: boolean = false;
   private publishId: string | undefined;
+  private permalink?: string;
   constructor(scene: Phaser.Scene, manager: BuildModeManager, service: BuildModeService) {
     this.scene = scene;
     this.manager = manager;
@@ -59,12 +73,16 @@ export class PublishStep {
         if (levelMetadata) {
           this.isPublished = levelMetadata.isPublished;
           this.publishId = levelMetadata.publishId;
+          if (levelMetadata.permalink) this.permalink = levelMetadata.permalink;
         }
       }
     }
 
     // Create the UI
     this.createUI();
+
+    // Invalidate verification when the current level is saved/changed
+    this.service.on('level-saved', this.onLevelSaved);
   }
 
   /**
@@ -77,71 +95,53 @@ export class PublishStep {
     if (this.container) {
       this.container.destroy();
     }
+
+    // Detach any verify listeners
+    this.cleanupVerifyListeners();
+
+    // Detach service listener
+    this.service.off('level-saved', this.onLevelSaved);
+
+    // Ensure StarshipScene is stopped if verification was running
+    if (this.scene.scene.isActive('StarshipScene')) {
+      const starship = this.scene.scene.get('StarshipScene');
+      if (starship) starship.events.emit('test:stop');
+      this.scene.scene.stop('StarshipScene');
+    }
   }
 
   /**
    * Create the UI for this step
    */
   private createUI(): void {
-    // Main container
-    this.container = this.scene.add.container(0, 60);
+    // Respect BuildMode header height like DesignStep
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    this.container = this.scene.add.container(0, 0);
 
-    // Background with gradient effect
-    const bg = this.scene.add.rectangle(
-      0,
-      0,
-      this.scene.scale.width,
-      this.scene.scale.height - 60,
-      0x111122
-    );
-    bg.setOrigin(0, 0);
-
-    // Add background gradient overlay
-    const bgGradient = this.scene.add.graphics();
-    bgGradient.fillGradientStyle(0x1a1a3a, 0x1a1a3a, 0x0a0a20, 0x0a0a20, 0.8);
-    bgGradient.fillRect(0, 0, this.scene.scale.width, this.scene.scale.height - 60);
-
-    this.container.add([bg, bgGradient]);
-
-    // Add background stars
-    this.createBackgroundStars();
-
-    // Add header with gradient
-    const headerBg = this.scene.add.rectangle(0, 0, this.scene.scale.width, 60, 0x222244);
-    headerBg.setOrigin(0, 0);
-
-    // Add highlight line at bottom of header
-    const headerHighlight = this.scene.add.rectangle(0, 59, this.scene.scale.width, 2, 0x4444aa);
-    headerHighlight.setOrigin(0, 0);
+    // Cover any sticky UI from DesignStep at the top
+    const headerCover = this.scene.add
+      .rectangle(0, 0, this.scene.scale.width, topBarH, 0x0b1220, 1)
+      .setOrigin(0, 0);
+    headerCover.setScrollFactor(0);
+    this.container.add(headerCover);
 
     const title = this.scene.add
-      .text(20, 30, 'PUBLISH YOUR LEVEL', {
-        fontSize: '24px',
-        color: '#ffffff',
+      .text(16, Math.floor(topBarH / 2), 'PUBLISH YOUR LEVEL', {
+        fontSize: '22px',
+        color: '#e5e7eb',
         fontStyle: 'bold',
-        stroke: '#4444ff',
-        strokeThickness: 1,
+        shadow: { offsetX: 1, offsetY: 1, color: '#00000066', blur: 2, fill: true },
       })
       .setOrigin(0, 0.5);
-
-    // Add subtle pulse animation to title
-    this.scene.tweens.add({
-      targets: title,
-      alpha: 0.8,
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    this.container.add([headerBg, headerHighlight, title]);
+    this.container.add(title);
 
     // Create publish form container
-    this.publishContainer = this.scene.add.container(this.scene.scale.width / 2, 250);
+    this.publishContainer = this.scene.add.container(this.scene.scale.width / 2, topBarH + 220);
     this.container.add(this.publishContainer);
 
     // Create success container (hidden initially)
-    this.successContainer = this.scene.add.container(this.scene.scale.width / 2, 250);
+    this.successContainer = this.scene.add.container(this.scene.scale.width / 2, topBarH + 220);
     this.container.add(this.successContainer);
     this.successContainer.setVisible(false);
 
@@ -162,166 +162,172 @@ export class PublishStep {
    * Create the publishing form
    */
   private createPublishForm(): void {
-    // Form background with gradient
-    const formBg = this.scene.add.graphics();
-    formBg.fillStyle(0x222244, 1);
-    formBg.fillRoundedRect(-250, -175, 500, 350, 16);
-    formBg.lineStyle(2, 0x4444aa, 1);
-    formBg.strokeRoundedRect(-250, -175, 500, 350, 16);
-
-    // Add highlight/glow effect at top of panel
-    const highlight = this.scene.add.graphics();
-    highlight.fillGradientStyle(0x4444ff, 0x4444ff, 0x2222aa, 0x2222aa, 0.3);
-    highlight.fillRoundedRect(-250, -175, 500, 60, { tl: 16, tr: 16, bl: 0, br: 0 });
-
-    this.publishContainer.add([formBg, highlight]);
-
-    // Form title with glowing effect
+    // Panel styled like DesignStep palette
+    const panel = this.scene.add.rectangle(0, 0, 560, 400, 0x1f2937, 0.98).setOrigin(0.5);
+    panel.setStrokeStyle(1, 0x2b3a4a);
+    const headerBar = this.scene.add.rectangle(0, -180, 560, 48, 0x111827, 1).setOrigin(0.5);
     const formTitle = this.scene.add
-      .text(0, -150, 'FINALIZE YOUR LEVEL', {
-        fontSize: '26px',
-        color: '#ffffff',
+      .text(0, -180, 'FINALIZE YOUR LEVEL', {
+        fontSize: '20px',
+        color: '#e5e7eb',
         fontStyle: 'bold',
-        stroke: '#4444ff',
-        strokeThickness: 1,
+        shadow: { offsetX: 1, offsetY: 1, color: '#00000066', blur: 2, fill: true },
       })
       .setOrigin(0.5);
 
-    // Add glow effect to title (no variable retained to avoid unused warning)
-    this.scene.tweens.add({
-      targets: formTitle,
-      alpha: 0.8,
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    this.publishContainer.add(formTitle);
+    this.publishContainer.add([panel, headerBar, formTitle]);
 
     // Level info section
     const levelInfoTitle = this.scene.add
-      .text(-220, -100, 'LEVEL INFORMATION', {
-        fontSize: '16px',
-        color: '#aaaaaa',
+      .text(-220, -120, 'LEVEL INFORMATION', {
+        fontSize: '14px',
+        color: '#9ca3af',
         fontStyle: 'bold',
       })
       .setOrigin(0, 0.5);
 
     // Level name display
     const levelNameLabel = this.scene.add
-      .text(-220, -60, 'Level Name:', {
-        fontSize: '16px',
-        color: '#ffffff',
-      })
+      .text(-220, -80, 'Level Name:', { fontSize: '16px', color: '#e5e7eb' })
       .setOrigin(0, 0.5);
 
     const levelNameValue = this.scene.add
-      .text(-100, -60, this.levelName, {
-        fontSize: '16px',
-        color: '#ffff00',
-      })
+      .text(-100, -80, this.levelName, { fontSize: '16px', color: '#fbbf24' })
       .setOrigin(0, 0.5);
+    const editNameBtn = this.scene.add
+      .text(160, -80, '✎', { fontSize: '16px', color: '#93c5fd' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.promptEditName(levelNameValue));
 
     // Author display
     const authorLabel = this.scene.add
-      .text(-220, -30, 'Author:', {
-        fontSize: '16px',
-        color: '#ffffff',
-      })
+      .text(-220, -48, 'Author:', { fontSize: '16px', color: '#e5e7eb' })
       .setOrigin(0, 0.5);
 
+    // Derive username from localStorage if available
+    const userName = this.getCurrentUsername();
+    this.levelAuthor = userName ? `u/${userName}` : this.levelAuthor;
     const authorValue = this.scene.add
-      .text(-100, -30, this.levelAuthor, {
-        fontSize: '16px',
-        color: '#ffff00',
-      })
+      .text(-100, -48, this.levelAuthor, { fontSize: '16px', color: '#fbbf24' })
       .setOrigin(0, 0.5);
+    const editAuthorBtn = this.scene.add
+      .text(160, -48, '✎', { fontSize: '16px', color: '#93c5fd' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.promptEditAuthor(authorValue));
 
     // Sharing options section - only visible if sharing feature is enabled
     const sharingEnabled = isFeatureEnabled('ENABLE_BUILD_MODE_SHARING');
 
-    // Create a container for the publish button for better styling
-    const publishBtnContainer = this.scene.add.container(0, 100);
+    // Buttons row: Verify (left) + Publish (right)
+    const buttonsRow = this.scene.add.container(0, 80);
+    this.publishContainer.add(buttonsRow);
 
-    // Button background with gradient
-    const btnBg = this.scene.add.graphics();
-    btnBg.fillGradientStyle(0x0088ff, 0x0066dd, 0x0044aa, 0x0066dd, 1);
-    btnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-    btnBg.lineStyle(2, 0x44aaff, 1);
-    btnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
+    // Verify button
+    const verifyBtnContainer = this.scene.add.container(-150, 0);
+    const verifyBg = this.scene.add.graphics();
+    verifyBg.fillStyle(0x065f46, 1);
+    verifyBg.fillRoundedRect(-90, -20, 180, 40, 8);
+    verifyBg.lineStyle(1, 0x10b981, 1);
+    verifyBg.strokeRoundedRect(-90, -20, 180, 40, 8);
+    const verifyText = this.scene.add
+      .text(0, 0, 'VERIFY ▶', { fontSize: '16px', color: '#e5e7eb', fontStyle: 'bold' })
+      .setOrigin(0.5);
+    verifyBtnContainer.add([verifyBg, verifyText]);
 
-    // Button text
-    const publishButtonText = this.scene.add
-      .text(0, 0, 'PUBLISH LEVEL', {
-        fontSize: '20px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        stroke: '#0033aa',
-        strokeThickness: 1,
+    // Status text area under buttons (not cramped)
+    const statusText = this.scene.add
+      .text(0, 140, 'Verification required before publishing', {
+        fontSize: '13px',
+        color: '#9ca3af',
+        align: 'center',
+        wordWrap: { width: 480 },
       })
       .setOrigin(0.5);
+    this.verifyContainer = this.scene.add.container(0, 0, [statusText]);
+    this.verifyStatusText = statusText;
+    this.publishContainer.add(this.verifyContainer);
 
-    // Add button shadow
-    const btnShadow = this.scene.add.graphics();
-    btnShadow.fillStyle(0x000000, 0.3);
-    btnShadow.fillRoundedRect(-98, -18, 200, 40, 8);
+    // Publish button (flat, disabled until verified)
+    this.publishBtnContainer = this.scene.add.container(150, 0);
+    this.publishBtnBg = this.scene.add.graphics();
+    this.publishBtnBg.fillStyle(0x1d4ed8, 1);
+    this.publishBtnBg.fillRoundedRect(-100, -20, 200, 40, 8);
+    this.publishBtnBg.lineStyle(1, 0x60a5fa, 1);
+    this.publishBtnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
 
-    // Add components to button container
-    publishBtnContainer.add([btnShadow, btnBg, publishButtonText]);
+    const publishButtonText = this.scene.add
+      .text(0, 0, 'PUBLISH LEVEL', { fontSize: '18px', color: '#e5e7eb', fontStyle: 'bold' })
+      .setOrigin(0.5);
 
-    // Add to main container
-    this.publishContainer.add(publishBtnContainer);
+    const publishHit = this.scene.add.rectangle(0, 0, 200, 40, 0xffffff, 0.001).setOrigin(0.5);
+    publishHit.setInteractive({ useHandCursor: true });
 
-    // Make button interactive with hover and click effects
-    btnBg
-      .setInteractive(new Phaser.Geom.Rectangle(-100, -20, 200, 40), Phaser.Geom.Rectangle.Contains)
+    this.publishBtnContainer.add([this.publishBtnBg, publishHit, publishButtonText]);
+
+    // Add both buttons to row
+    buttonsRow.add([verifyBtnContainer, this.publishBtnContainer]);
+
+    publishHit.on('pointerover', () => {
+      if (this.verifyState !== 'passed') return;
+      this.publishBtnBg!.clear();
+      this.publishBtnBg!.fillStyle(0x2563eb, 1);
+      this.publishBtnBg!.fillRoundedRect(-100, -20, 200, 40, 8);
+      this.publishBtnBg!.lineStyle(1, 0x93c5fd, 1);
+      this.publishBtnBg!.strokeRoundedRect(-100, -20, 200, 40, 8);
+    });
+    publishHit.on('pointerout', () => {
+      if (this.verifyState !== 'passed') return;
+      this.publishBtnBg!.clear();
+      this.publishBtnBg!.fillStyle(0x1d4ed8, 1);
+      this.publishBtnBg!.fillRoundedRect(-100, -20, 200, 40, 8);
+      this.publishBtnBg!.lineStyle(1, 0x60a5fa, 1);
+      this.publishBtnBg!.strokeRoundedRect(-100, -20, 200, 40, 8);
+    });
+    publishHit.on('pointerdown', () => {
+      if (this.verifyState !== 'passed') {
+        this.showToast('Please verify your level before publishing', 'error');
+        return;
+      }
+      this.scene.tweens.add({
+        targets: this.publishBtnContainer,
+        scaleX: 0.96,
+        scaleY: 0.96,
+        duration: 60,
+        yoyo: true,
+        onComplete: () => this.publishLevel(),
+      });
+    });
+
+    // Verify button interactions
+    verifyBg
+      .setInteractive(new Phaser.Geom.Rectangle(-90, -20, 180, 40), Phaser.Geom.Rectangle.Contains)
       .on('pointerover', () => {
-        btnBg.clear();
-        btnBg.fillGradientStyle(0x44aaff, 0x0088ff, 0x0066cc, 0x0088ff, 1);
-        btnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-        btnBg.lineStyle(2, 0x88ccff, 1);
-        btnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
+        verifyBg.clear();
+        verifyBg.fillStyle(0x047857, 1);
+        verifyBg.fillRoundedRect(-90, -20, 180, 40, 8);
+        verifyBg.lineStyle(1, 0x34d399, 1);
+        verifyBg.strokeRoundedRect(-90, -20, 180, 40, 8);
       })
       .on('pointerout', () => {
-        btnBg.clear();
-        btnBg.fillGradientStyle(0x0088ff, 0x0066dd, 0x0044aa, 0x0066dd, 1);
-        btnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-        btnBg.lineStyle(2, 0x44aaff, 1);
-        btnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
+        verifyBg.clear();
+        verifyBg.fillStyle(0x065f46, 1);
+        verifyBg.fillRoundedRect(-90, -20, 180, 40, 8);
+        verifyBg.lineStyle(1, 0x10b981, 1);
+        verifyBg.strokeRoundedRect(-90, -20, 180, 40, 8);
       })
-      .on('pointerdown', () => {
-        btnBg.clear();
-        btnBg.fillGradientStyle(0x0066cc, 0x0044aa, 0x003388, 0x0044aa, 1);
-        btnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-        btnBg.lineStyle(2, 0x0066cc, 1);
-        btnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
-
-        // Add click animation
-        this.scene.tweens.add({
-          targets: publishBtnContainer,
-          scaleX: 0.95,
-          scaleY: 0.95,
-          duration: 50,
-          yoyo: true,
-          onComplete: () => this.publishLevel(),
-        });
-      });
+      .on('pointerdown', () => this.startVerification(statusText, verifyText));
 
     // Add disclaimer based on whether sharing is enabled
     const disclaimer = this.scene.add
       .text(
         0,
-        150,
+        180,
         sharingEnabled
           ? 'By publishing, you agree to share this level with other players.'
           : 'Publishing will save this level as complete in your local collection.',
-        {
-          fontSize: '14px',
-          color: '#aaaaaa',
-          align: 'center',
-          wordWrap: { width: 400 },
-        }
+        { fontSize: '13px', color: '#9ca3af', align: 'center', wordWrap: { width: 480 } }
       )
       .setOrigin(0.5);
 
@@ -330,14 +336,262 @@ export class PublishStep {
       levelInfoTitle,
       levelNameLabel,
       levelNameValue,
+      editNameBtn,
       authorLabel,
       authorValue,
+      editAuthorBtn,
       disclaimer,
     ]);
 
     // Add sharing options if enabled
-    if (sharingEnabled) {
-      this.addSharingOptions();
+    if (sharingEnabled) this.addSharingOptions();
+
+    // Initialize publish button visual state
+    this.updatePublishButtonState();
+  }
+
+  private updatePublishButtonState(): void {
+    if (!this.publishBtnBg) return;
+    const enabled = this.verifyState === 'passed';
+    this.publishBtnBg.clear();
+    if (enabled) {
+      this.publishBtnBg.fillStyle(0x1d4ed8, 1);
+      this.publishBtnBg.fillRoundedRect(-100, -20, 200, 40, 8);
+      this.publishBtnBg.lineStyle(1, 0x60a5fa, 1);
+      this.publishBtnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
+    } else {
+      this.publishBtnBg.fillStyle(0x1f3a8a, 0.6);
+      this.publishBtnBg.fillRoundedRect(-100, -20, 200, 40, 8);
+      this.publishBtnBg.lineStyle(1, 0x3b82f6, 0.5);
+      this.publishBtnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
+    }
+  }
+
+  // Launch a verification run; player must beat the level without dying
+  private startVerification(
+    statusText: Phaser.GameObjects.Text,
+    verifyText: Phaser.GameObjects.Text
+  ): void {
+    if (!this.levelId) {
+      this.showToast('No level to verify. Save your level first.', 'error');
+      return;
+    }
+    if (this.verifyState === 'running') return;
+    // Reset to running; preserve everPassed flag only for messaging
+    this.verifyState = 'running';
+    statusText.setText('Running verification... defeat all enemies without dying');
+    statusText.setColor('#dddddd');
+    verifyText.setText('VERIFYING...');
+
+    const levelData = this.service.loadLevel(this.levelId);
+    if (!levelData) {
+      this.verifyState = 'failed';
+      statusText.setText('Verification failed: could not load level');
+      statusText.setColor('#ff7777');
+      verifyText.setText('VERIFY ▶');
+      this.showToast('Failed to load level for verification', 'error');
+      return;
+    }
+
+    // Ensure clean StarshipScene
+    if (this.scene.scene.isActive('StarshipScene')) {
+      const starship = this.scene.scene.get('StarshipScene');
+      if (starship) starship.events.emit('test:stop');
+      this.scene.scene.stop('StarshipScene');
+    }
+
+    // Hide publish form and bottom navigation; show a small top-center overlay
+    this.publishContainer.setVisible(false);
+    this.navBackBtn?.setVisible(false);
+    this.navMenuBtn?.setVisible(false);
+    this.showVerifyOverlay();
+
+    // Attach listeners
+    const onCompleted = () => {
+      // Only allow pass if a fail didn't happen first during this run
+      if (this.verifyState === 'failed') {
+        // Ignore late success
+        return;
+      }
+      this.verifyState = 'passed';
+      this.everPassed = true;
+      statusText.setText(
+        this.everPassed ? 'Verification passed! You can publish now.' : 'Verification passed.'
+      );
+      statusText.setColor('#66ff99');
+      verifyText.setText('RE-RUN ▶');
+      this.updatePublishButtonState();
+      this.cleanupVerifyListeners();
+      if (this.scene.scene.isActive('StarshipScene')) this.scene.scene.stop('StarshipScene');
+      this.hideVerifyOverlay();
+      this.publishContainer.setVisible(true);
+      this.navBackBtn?.setVisible(true);
+      this.navMenuBtn?.setVisible(true);
+    };
+    const onFailed = () => {
+      this.verifyState = 'failed';
+      statusText.setText('Verification failed. Adjust your level and retry.');
+      statusText.setColor('#ff7777');
+      verifyText.setText('RE-RUN ▶');
+      this.updatePublishButtonState();
+      this.cleanupVerifyListeners();
+      if (this.scene.scene.isActive('StarshipScene')) this.scene.scene.stop('StarshipScene');
+      this.hideVerifyOverlay();
+      this.publishContainer.setVisible(true);
+      this.navBackBtn?.setVisible(true);
+      this.navMenuBtn?.setVisible(true);
+    };
+    const onStats = (_stats: unknown) => {
+      // optional future: show live counters
+    };
+
+    this.scene.events.once('test:completed', onCompleted);
+    this.scene.events.once('test:failed', onFailed);
+    this.scene.events.on('test:stats', onStats);
+    this.detachVerifyListeners = () => {
+      this.scene.events.off('test:completed', onCompleted);
+      this.scene.events.off('test:failed', onFailed);
+      this.scene.events.off('test:stats', onStats);
+    };
+
+    // Set flags and launch StarshipScene
+    this.scene.registry.set('testMode', true);
+    this.scene.registry.set('buildModeTest', true);
+    this.scene.registry.set('testLevelData', levelData);
+    this.scene.registry.set('enemiesDefeated', 0);
+    this.scene.registry.set('playerDeaths', 0);
+    this.scene.registry.set('powerupsCollected', 0);
+
+    this.scene.scene.launch('StarshipScene', {
+      testMode: true,
+      buildModeTest: true,
+      levelData,
+    });
+    // Ensure UI (overlay/stop) is on top of gameplay for clicks
+    this.scene.scene.bringToTop('BuildModeScene');
+  }
+
+  private showVerifyOverlay(): void {
+    const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
+    const topBarH = Math.max(48, headerH);
+    const panelWidth = Math.min(this.scene.scale.width - 32, 640);
+    const stopWidth = 110;
+    const overlayY = topBarH + 28;
+
+    if (!this.verifyOverlay) {
+      const overlay = this.scene.add.container(this.scene.scale.width / 2, overlayY);
+      const bg = this.scene.add
+        .rectangle(0, 0, panelWidth, 44, 0x111827, 0.95)
+        .setOrigin(0.5)
+        .setName('verifyBg');
+      bg.setStrokeStyle(1, 0x2b3a4a, 1);
+      const text = this.scene.add
+        .text(0, 0, 'Verification running — beat the level without dying', {
+          fontSize: '14px',
+          color: '#e5e7eb',
+          wordWrap: { width: panelWidth - stopWidth - 36 },
+          align: 'left',
+        })
+        .setOrigin(0, 0.5)
+        .setName('verifyText');
+      const textX = -panelWidth / 2 + 12;
+      text.setX(textX);
+      const stopBtn = this.scene.add
+        .container(panelWidth / 2 - (stopWidth / 2 + 12), 0)
+        .setName('verifyStop');
+      const stopBg = this.scene.add.rectangle(0, 0, stopWidth, 28, 0x991b1b, 1).setOrigin(0.5);
+      stopBg.setStrokeStyle(1, 0x7f1d1d, 1);
+      const stopTxt = this.scene.add
+        .text(0, 0, 'Stop ■', { fontSize: '14px', color: '#ffffff' })
+        .setOrigin(0.5);
+      stopBg.setInteractive({ useHandCursor: true });
+      stopBg.on('pointerover', () => stopBg.setFillStyle(0xb91c1c, 1));
+      stopBg.on('pointerout', () => stopBg.setFillStyle(0x991b1b, 1));
+      stopBg.on('pointerdown', () => this.resetVerification('Verification cancelled'));
+      stopBtn.add([stopBg, stopTxt]);
+      overlay.add([bg, text, stopBtn]);
+      overlay.setDepth(10000);
+      this.container.add(overlay);
+      this.verifyOverlay = overlay;
+    } else {
+      // Update existing overlay layout and bring to top
+      const overlay = this.verifyOverlay;
+      overlay.setPosition(this.scene.scale.width / 2, overlayY);
+      const bg = overlay.getByName('verifyBg') as Phaser.GameObjects.Rectangle;
+      const text = overlay.getByName('verifyText') as Phaser.GameObjects.Text;
+      const stopBtn = overlay.getByName('verifyStop') as Phaser.GameObjects.Container;
+      if (bg) {
+        bg.width = panelWidth;
+        bg.height = 44;
+      }
+      if (text) {
+        text.setText('Verification running — beat the level without dying');
+        text.setWordWrapWidth(panelWidth - stopWidth - 36, true);
+        text.setX(-panelWidth / 2 + 12);
+      }
+      if (stopBtn) {
+        stopBtn.setX(panelWidth / 2 - (stopWidth / 2 + 12));
+      }
+      overlay.setVisible(true);
+      overlay.setDepth(10000);
+    }
+    // Ensure this scene is on top for input processing
+    this.scene.scene.bringToTop('BuildModeScene');
+  }
+
+  private hideVerifyOverlay(): void {
+    if (this.verifyOverlay) this.verifyOverlay.setVisible(false);
+  }
+
+  private promptEditName(targetText: Phaser.GameObjects.Text): void {
+    const input = window.prompt('Enter level name:', this.levelName);
+    if (input && input.trim().length > 0) {
+      this.levelName = input.trim();
+      targetText.setText(this.levelName);
+      this.persistLevelSettings();
+    }
+  }
+
+  private promptEditAuthor(targetText: Phaser.GameObjects.Text): void {
+    const input = window.prompt(
+      'Enter author name (will display as u/<name>):',
+      this.levelAuthor.replace(/^u\//, '')
+    );
+    if (input && input.trim().length > 0) {
+      const cleaned = input.trim().replace(/^u\//, '');
+      this.levelAuthor = `u/${cleaned}`;
+      targetText.setText(this.levelAuthor);
+      // Persist a plain username for reuse
+      try {
+        localStorage.setItem('galaxy-explorer:username', cleaned);
+      } catch {
+        /* ignore storage errors */
+      }
+      this.persistLevelSettings();
+    }
+  }
+
+  private getCurrentUsername(): string | undefined {
+    try {
+      return localStorage.getItem('galaxy-explorer:username') || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private persistLevelSettings(): void {
+    if (!this.levelId) return;
+    const data = this.service.loadLevel(this.levelId);
+    if (!data) return;
+    data.settings.name = this.levelName;
+    data.settings.author = this.levelAuthor;
+    this.service.saveLevel(data, { id: this.levelId });
+  }
+
+  private cleanupVerifyListeners(): void {
+    if (this.detachVerifyListeners) {
+      this.detachVerifyListeners();
+      this.detachVerifyListeners = undefined;
     }
   }
 
@@ -618,134 +872,118 @@ export class PublishStep {
       // Add to success container with scale animation
       successContent.add(shareBtnContainer);
     }
+
+    // External actions for the created Reddit post
+    if (this.permalink) {
+      const makeLinkBtn = (x: number, y: number, label: string, onClick: () => void) => {
+        const c = this.scene.add.container(x, y);
+        const bg = this.scene.add.rectangle(0, 0, 160, 36, 0x111827, 0.95).setOrigin(0.5);
+        bg.setStrokeStyle(1, 0x2b3a4a);
+        const txt = this.scene.add
+          .text(0, 0, label, { fontSize: '16px', color: '#e5e7eb' })
+          .setOrigin(0.5);
+        const hit = this.scene.add.rectangle(0, 0, 160, 36, 0xffffff, 0.001).setOrigin(0.5);
+        hit.setInteractive({ useHandCursor: true });
+        hit.on('pointerover', () => bg.setFillStyle(0x0f172a));
+        hit.on('pointerout', () => bg.setFillStyle(0x111827));
+        hit.on('pointerdown', onClick);
+        c.add([bg, txt, hit]);
+        return c;
+      };
+
+      const openBtn = makeLinkBtn(-90, 190, 'Open Post', () => {
+        window.open(this.permalink!, '_blank');
+      });
+      const copyBtn = makeLinkBtn(90, 190, 'Copy Post Link', () => {
+        navigator.clipboard
+          .writeText(this.permalink!)
+          .then(() => this.showToast('Post link copied!', 'success'))
+          .catch(() => this.showToast('Failed to copy link', 'error'));
+      });
+
+      successContent.add([openBtn, copyBtn]);
+    }
   }
 
   /**
    * Create navigation buttons between steps
    */
   private createStepNavigation(): void {
-    // Navigation container
-    const navContainer = this.scene.add.container(0, 0);
+    const navY = this.scene.scale.height - 36;
 
-    // Back button (to Test step) with container for better styling
-    const backBtnContainer = this.scene.add.container(
-      this.scene.scale.width - 180,
-      this.scene.scale.height - 40
-    );
+    const makePillButton = (
+      centerX: number,
+      centerY: number,
+      width: number,
+      label: string,
+      onClick: () => void
+    ) => {
+      const btn = this.scene.add.container(centerX, centerY);
+      btn.setScrollFactor(0);
+      const bg = this.scene.add.rectangle(0, 0, width, 28, 0x111827, 1).setOrigin(0.5);
+      bg.setStrokeStyle(1, 0x2b3a4a);
+      const txt = this.scene.add
+        .text(0, 0, label, { fontSize: '14px', color: '#e5e7eb' })
+        .setOrigin(0.5);
+      btn.add([bg, txt]);
 
-    // Back button background with gradient
-    const backBtnBg = this.scene.add.graphics();
-    backBtnBg.fillGradientStyle(0x666699, 0x555577, 0x444466, 0x555577, 1);
-    backBtnBg.fillRoundedRect(-80, -15, 160, 30, 6);
-    backBtnBg.lineStyle(2, 0x8888aa, 1);
-    backBtnBg.strokeRoundedRect(-80, -15, 160, 30, 6);
+      const hit = this.scene.add.rectangle(0, 0, width, 28, 0xffffff, 0.001).setOrigin(0.5);
+      hit.setInteractive({ useHandCursor: true });
+      btn.add(hit);
 
-    // Back button text
-    const backBtnText = this.scene.add
-      .text(0, 0, '< Back to Test', {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+      hit.on('pointerover', () => bg.setFillStyle(0x0f172a));
+      hit.on('pointerout', () => bg.setFillStyle(0x111827));
+      hit.on('pointerdown', onClick);
 
-    // Add to back button container
-    backBtnContainer.add([backBtnBg, backBtnText]);
+      return btn;
+    };
 
-    // Make back button interactive with hover effects
-    backBtnBg
-      .setInteractive(new Phaser.Geom.Rectangle(-80, -15, 160, 30), Phaser.Geom.Rectangle.Contains)
-      .on('pointerover', () => {
-        backBtnBg.clear();
-        backBtnBg.fillGradientStyle(0x8888aa, 0x777799, 0x666688, 0x777799, 1);
-        backBtnBg.fillRoundedRect(-80, -15, 160, 30, 6);
-        backBtnBg.lineStyle(2, 0xaaaacc, 1);
-        backBtnBg.strokeRoundedRect(-80, -15, 160, 30, 6);
-      })
-      .on('pointerout', () => {
-        backBtnBg.clear();
-        backBtnBg.fillGradientStyle(0x666699, 0x555577, 0x444466, 0x555577, 1);
-        backBtnBg.fillRoundedRect(-80, -15, 160, 30, 6);
-        backBtnBg.lineStyle(2, 0x8888aa, 1);
-        backBtnBg.strokeRoundedRect(-80, -15, 160, 30, 6);
-      })
-      .on('pointerdown', () => {
-        // Add click animation
-        this.scene.tweens.add({
-          targets: backBtnContainer,
-          scaleX: 0.95,
-          scaleY: 0.95,
-          duration: 50,
-          yoyo: true,
-          onComplete: () => {
-            // Change to Test step
-            this.scene.events.emit('step:change', 'test', this.levelId);
-          },
-        });
-      });
+    const rightMargin = 20;
+    const menuWidth = 80;
+    const backWidth = 170;
+    const menuX = this.scene.scale.width - (rightMargin + menuWidth / 2);
+    const backX = menuX - (menuWidth / 2 + 12 + backWidth / 2);
 
-    // Main menu button with container for better styling
-    const menuBtnContainer = this.scene.add.container(
-      this.scene.scale.width - 60,
-      this.scene.scale.height - 40
-    );
+    const backBtn = makePillButton(backX, navY, backWidth, '◀ Back to Design', () => {
+      this.resetVerification('Returned to design');
+      this.scene.events.emit('step:change', 'design', this.levelId);
+    });
+    const menuBtn = makePillButton(menuX, navY, menuWidth, 'Menu', () => {
+      this.resetVerification('Returned to menu');
+      this.scene.scene.start('MainMenu');
+    });
 
-    // Menu button background with gradient
-    const menuBtnBg = this.scene.add.graphics();
-    menuBtnBg.fillGradientStyle(0x0088cc, 0x0077aa, 0x006699, 0x0077aa, 1);
-    menuBtnBg.fillRoundedRect(-60, -15, 120, 30, 6);
-    menuBtnBg.lineStyle(2, 0x44aaff, 1);
-    menuBtnBg.strokeRoundedRect(-60, -15, 120, 30, 6);
+    this.navBackBtn = backBtn;
+    this.navMenuBtn = menuBtn;
+    this.container.add([backBtn, menuBtn]);
+  }
 
-    // Menu button text
-    const menuBtnText = this.scene.add
-      .text(0, 0, 'Main Menu', {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+  private onLevelSaved = (savedId: unknown) => {
+    if (typeof savedId === 'string' && this.levelId && savedId === this.levelId) {
+      this.resetVerification('Level changed');
+    }
+  };
 
-    // Add to menu button container
-    menuBtnContainer.add([menuBtnBg, menuBtnText]);
-
-    // Make menu button interactive with hover effects
-    menuBtnBg
-      .setInteractive(new Phaser.Geom.Rectangle(-60, -15, 120, 30), Phaser.Geom.Rectangle.Contains)
-      .on('pointerover', () => {
-        menuBtnBg.clear();
-        menuBtnBg.fillGradientStyle(0x44aaff, 0x0088cc, 0x0077bb, 0x0088cc, 1);
-        menuBtnBg.fillRoundedRect(-60, -15, 120, 30, 6);
-        menuBtnBg.lineStyle(2, 0x88ccff, 1);
-        menuBtnBg.strokeRoundedRect(-60, -15, 120, 30, 6);
-      })
-      .on('pointerout', () => {
-        menuBtnBg.clear();
-        menuBtnBg.fillGradientStyle(0x0088cc, 0x0077aa, 0x006699, 0x0077aa, 1);
-        menuBtnBg.fillRoundedRect(-60, -15, 120, 30, 6);
-        menuBtnBg.lineStyle(2, 0x44aaff, 1);
-        menuBtnBg.strokeRoundedRect(-60, -15, 120, 30, 6);
-      })
-      .on('pointerdown', () => {
-        // Add click animation
-        this.scene.tweens.add({
-          targets: menuBtnContainer,
-          scaleX: 0.95,
-          scaleY: 0.95,
-          duration: 50,
-          yoyo: true,
-          onComplete: () => {
-            // Change to main menu
-            this.scene.scene.start('MainMenu');
-          },
-        });
-      });
-
-    // Add buttons to navigation container
-    navContainer.add([backBtnContainer, menuBtnContainer]);
-
-    // Add to main container
-    this.container.add(navContainer);
+  private resetVerification(reason?: string): void {
+    // Stop running verification if any
+    if (this.scene.scene.isActive('StarshipScene')) {
+      const starship = this.scene.scene.get('StarshipScene');
+      if (starship) starship.events.emit('test:stop');
+      this.scene.scene.stop('StarshipScene');
+    }
+    this.cleanupVerifyListeners();
+    this.verifyState = 'idle';
+    this.everPassed = false;
+    this.hideVerifyOverlay();
+    this.publishContainer?.setVisible(true);
+    this.navBackBtn?.setVisible(true);
+    this.navMenuBtn?.setVisible(true);
+    if (this.verifyStatusText) {
+      const base = 'Verification required before publishing';
+      this.verifyStatusText.setText(reason ? `${base} — ${reason}` : base);
+      this.verifyStatusText.setColor('#9ca3af');
+    }
+    this.updatePublishButtonState();
   }
 
   /**
@@ -778,13 +1016,40 @@ export class PublishStep {
       },
     });
 
-    // Publish the level
-    this.service
-      .publishLevel(this.levelId)
-      .then((publishId) => {
-        console.log(`[PublishStep] Level published with ID ${publishId}`);
+    // Publish via server API
+    const data = this.service.loadLevel(this.levelId);
+    if (!data) {
+      this.showToast('Failed to load level for publishing', 'error');
+      return;
+    }
+    const clientPublishToken = `${this.levelId}:${data.metadata.lastModified}`;
+
+    publishLevelToReddit({
+      levelId: this.levelId,
+      name: this.levelName,
+      ...(data.settings.description ? { description: data.settings.description } : {}),
+      authorDisplay: this.levelAuthor,
+      levelData: data,
+      clientPublishToken,
+    })
+      .then((resp) => {
+        console.log(`[PublishStep] Level published with ID ${resp.postId}`);
         this.isPublished = true;
-        this.publishId = publishId;
+        this.publishId = resp.postId;
+        this.permalink = resp.permalink;
+
+        // Persist metadata update in saved levels list
+        const levels = this.service.getLevelList();
+        const idx = levels.findIndex((l) => l.id === this.levelId);
+        if (idx >= 0) {
+          levels[idx] = {
+            ...levels[idx]!,
+            isPublished: true,
+            publishId: resp.postId,
+            permalink: resp.permalink,
+          };
+          localStorage.setItem('galaxy-explorer:levels', JSON.stringify(levels));
+        }
 
         // Complete loading animation
         progressTween.complete();
@@ -1011,56 +1276,5 @@ export class PublishStep {
     });
   }
 
-  /**
-   * Create background star particles for visual effect
-   */
-  /**
-   * Create background stars for visual effect
-   */
-  private createBackgroundStars(): void {
-    // Add small stars
-    for (let i = 0; i < 50; i++) {
-      const x = Math.random() * this.scene.scale.width;
-      const y = 60 + Math.random() * (this.scene.scale.height - 120);
-      const size = 1 + Math.random() * 2;
-      const alpha = 0.3 + Math.random() * 0.7;
-
-      const star = this.scene.add.circle(x, y, size, 0xffffff, alpha);
-
-      // Add subtle twinkling animation
-      this.scene.tweens.add({
-        targets: star,
-        alpha: 0.1,
-        duration: 1000 + Math.random() * 3000,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-
-      this.container.add(star);
-    }
-
-    // Add a few larger stars
-    for (let i = 0; i < 10; i++) {
-      const x = Math.random() * this.scene.scale.width;
-      const y = 60 + Math.random() * (this.scene.scale.height - 120);
-      const size = 2 + Math.random() * 3;
-      const alpha = 0.5 + Math.random() * 0.5;
-
-      const star = this.scene.add.circle(x, y, size, 0xaaddff, alpha);
-
-      // Add subtle twinkling animation
-      this.scene.tweens.add({
-        targets: star,
-        alpha: 0.2,
-        scale: 0.7,
-        duration: 1500 + Math.random() * 2000,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-
-      this.container.add(star);
-    }
-  }
+  // Background stars removed to match editor visual style
 }

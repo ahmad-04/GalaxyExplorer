@@ -7,10 +7,7 @@ type PostProperties = { [key: string]: JsonValue };
 /**
  * Simple post creation following basic Devvit docs pattern
  */
-export const createPost = async (
-  title: string,
-  properties?: PostProperties
-) => {
+export const createPost = async (title: string, properties?: PostProperties) => {
   const { subredditName } = context;
   if (!subredditName) {
     throw new Error('subredditName is required to create a post');
@@ -26,9 +23,9 @@ export const createPost = async (
       appDisplayName: 'Galaxy Explorer', // only required field
       buttonLabel: 'Enter Space Battle',
       description: 'Pilot your ship, dodge enemies and top the leaderboard.',
-      heading: 'Galaxy Explorer'
+      heading: 'Galaxy Explorer',
     },
-    postData
+    postData,
   });
 
   console.log('[createPost] Simple post created with basic splash screen');
@@ -45,4 +42,32 @@ export const createThemedPost = async (
 ) => {
   console.log(`[createThemedPost] Creating post with theme: ${theme}`);
   return createPost(title, properties);
+};
+
+/**
+ * Create a Reddit post for a published level with a splash CTA.
+ * Keeps postData tiny and returns the created post object.
+ */
+export const createLevelPost = async (args: {
+  title: string;
+  splash: { heading: string; description?: string; buttonLabel?: string };
+  postData: PostProperties;
+}) => {
+  const { subredditName } = context;
+  if (!subredditName) throw new Error('subredditName is required to create a level post');
+
+  const post = await reddit.submitCustomPost({
+    subredditName,
+    title: args.title,
+    splash: {
+      appDisplayName: 'Galaxy Explorer',
+      heading: args.splash.heading,
+      description: args.splash.description ?? 'Play a custom mission created by the community.',
+      buttonLabel: args.splash.buttonLabel ?? 'Start Game',
+    },
+    postData: args.postData,
+  });
+
+  console.log('[createLevelPost] Level post created:', post.id);
+  return post;
 };
