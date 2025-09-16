@@ -1408,20 +1408,20 @@ export class StarshipScene extends Phaser.Scene {
     this.ensurePowerUpTexture(iconTexture);
     let ui = this.powerUpUI.get(type);
     if (!ui) {
-  const index = this.powerUpUI.size; // zero-based index for layout
-  // Vertical list positioning
-  const x = this.powerUpBasePos.x;
-  const y = this.powerUpBasePos.y + index * this.powerUpSpacing;
-  // Background plate for better contrast against starfield
-  const circle = this.add.graphics().setDepth(99);
-  circle.fillStyle(0x000000, 0.55);
-  circle.lineStyle(2, 0x555555, 0.8);
-  circle.fillCircle(x, y, 26);
-  circle.strokeCircle(x, y, 26);
-  // Larger, clearer icon; ensure texture exists (fallback created earlier if missing)
-  const icon = this.add.sprite(x, y, iconTexture).setScale(0.75).setAlpha(0).setDepth(101);
-  // Add a subtle outline via tint flash approach (first frame only)
-  icon.setTint(0xffffff);
+      const index = this.powerUpUI.size; // zero-based index for layout
+      // Vertical list positioning
+      const x = this.powerUpBasePos.x;
+      const y = this.powerUpBasePos.y + index * this.powerUpSpacing;
+      // Background plate for better contrast against starfield
+      const circle = this.add.graphics().setDepth(99);
+      circle.fillStyle(0x000000, 0.55);
+      circle.lineStyle(2, 0x555555, 0.8);
+      circle.fillCircle(x, y, 26);
+      circle.strokeCircle(x, y, 26);
+      // Larger, clearer icon; ensure texture exists (fallback created earlier if missing)
+      const icon = this.add.sprite(x, y, iconTexture).setScale(0.75).setAlpha(0).setDepth(101);
+      // Add a subtle outline via tint flash approach (first frame only)
+      icon.setTint(0xffffff);
       const label = this.add
         .text(x + 25, y, labelText, {
           fontSize: '16px',
@@ -1455,16 +1455,28 @@ export class StarshipScene extends Phaser.Scene {
     Array.from(this.powerUpUI.entries()).forEach(([_ignoredType, entry], idx) => {
       const targetX = this.powerUpBasePos.x;
       const targetY = this.powerUpBasePos.y + idx * this.powerUpSpacing;
-      this.tweens.add({ targets: entry.icon, x: targetX, y: targetY, duration: 200, ease: 'Sine.Out' });
-      this.tweens.add({ targets: entry.label, x: targetX + 25, y: targetY, duration: 200, ease: 'Sine.Out' });
+      this.tweens.add({
+        targets: entry.icon,
+        x: targetX,
+        y: targetY,
+        duration: 200,
+        ease: 'Sine.Out',
+      });
+      this.tweens.add({
+        targets: entry.label,
+        x: targetX + 25,
+        y: targetY,
+        duration: 200,
+        ease: 'Sine.Out',
+      });
       entry.circle.x = 0; // circle will be redrawn relative to icon position
     });
 
     // Reveal / bounce icon & ensure label visible
-  ui.icon.setScale(0.85); // start slightly larger before bounce
+    ui.icon.setScale(0.85); // start slightly larger before bounce
     ui.icon.setAlpha(1);
     ui.label.setAlpha(1);
-  this.tweens.add({ targets: ui.icon, scale: 0.75, duration: 300, ease: 'Bounce.Out' });
+    this.tweens.add({ targets: ui.icon, scale: 0.75, duration: 300, ease: 'Bounce.Out' });
     if (ui.label.alpha < 1) {
       this.tweens.add({ targets: ui.label, alpha: 1, duration: 200 });
     }
@@ -1514,8 +1526,20 @@ export class StarshipScene extends Phaser.Scene {
       Array.from(this.powerUpUI.values()).forEach((entry, idx) => {
         const targetX = this.powerUpBasePos.x;
         const targetY = this.powerUpBasePos.y + idx * this.powerUpSpacing;
-        this.tweens.add({ targets: entry.icon, x: targetX, y: targetY, duration: 200, ease: 'Sine.Out' });
-        this.tweens.add({ targets: entry.label, x: targetX + 25, y: targetY, duration: 200, ease: 'Sine.Out' });
+        this.tweens.add({
+          targets: entry.icon,
+          x: targetX,
+          y: targetY,
+          duration: 200,
+          ease: 'Sine.Out',
+        });
+        this.tweens.add({
+          targets: entry.label,
+          x: targetX + 25,
+          y: targetY,
+          duration: 200,
+          ease: 'Sine.Out',
+        });
       });
     }
     this.updatePowerUpTimerUI();
@@ -2278,33 +2302,17 @@ export class StarshipScene extends Phaser.Scene {
         return;
       }
 
-      // Fallback/secondary: coordinate-based approach — no active enemies in bounds
-      const inBoundsActive = this.getActiveEnemiesInBounds();
-      // Require at least some combat (defeated > 0) before considering fallback to avoid instant exit
-      if (inBoundsActive === 0 && defeated > 0) {
-        console.log('[StarshipScene] No active enemies within bounds; completing build test');
+      // Secondary completion: if no enemies remain active at all (on or off screen)
+      // This covers cases where enemies drift off and are culled by manager
+      const activeCount = this.enemies ? this.enemies.countActive() : 0;
+      if (activeCount === 0) {
+        console.log('[StarshipScene] No active enemies remain; completing build test');
         this.completeBuildTest();
       }
     }
   }
 
-  // Counts active enemies within an expanded playfield bounding box
-  private getActiveEnemiesInBounds(marginX = 50, marginY = 100): number {
-    if (!this.enemies) return 0;
-    const width = this.scale.width;
-    const height = this.scale.height;
-    let count = 0;
-    this.enemies.getChildren().forEach((child) => {
-      const s = child as Phaser.Physics.Arcade.Sprite;
-      if (!s || !s.active) return;
-      const x = s.x;
-      const y = s.y;
-      const inX = x >= -marginX && x <= width + marginX;
-      const inY = y >= -marginY && y <= height + marginY;
-      if (inX && inY) count++;
-    });
-    return count;
-  }
+  // Removed getActiveEnemiesInBounds; completion now uses overall active count
 
   private completeBuildTest(): void {
     if (this.testCompleted) return;

@@ -45,7 +45,6 @@ export class DesignStep {
   private topBackButtonContainer?: Phaser.GameObjects.Container;
   private topBackButtonWidth: number = 100;
   private paletteOpen: boolean = true;
-  private paletteMask?: Phaser.Display.Masks.GeometryMask;
   private paletteMaskGraphics?: Phaser.GameObjects.Graphics;
 
   // Status bar
@@ -311,9 +310,11 @@ export class DesignStep {
         this.paletteMaskGraphics.clear();
         this.paletteMaskGraphics.fillStyle(0xffffff);
         const maskWidth = this.paletteWidth - 40;
+        const maskHeight = this.paletteHeight - 80; // consistent with initial creation
+        const contentTop = this.entityPaletteContainer.y - this.paletteHeight / 2 + 60; // below header
         const maskX2 = this.entityPaletteContainer.x - maskWidth / 2;
-        const maskY2 = this.entityPaletteContainer.y - 140;
-        this.paletteMaskGraphics.fillRect(maskX2, maskY2, maskWidth, 320);
+        const maskY2 = contentTop;
+        this.paletteMaskGraphics.fillRect(maskX2, maskY2, maskWidth, maskHeight);
       }
 
       // Navigation buttons are laid out inside the status bar now
@@ -414,6 +415,18 @@ export class DesignStep {
         this.statusBarContainer.y = this.scene.scale.height - barHeight;
         this.statusBg.width = this.scene.scale.width;
         this.layoutStatusBarText();
+      }
+
+      // Update palette mask after header change to prevent clipping
+      if (this.paletteMaskGraphics && this.entityPaletteContainer) {
+        this.paletteMaskGraphics.clear();
+        this.paletteMaskGraphics.fillStyle(0xffffff);
+        const maskWidth = this.paletteWidth - 40;
+        const maskHeight = this.paletteHeight - 80;
+        const contentTop = this.entityPaletteContainer.y - this.paletteHeight / 2 + 60;
+        const maskX = this.entityPaletteContainer.x - maskWidth / 2;
+        const maskY = contentTop;
+        this.paletteMaskGraphics.fillRect(maskX, maskY, maskWidth, maskHeight);
       }
     };
     this.scene.events.on('ui:header:heightChanged', this.headerHeightHandler);
@@ -676,25 +689,27 @@ export class DesignStep {
       .setOrigin(0.5);
     this.entityPaletteContainer.add(title);
 
-    // Keep a single list layout for simplicity like the mockup
-    this.createEnemyButtons(true);
-
-    // Create a simple geometry mask for scrollable content area
+    // Create a simple geometry mask for content area, then build lists
     this.paletteMaskGraphics = this.scene.add.graphics();
     this.paletteMaskGraphics.fillStyle(0xffffff);
-    // Mask area below tabs: 300x320
+    // Mask area: compute relative to container so it always aligns
     const maskWidth = this.paletteWidth - 40;
+    const contentTop = this.entityPaletteContainer.y - this.paletteHeight / 2 + 60; // below header
     const maskX = this.entityPaletteContainer.x - maskWidth / 2;
-    const maskY = this.entityPaletteContainer.y - 140;
-    this.paletteMaskGraphics.fillRect(maskX, maskY, maskWidth, 320);
-    this.paletteMask = this.paletteMaskGraphics.createGeometryMask();
+    const maskY = contentTop;
+    const maskHeight = this.paletteHeight - 80; // leaves a bit of padding at bottom
+    this.paletteMaskGraphics.fillRect(maskX, maskY, maskWidth, maskHeight);
+    const paletteMask = this.paletteMaskGraphics.createGeometryMask();
     this.paletteMaskGraphics.setVisible(false);
     this.paletteMaskGraphics.setScrollFactor(0);
-    // Apply mask to known category containers
-    ['enemies', 'obstacles', 'powerups', 'decorations'].forEach((id) => {
-      const c = this.entityPaletteContainer.getByName(id) as Phaser.GameObjects.Container;
-      if (c && this.paletteMask) c.setMask(this.paletteMask);
-    });
+
+    // Build enemies after mask so we can apply it directly
+    this.createEnemyButtons(true);
+    // Apply mask to the enemies container if present
+    const enemiesContainer = this.entityPaletteContainer.getByName('enemies') as
+      | Phaser.GameObjects.Container
+      | undefined;
+    if (enemiesContainer) enemiesContainer.setMask(paletteMask);
 
     // Collapse button on the palette edge
     const collapse = this.scene.add.container(-this.paletteWidth / 2, 0);
@@ -757,7 +772,16 @@ export class DesignStep {
    */
   private createEnemyButtons(simpleList: boolean = false): void {
     // Create container for enemy buttons with consistent positioning
-    const enemiesContainer = this.scene.add.container(0, -120);
+    // If an old list exists (e.g., hot reload), remove it first
+    const existing = this.entityPaletteContainer.getByName('enemies') as
+      | Phaser.GameObjects.Container
+      | undefined;
+    if (existing) {
+      existing.destroy(true);
+    }
+
+    // Position list under header within mask (lowered so first row is fully visible)
+    const enemiesContainer = this.scene.add.container(0, -40);
     enemiesContainer.setName('enemies');
     this.entityPaletteContainer.add(enemiesContainer);
 
@@ -781,7 +805,7 @@ export class DesignStep {
       {
         type: EnemySpawnerType.FIGHTER,
         name: 'Fighter',
-        texture: 'enemy_fighter',
+        texture: 'enemy',
         color: 0xff3333,
         description: 'Basic fighter with moderate speed and health.',
       },
@@ -817,19 +841,42 @@ export class DesignStep {
 
     // Create a simple, list-style UI for enemy selection
     enemies.forEach((enemy, index) => {
-      const y = -120 + index * 60;
+      // Spacing tuned to fit all entries under the mask
+      const y = -60 + index * 52;
       const row = this.scene.add.container(0, y);
       enemiesContainer.add(row);
 
-      const rowBg = this.scene.add.rectangle(0, 0, this.paletteWidth - 40, 44, 0x111827, 0.0001);
+      const rowBg = this.scene.add.rectangle(0, 0, this.paletteWidth - 40, 40, 0x111827, 0.0001);
       rowBg.setOrigin(0.5);
       rowBg.setInteractive({ useHandCursor: true });
 
-      // Sleek icon: smaller circle with subtle stroke for a modern look
-      const iconCircle = this.scene.add.circle(-this.paletteWidth / 2 + 36, 0, 10, enemy.color, 1);
+      // Icon: use the same texture keys enemies use in gameplay, with fallbacks
+      let iconKey = 'enemy';
+      if (enemy.type === EnemySpawnerType.FIGHTER) iconKey = 'enemy';
+      else if (enemy.type === EnemySpawnerType.SCOUT) iconKey = 'enemy_scout';
+      else if (enemy.type === EnemySpawnerType.CRUISER) iconKey = 'enemy_cruiser';
+      else if (enemy.type === EnemySpawnerType.SEEKER) iconKey = 'enemy_seeker';
+      else if (enemy.type === EnemySpawnerType.GUNSHIP) iconKey = 'enemy_gunship';
+
+      let iconObj: Phaser.GameObjects.GameObject;
+      const hasTex = this.scene.textures.exists(iconKey);
+      const fallbackTex = this.scene.textures.exists('enemy');
+      if (hasTex || fallbackTex) {
+        const img = this.scene.add.image(
+          -this.paletteWidth / 2 + 34,
+          0,
+          hasTex ? iconKey : 'enemy'
+        );
+        img.setDisplaySize(22, 22);
+        img.setOrigin(0.5);
+        iconObj = img;
+      } else {
+        // Fallback to a small colored circle if texture(s) missing
+        iconObj = this.scene.add.circle(-this.paletteWidth / 2 + 34, 0, 9, enemy.color, 1);
+      }
 
       const label = this.scene.add
-        .text(-this.paletteWidth / 2 + 56, 0, enemy.name, { fontSize: '14px', color: '#e5e7eb' })
+        .text(-this.paletteWidth / 2 + 54, 0, enemy.name, { fontSize: '14px', color: '#e5e7eb' })
         .setOrigin(0, 0.5);
 
       rowBg.on('pointerover', () => {
@@ -851,7 +898,7 @@ export class DesignStep {
         this.togglePalette(false);
       });
 
-      row.add([rowBg, iconCircle, label]);
+      row.add([rowBg, iconObj, label]);
     });
 
     // Set initial selection to first enemy type
@@ -2051,9 +2098,9 @@ export class DesignStep {
     this.paletteRevealButton?.setVisible(false);
     this.topBackButtonContainer?.setVisible(false);
 
-  // Hide placed entity icons (they live on the scene root, not inside the main UI container)
-  // so they otherwise remain visible when testing scene is launched.
-  this.entities.forEach((e) => e.setVisible(false));
+    // Hide placed entity icons (they live on the scene root, not inside the main UI container)
+    // so they otherwise remain visible when testing scene is launched.
+    this.entities.forEach((e) => e.setVisible(false));
 
     // Ensure test data is prepared like TestStep
     const levelData = this.prepareTestEnvironmentData();
@@ -2135,8 +2182,8 @@ export class DesignStep {
     if (!this.paletteOpen) this.togglePalette(false, true);
     // Reset nav text label if present
     if (this.nextNavText) this.nextNavText.setText('Test ▶');
-  // Restore entity icons visibility for editing
-  this.entities.forEach((e) => e.setVisible(true));
+    // Restore entity icons visibility for editing
+    this.entities.forEach((e) => e.setVisible(true));
     // Remove floating stop
     if (this.floatingStopButton) {
       this.scene.scale.off('resize', this.positionFloatingStopButton, this);
@@ -2166,7 +2213,7 @@ export class DesignStep {
       const existing = container.getData('entityData') as BaseEntity | undefined;
       if (existing) {
         // Explicit clone of required BaseEntity fields + any extra properties
-        const clone: BaseEntity = ({
+        const clone: BaseEntity = {
           id: existing.id,
           type: existing.type,
           position: { x: container.x, y: container.y },
@@ -2174,7 +2221,7 @@ export class DesignStep {
           scale: existing.scale ?? 1,
           // Spread any additional dynamic props (enemyType, etc.)
           ...(existing as unknown as Record<string, unknown>),
-        }) as BaseEntity;
+        } as BaseEntity;
         entities.push(clone);
       } else {
         entities.push({
@@ -2517,10 +2564,10 @@ export class DesignStep {
 
     // Estimate content height from bounds
     const b = active.getBounds();
-    const contentHeight = b.height || 400;
-    const viewportHeight = 320;
-    const maxY = -120; // top anchor baseline
-    const minY = Math.min(maxY, maxY - (contentHeight - viewportHeight));
+    const contentHeight = b.height || 360;
+    const viewportHeight = this.paletteHeight - 80; // match mask height
+    const maxY = -70; // top anchor baseline for enemies
+    const minY = Math.min(maxY, maxY - Math.max(0, contentHeight - viewportHeight));
     active.y = Phaser.Math.Clamp(targetY, minY, maxY);
   }
 }
