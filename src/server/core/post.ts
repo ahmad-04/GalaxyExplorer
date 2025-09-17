@@ -21,6 +21,7 @@ export const createPost = async (title: string, properties?: PostProperties) => 
     title,
     splash: {
       appDisplayName: 'Galaxy Explorer', // only required field
+      backgroundUri: 'https://www.reddit.com/media?url=https%3A%2F%2Fi.redd.it%2F89s5pbl05ppf1.png',
       buttonLabel: 'Enter Space Battle',
       description: 'Pilot your ship, dodge enemies and top the leaderboard.',
       heading: 'Galaxy Explorer',

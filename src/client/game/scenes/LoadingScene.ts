@@ -12,6 +12,14 @@ export class LoadingScene extends Phaser.Scene {
     super('LoadingScene');
   }
 
+  preload() {
+    // Moved from Boot: load a minimal set of essential assets
+    this.load.image('ship', '/assets/ship.png');
+    this.load.image('bullet', '/assets/bullet.png');
+    this.load.image('enemy', '/assets/enemy.png');
+    this.load.audio('boom', '/assets/Boom.wav');
+  }
+
   create() {
     const { width, height } = this.scale;
 

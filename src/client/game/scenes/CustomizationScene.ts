@@ -8,7 +8,7 @@ export class CustomizationScene extends Phaser.Scene {
   private currentConfig = {
     density: 200,
     speed: 0.5,
-    color: '#000000', 
+    color: '#000000',
   };
 
   private shipPrimary!: Phaser.GameObjects.Image;
@@ -154,7 +154,7 @@ export class CustomizationScene extends Phaser.Scene {
 
     // --- Background Customization Section ---
     // Section title removed since we're removing background customization
-    
+
     // Background customization options completely removed
 
     // --- Action Buttons ---
@@ -257,7 +257,7 @@ export class CustomizationScene extends Phaser.Scene {
 
       // Store in registry and pass to scene
       this.registry.set('shipConfig', shipConfig);
-      this.scene.start('StarshipScene', shipConfig);
+      this.scene.start('EndlessScene', shipConfig);
     });
   }
 
@@ -395,7 +395,7 @@ export class CustomizationScene extends Phaser.Scene {
   }
 
   // updateDensity method removed as background customization is no longer needed
-  
+
   // updateSpeed method removed as background customization is no longer needed
 
   // updateColor method removed as background customization is no longer needed

@@ -462,7 +462,7 @@ export class PublishStep {
     this.scene.registry.set('playerDeaths', 0);
     this.scene.registry.set('powerupsCollected', 0);
 
-    this.scene.scene.launch('StarshipScene', {
+    this.scene.scene.launch('CustomLevelScene', {
       testMode: true,
       buildModeTest: true,
       levelData,

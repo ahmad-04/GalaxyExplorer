@@ -527,7 +527,8 @@ export class GameOver extends Scene {
         this.time.delayedCall(50, () => {
           // Start a fresh StarshipScene
           console.log('[GameOver] Creating new StarshipScene');
-          this.scene.start('StarshipScene');
+          const last = this.registry.get('lastRunMode');
+          this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
         });
       });
 
@@ -605,7 +606,8 @@ export class GameOver extends Scene {
     this.time.delayedCall(50, () => {
       // Force full recreation of the game scene
       console.log(`[${new Date().toISOString()}] [GameOver] Starting new StarshipScene`);
-      this.scene.start('StarshipScene');
+      const last = this.registry.get('lastRunMode');
+      this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
     });
   }
 }

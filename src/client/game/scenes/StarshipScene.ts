@@ -77,8 +77,8 @@ export class StarshipScene extends Phaser.Scene {
   private runId = '';
   private levelStartTime = 0;
 
-  constructor() {
-    super({ key: 'StarshipScene' });
+  constructor(config?: { key?: string }) {
+    super({ key: config?.key ?? 'StarshipScene' });
   }
 
   init(data?: {
@@ -287,6 +287,21 @@ export class StarshipScene extends Phaser.Scene {
 
     console.log('[StarshipScene] Physics should now be active');
 
+    // Enable Arcade physics debug in this scene only
+    try {
+      if (!this.physics.world.debugGraphic) {
+        this.physics.world.createDebugGraphic();
+      }
+      this.physics.world.drawDebug = true;
+      // Keep debug overlay above gameplay
+      if (this.physics.world.debugGraphic?.setDepth) {
+        this.physics.world.debugGraphic.setDepth(1000);
+      }
+      console.log('[StarshipScene] Arcade debug enabled for this scene');
+    } catch (e) {
+      console.warn('[StarshipScene] Failed to enable arcade debug:', e);
+    }
+
     // Clear existing starfield if present to prevent duplicate backgrounds on restart
     if (this.starfield) {
       console.log('[StarshipScene] Removing existing starfield');
@@ -433,7 +448,8 @@ export class StarshipScene extends Phaser.Scene {
 
     console.log('[StarshipScene] isBuildModeTest flag:', isBuildModeTest);
 
-    const usingCustomLevel = !!testLevelData;
+    const forceEndless = this.registry.get('forceEndless') === true;
+    const usingCustomLevel = !!testLevelData && !forceEndless;
 
     if (usingCustomLevel) {
       console.log(
@@ -441,10 +457,10 @@ export class StarshipScene extends Phaser.Scene {
         testLevelData.settings.name
       );
       this.setupCustomLevel(testLevelData);
-      // Start monitoring for completion when all custom enemies are cleared (Build Mode only)
-      if (isBuildModeTest) {
-        this.startTestCompletionMonitor();
-      }
+      // Start monitoring for completion when all custom enemies are cleared
+      this.startTestCompletionMonitor();
+      // Also react to generic enemy removal notifications (e.g., off-screen culls)
+      this.events.on('enemy:removed', this.checkForTestCompletion, this);
     } else {
       // Log detailed reason why not using custom level
       if (!testLevelData) {
@@ -927,7 +943,7 @@ export class StarshipScene extends Phaser.Scene {
         this.events.emit('test:failed');
       }
       // Stop StarshipScene promptly
-      this.scene.stop('StarshipScene');
+      this.scene.stop(this.scene.key);
       return;
     }
 
@@ -954,7 +970,7 @@ export class StarshipScene extends Phaser.Scene {
 
       // The scene.stop() will trigger our enhanced shutdown method
       // which will clean up all resources
-      this.scene.stop('StarshipScene');
+      this.scene.stop(this.scene.key);
 
       // Start the GameOver scene with the stored score
       console.log('[StarshipScene] Starting GameOver scene with score:', finalScore);
@@ -1703,6 +1719,20 @@ export class StarshipScene extends Phaser.Scene {
   shutdown(): void {
     console.log('[StarshipScene] shutdown method called');
 
+    // Disable and clean up arcade debug for this scene
+    try {
+      this.physics.world.drawDebug = false;
+      if (this.physics.world.debugGraphic) {
+        this.physics.world.debugGraphic.clear();
+        // Destroy graphic to avoid leaking across scene restarts
+        this.physics.world.debugGraphic.destroy();
+        // @ts-expect-error runtime property managed by Phaser
+        this.physics.world.debugGraphic = undefined;
+      }
+    } catch (e) {
+      console.warn('[StarshipScene] Failed to clean up arcade debug:', e);
+    }
+
     // Disable collision detection first
     this.collisionsActive = false;
 
@@ -1821,6 +1851,7 @@ export class StarshipScene extends Phaser.Scene {
       this.registry.set('testMode', false);
       this.registry.set('buildModeTest', false);
       this.registry.set('isBuildModeTest', false);
+      this.registry.set('forceEndless', false);
       this.registry.set('enemiesDefeated', 0);
       this.registry.set('playerDeaths', 0);
       this.registry.set('powerupsCollected', 0);
@@ -2329,7 +2360,9 @@ export class StarshipScene extends Phaser.Scene {
 
   // ===== Build Mode Test Completion Helpers =====
   private startTestCompletionMonitor(): void {
-    if (this.registry.get('buildModeTest') !== true) return;
+    const allowMonitor =
+      this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough === true;
+    if (!allowMonitor) return;
     if (this.testCompletionMonitor) this.testCompletionMonitor.remove();
     this.testCompletionMonitor = this.time.addEvent({
       delay: 300,

@@ -2286,7 +2286,7 @@ export class DesignStep {
     // Wire test events like TestStep
     this.scene.events.once('test:completed', this.onInlineTestCompleted, this);
     this.scene.events.once('test:stats', this.onInlineTestStats, this);
-    this.scene.scene.launch('StarshipScene', {
+    this.scene.scene.launch('CustomLevelScene', {
       testMode: true,
       levelData,
       buildModeTest: true,

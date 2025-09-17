@@ -658,22 +658,22 @@ export class MainMenu extends Phaser.Scene {
       console.log('[MainMenu] Starting game with custom level payload', {
         entityCount,
       });
-      this.scene.start('StarshipScene', payload as unknown as Record<string, unknown>);
+      this.scene.start('CustomLevelScene', payload as unknown as Record<string, unknown>);
       return;
     }
 
     // Fall back to normal game without custom level
     if (shipConfig) {
-      console.log('Starting game with ship config:', shipConfig);
-      this.scene.start('StarshipScene', shipConfig);
+      console.log('Starting endless game with ship config:', shipConfig);
+      this.scene.start('EndlessScene', shipConfig);
     } else {
       const defaultShipConfig = {
         ship: 'ship',
         primaryTint: 0xffffff,
         secondaryTint: 0xffffff,
       };
-      console.log('Starting game with default ship config');
-      this.scene.start('StarshipScene', defaultShipConfig);
+      console.log('Starting endless game with default ship config');
+      this.scene.start('EndlessScene', defaultShipConfig);
     }
   }
 
