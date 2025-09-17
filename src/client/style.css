@@ -1,7 +1,7 @@
 body {
   margin: 0;
   padding: 0;
-  background: #000;
+  background: #0b1220;
 }
 
 #app {
@@ -16,6 +16,7 @@ body {
   margin: 0;
   padding: 0;
   position: relative; /* anchor for in-canvas overlays if needed */
+  background: #0b1220; /* avoid gray flash before canvas paints */
 }
 
 /* Optional: area below game, enable only if used */

@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { getInit } from '../api';
+import { getInit, getPublishedLevel } from '../api';
 
 export class LoadingScene extends Phaser.Scene {
   private loadingDots!: Phaser.GameObjects.Text;
@@ -73,7 +73,8 @@ export class LoadingScene extends Phaser.Scene {
       loop: true,
     });
 
-    // Start loading process
+    // Start loading process and update external splash
+    this.hookSplashProgress('Initializing...');
     void this.startLoading();
   }
 
@@ -115,6 +116,7 @@ export class LoadingScene extends Phaser.Scene {
     try {
       console.log('[LoadingScene] Starting loading process...');
       this.statusText.setText('Loading assets...');
+      this.updateSplash(0.1, 'Loading assets...');
 
       // Step 1: Wait for essential assets
       console.log('[LoadingScene] Checking assets...');
@@ -139,14 +141,49 @@ export class LoadingScene extends Phaser.Scene {
         console.warn('[LoadingScene] init check failed:', e);
       }
 
+      // Step 1.6: If we have a pointer or context, preload the published level now
+      try {
+        const ptr = this.registry.get('publishedLevelPointer') as
+          | { postId?: string; title?: string }
+          | undefined;
+        this.registry.set('publishedLevelLoading', true);
+        console.log(
+          '[LoadingScene] Preloading published level early...',
+          ptr?.title || '(context)'
+        );
+        this.updateSplash(0.5, 'Loading community level...');
+        let resp;
+        if (ptr?.postId) {
+          resp = await getPublishedLevel(ptr.postId);
+        } else {
+          resp = await getPublishedLevel();
+        }
+        if (resp?.level) {
+          this.registry.set('testLevelData', resp.level);
+          this.registry.set('buildModeTest', false);
+          this.registry.set('testMode', false);
+          if (ptr) this.registry.set('publishedLevelPointer', undefined);
+          console.log('[LoadingScene] Published level preloaded successfully:', resp.postId);
+          this.updateSplash(0.7, 'Level ready');
+        } else {
+          console.log('[LoadingScene] No published level available at startup');
+        }
+      } catch (e) {
+        console.warn('[LoadingScene] Preloading published level failed (non-fatal):', e);
+      } finally {
+        this.registry.set('publishedLevelLoading', false);
+      }
+
       // Step 2: Preload MainMenu scene to ensure it's ready
       console.log('[LoadingScene] Preloading MainMenu scene...');
       this.statusText.setText('Preparing main menu...');
+      this.updateSplash(0.6, 'Preparing main menu...');
       await this.preloadMainMenuScene();
 
       // Step 3: Simple finalization (no config loading needed for main menu)
       console.log('[LoadingScene] Finalizing initialization...');
       this.statusText.setText('Finalizing...');
+      this.updateSplash(0.9, 'Finalizing...');
       await this.simpleFinalization();
 
       // Ensure minimum loading time for smooth UX
@@ -163,18 +200,21 @@ export class LoadingScene extends Phaser.Scene {
 
       console.log('[LoadingScene] Loading complete, transitioning to MainMenu...');
       this.statusText.setText('Starting...');
+      this.updateSplash(1.0, 'Ready');
 
       // Fade out effect
       this.cameras.main.fadeOut(500, 0, 0, 0);
 
       // Start main menu after fade
       this.time.delayedCall(500, () => {
+        this.hideSplash();
         this.scene.start('MainMenu');
       });
     } catch (error) {
       console.error('[LoadingScene] Error during loading:', error);
       // Even if there's an error, proceed to main menu after a delay
       this.time.delayedCall(3000, () => {
+        this.hideSplash(true);
         this.scene.start('MainMenu');
       });
     }
@@ -257,5 +297,44 @@ export class LoadingScene extends Phaser.Scene {
         resolve();
       }
     });
+  }
+
+  // --- HTML Splash integration ---
+  private hookSplashProgress(initial: string) {
+    try {
+      const text = document.getElementById('splash-status');
+      if (text) text.textContent = initial;
+    } catch {
+      /* noop */
+    }
+  }
+
+  private updateSplash(progress: number, message: string) {
+    try {
+      const fill = document.getElementById('splash-progress-fill') as HTMLDivElement | null;
+      const text = document.getElementById('splash-status');
+      const aria = document.getElementById('splash-aria');
+      if (fill) fill.style.width = `${Math.min(100, Math.max(0, Math.round(progress * 100)))}%`;
+      if (text) text.textContent = message;
+      if (aria) aria.textContent = `${Math.round(progress * 100)}% loaded`;
+    } catch {
+      /* noop */
+    }
+  }
+
+  private hideSplash(force = false) {
+    try {
+      const splash = document.getElementById('splash');
+      if (!splash) return;
+      if (force) {
+        splash.remove();
+        return;
+      }
+      splash.classList.add('hidden');
+      // Remove after transition
+      window.setTimeout(() => splash.remove(), 260);
+    } catch {
+      /* noop */
+    }
   }
 }

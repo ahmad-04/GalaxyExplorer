@@ -3,6 +3,102 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      :root {
+        --bg: #0b1220;
+        --fg: #e5e7eb;
+        --muted: #9ca3af;
+        --accent: #60a5fa;
+        --accent-2: #3b82f6;
+      }
+      html,
+      body {
+        height: 100%;
+        background: var(--bg);
+      }
+      /* Inline splash to avoid FOUC before external CSS loads */
+      #splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--fg);
+        z-index: 99999;
+        transition: opacity 0.25s ease;
+      }
+      #splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+      }
+      #splash .wrap {
+        width: min(520px, 92vw);
+        text-align: center;
+      }
+      #splash .logo {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 12px;
+        display: block;
+      }
+      #splash .title {
+        font:
+          700 22px/1.2 Inter,
+          system-ui,
+          sans-serif;
+        letter-spacing: 0.4px;
+      }
+      #splash .subtitle {
+        margin-top: 6px;
+        color: var(--muted);
+        font:
+          500 14px/1.4 Inter,
+          system-ui,
+          sans-serif;
+      }
+      #splash .bar {
+        margin: 22px auto 0;
+        width: 72%;
+        height: 8px;
+        background: #111827;
+        border: 1px solid #253248;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      #splash .fill {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent-2), var(--accent));
+        transition: width 0.2s ease;
+      }
+      #splash .hint {
+        margin-top: 10px;
+        color: var(--muted);
+        font:
+          500 12px/1.4 Inter,
+          system-ui,
+          sans-serif;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash,
+        #splash .fill {
+          transition: none;
+        }
+      }
+    </style>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="buildmode-ui.css" />
     <link rel="stylesheet" href="buildmode-form.css" />
@@ -14,6 +110,26 @@
   </head>
 
   <body>
+    <div id="splash" role="status" aria-live="polite">
+      <div class="wrap">
+        <svg class="logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="g" x1="0" x2="1">
+              <stop offset="0%" stop-color="#3b82f6" />
+              <stop offset="100%" stop-color="#60a5fa" />
+            </linearGradient>
+          </defs>
+          <circle cx="32" cy="32" r="30" fill="#0f172a" stroke="#253248" stroke-width="2" />
+          <path d="M32 10 L40 36 L32 30 L24 36 Z" fill="url(#g)" />
+          <circle cx="32" cy="44" r="3" fill="#93c5fd" />
+        </svg>
+        <div class="title">Galaxy Explorer</div>
+        <div id="splash-status" class="subtitle">Initializing…</div>
+        <div class="bar" aria-hidden="true"><div id="splash-progress-fill" class="fill"></div></div>
+        <div class="hint">Loading resources…</div>
+        <span id="splash-aria" class="sr-only">0% loaded</span>
+      </div>
+    </div>
     <div id="app">
       <div id="game-container"></div>
     </div>
