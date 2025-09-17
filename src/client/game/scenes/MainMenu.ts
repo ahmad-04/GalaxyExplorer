@@ -1,13 +1,21 @@
 import * as Phaser from 'phaser';
 import { getLeaderboard, getPublishedLevel, getInit } from '../api';
 import { isFeatureEnabled } from '../../../shared/config';
+import { BackgroundManager } from '../services/BackgroundManager';
+import {
+  titleText as uiTitleText,
+  bodyText as uiBodyText,
+  createButton,
+  createPanel,
+} from '../ui/UiKit';
+import { shineSweep } from '../effects/Effects';
 
 export class MainMenu extends Phaser.Scene {
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private startEnabled = true;
   private publishedPollAttempts = 0;
   private background!: Phaser.GameObjects.TileSprite;
-  private starsTextureKey = 'stars';
+  // star texture handled by BackgroundManager
   private leaderboardPopup!: Phaser.GameObjects.Container;
   private leaderboardVisible = false;
   private resizeHandler: (() => void) | undefined;
@@ -33,12 +41,17 @@ export class MainMenu extends Phaser.Scene {
     console.log('[MainMenu] ensurePublishedLevelLoaded() invoked from create()');
     // --- 1. Draw the scene immediately with defaults ---
 
-    this.ensureStarsTexture(); // Make sure a texture is available
+    const starsKey = BackgroundManager.ensureStars(this);
 
     // Enable keyboard input and ensure focus
     this.game.canvas.setAttribute('tabindex', '0');
     this.input.once('pointerdown', () => this.game.canvas.focus());
     this.game.canvas.focus();
+    // Set up space key for starting the game
+    const kb = this.input.keyboard;
+    if (kb) {
+      this.spaceKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    }
 
     // Ensure leaderboard is hidden when scene starts/restarts
     if (this.leaderboardPopup) {
@@ -47,13 +60,7 @@ export class MainMenu extends Phaser.Scene {
     }
 
     // Add background
-    this.background = this.add.tileSprite(
-      0,
-      0,
-      this.scale.width,
-      this.scale.height,
-      this.starsTextureKey
-    );
+    this.background = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, starsKey);
     this.background.setOrigin(0, 0);
 
     // Keep background sized to viewport
@@ -68,270 +75,45 @@ export class MainMenu extends Phaser.Scene {
       }
     });
 
-    // Add spacebar key and capture it to prevent page scrolling
-    this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    // Title and subtitle using UiKit
+    const title = uiTitleText(this, this.scale.width / 2, 100, 'GALAXY EXPLORER');
+    this.time.delayedCall(600, () => shineSweep(this, title.y));
+    uiBodyText(this, this.scale.width / 2, 170, 'CONQUER THE COSMOS', 24);
 
-    // Add a direct keyboard event listener for space key
-    this.input.keyboard?.on('keydown-SPACE', () => {
-      console.log('Space key pressed via event listener');
-      if (this.startEnabled) {
-        this.startGame();
-      }
-    });
-
-    // Create main UI container to organize all menu elements
-    const menuContainer = this.add.container(0, 0);
-
-    // Helper function to create stylized buttons
-    const createMenuButton = (y: number, text: string) => {
-      // Create a container for the button and its effects positioned relative to (0,0)
-      const buttonContainer = this.add.container(0, y);
-      buttonContainer.setDepth(100); // Set very high depth to ensure buttons are on top
-
-      // Button dimensions
-      const buttonWidth = 250;
-      const buttonHeight = 50;
-
-      // Create simple button with blue frame to match mockup
-      const buttonBg = this.add.graphics();
-
-      // Simple transparent background
-      buttonBg.fillStyle(0x000000, 0.2);
-      buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-
-      // Blue border
-      buttonBg.lineStyle(2, 0x0088ff, 1);
-      buttonBg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-
-      // Button text with soft shadow
-      const shadow = this.add
-        .text(2, 2, text, {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '28px',
-          fontStyle: 'bold',
-          color: '#000000',
-          align: 'center',
-        })
-        .setOrigin(0.5);
-
-      const buttonText = this.add
-        .text(0, 0, text, {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '28px',
-          fontStyle: 'bold',
-          color: '#ffffff',
-          align: 'center',
-        })
-        .setOrigin(0.5);
-
-      // Add elements to container
-      buttonContainer.add([buttonBg, shadow, buttonText]);
-
-      // Create hitbox for the button
-      const hitArea = new Phaser.Geom.Rectangle(
-        -buttonWidth / 2,
-        -buttonHeight / 2,
-        buttonWidth,
-        buttonHeight
-      );
-      buttonContainer.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
-
-      // Add simple hover effects
-      buttonContainer.on('pointerover', () => {
-        buttonBg.clear();
-
-        // Slightly brighter background on hover
-        buttonBg.fillStyle(0x0044aa, 0.3);
-        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-
-        // Brighter blue border
-        buttonBg.lineStyle(2, 0x00aaff, 1);
-        buttonBg.strokeRoundedRect(
-          -buttonWidth / 2,
-          -buttonHeight / 2,
-          buttonWidth,
-          buttonHeight,
-          8
-        );
-
-        // Brighten text
-        buttonText.setTint(0xffffff);
-      });
-
-      buttonContainer.on('pointerout', () => {
-        buttonBg.clear();
-
-        // Restore normal appearance
-        buttonBg.fillStyle(0x000000, 0.2);
-        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-
-        // Blue border
-        buttonBg.lineStyle(2, 0x0088ff, 1);
-        buttonBg.strokeRoundedRect(
-          -buttonWidth / 2,
-          -buttonHeight / 2,
-          buttonWidth,
-          buttonHeight,
-          8
-        );
-
-        // Reset text tint
-        buttonText.clearTint();
-      });
-
-      buttonContainer.on('pointerdown', () => {
-        // Simple pressed effect
-        buttonText.setY(1);
-        buttonBg.clear();
-        buttonBg.fillStyle(0x0066ff, 0.4);
-        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-        buttonBg.lineStyle(2, 0x0088ff, 1);
-        buttonBg.strokeRoundedRect(
-          -buttonWidth / 2,
-          -buttonHeight / 2,
-          buttonWidth,
-          buttonHeight,
-          8
-        );
-      });
-
-      buttonContainer.on('pointerup', () => {
-        // Restore hover state
-        buttonText.setY(0);
-        buttonBg.clear();
-        buttonBg.fillStyle(0x0044aa, 0.3);
-        buttonBg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-        buttonBg.lineStyle(2, 0x00aaff, 1);
-        buttonBg.strokeRoundedRect(
-          -buttonWidth / 2,
-          -buttonHeight / 2,
-          buttonWidth,
-          buttonHeight,
-          8
-        );
-      });
-
-      return buttonContainer;
-    };
-
-    // Create a decorative blue frame around the menu area as shown in the mockup
-    const menuFrame = this.add.graphics();
-
-    // Draw the frame with rounded corners
-    const frameWidth = this.scale.width * 0.8;
-    const originalFrameHeight = this.scale.height * 0.7;
-
-    // Reduce frame height by making it smaller from the top
-    const topReduction = 50; // Reduce frame size from top by 50 pixels
-    const frameHeight = originalFrameHeight - topReduction;
-
-    const frameX = this.scale.width / 2 - frameWidth / 2;
-    // Calculate frameY to keep the bottom edge at the same position
-    const originalFrameY = this.scale.height / 2 - originalFrameHeight / 2;
-    const frameY = originalFrameY + topReduction;
-
-    // Add a translucent blue fill
-    menuFrame.fillStyle(0x0066ff, 0.15); // Light blue with low opacity (0.15 = 15%)
-    menuFrame.fillRoundedRect(frameX, frameY, frameWidth, frameHeight, 10);
-
-    // Add a blue border on top of the fill
-    menuFrame.lineStyle(2, 0x0088ff, 0.8);
-    menuFrame.strokeRoundedRect(frameX, frameY, frameWidth, frameHeight, 10);
-    menuContainer.add(menuFrame);
-
-    // Create a container for buttons positioned in the center
-    const buttonContainer = this.add.container(this.scale.width * 0.5, 250); // Moved up from 300 to 250
-    menuContainer.add(buttonContainer);
-
-    // Create a simple title with blue glow to match mockup - ADDED AFTER THE MENU FRAME
-    const titleText = this.add
-      .text(this.scale.width / 2, 100, 'GALAXY EXPLORER', {
-        fontFamily: 'Arial Black, sans-serif',
-        fontSize: '64px',
-        color: '#ffffff',
-        stroke: '#0066ff',
-        strokeThickness: 6,
-        align: 'center',
-        shadow: {
-          offsetX: 0,
-          offsetY: 0,
-          color: '#0088ff',
-          blur: 10,
-          fill: true,
-        },
-      })
-      .setOrigin(0.5);
-    titleText.setDepth(100); // Set very high depth to ensure it's on top
-
-    // Add a simple space-themed tagline - ADDED AFTER THE MENU FRAME
-    const tagline = this.add
-      .text(this.scale.width / 2, 170, 'CONQUER THE COSMOS', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '24px',
-        color: '#88ccff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    tagline.setDepth(100); // Set very high depth to ensure it's on top
-
-    // Create the simple buttons with blue frames
-    const startButton = createMenuButton(0, 'START GAME');
-
-    const customizeButton = createMenuButton(90, 'CUSTOMIZE');
-
-    const leaderboardButton = createMenuButton(180, 'LEADERBOARD');
-
-    // Add buttons to the container
-    const buttons = [startButton, customizeButton, leaderboardButton];
-
-    // Add Build Mode button when feature is enabled
-    let buildModeButton;
+    // Buttons using UiKit
+    const startBtn = createButton(this, this.scale.width / 2, 250, 'START GAME');
+    const customizeBtn = createButton(this, this.scale.width / 2, 340, 'CUSTOMIZE');
+    const leaderboardBtn = createButton(this, this.scale.width / 2, 430, 'LEADERBOARD');
+    let buildModeBtn: ReturnType<typeof createButton> | undefined;
     if (isFeatureEnabled('ENABLE_BUILD_MODE')) {
-      buildModeButton = createMenuButton(270, 'BUILD MODE');
-      buttons.push(buildModeButton);
+      buildModeBtn = createButton(this, this.scale.width / 2, 520, 'BUILD MODE');
     }
 
-    buttonContainer.add(buttons);
+    startBtn.container.once('pointerdown', () => {
+      this.cameras.main.flash(300, 255, 255, 255, true);
+      this.time.delayedCall(300, () => this.startGame());
+    });
+    customizeBtn.container.once('pointerdown', () => {
+      this.resetLeaderboardState();
+      this.cameras.main.flash(300, 100, 100, 255, true);
+      this.time.delayedCall(200, () => this.scene.start('CustomizationScene'));
+    });
+    leaderboardBtn.container.on('pointerdown', () => {
+      this.time.delayedCall(100, () => {
+        void this.showLeaderboard();
+      });
+    });
+    if (buildModeBtn) {
+      buildModeBtn.container.once('pointerdown', () => {
+        this.resetLeaderboardState();
+        this.cameras.main.flash(300, 100, 200, 255, true);
+        this.time.delayedCall(200, () => this.scene.start('BuildModeScene', { action: 'design' }));
+      });
+    }
 
-    // Keep the design clean as shown in the mockup - no additional decorations
-
-    // Test data button - commented out for production
-    /* 
-    const testDataButton = this.add
-      .text(100, this.scale.height - 30, 'Add Test Scores', {
-        fontFamily: 'Arial',
-        fontSize: '16px',
-        color: '#ffffff',
-        backgroundColor: '#555555',
-        padding: { x: 10, y: 5 },
-      })
-      .setOrigin(0, 1)
-      .setInteractive()
-      .setAlpha(0.7);
-    */
-
-    // Add instruction text with better styling
-    const instructionContainer = this.add.container(this.scale.width / 2, 550); // Moved down from 520 to 550
-    menuContainer.add(instructionContainer);
-
-    // Instruction background
-    const instructionBg = this.add.rectangle(0, 0, 400, 40, 0x000000, 0.3);
-    instructionBg.setStrokeStyle(1, 0x4466ff, 0.3);
-    instructionContainer.add(instructionBg);
-
-    // Instruction text
-    const instructionText = this.add
-      .text(0, 0, 'PRESS SPACE TO START', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '18px',
-        color: '#aaccff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    instructionContainer.add(instructionText);
-
-    // Animate the instruction text subtly
+    // Instruction hint
+    createPanel(this, this.scale.width / 2 - 200, 570, 400, 40, { fillAlpha: 0.3 });
+    const instructionText = uiBodyText(this, this.scale.width / 2, 590, 'PRESS SPACE TO START', 18);
     this.tweens.add({
       targets: instructionText,
       alpha: { from: 1, to: 0.6 },
@@ -341,8 +123,8 @@ export class MainMenu extends Phaser.Scene {
       repeat: -1,
     });
 
-    // Add a version number/footer at the bottom
-    const versionText = this.add
+    // Version footer
+    this.add
       .text(this.scale.width - 10, this.scale.height - 10, 'v0.5', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '14px',
@@ -350,76 +132,13 @@ export class MainMenu extends Phaser.Scene {
         align: 'right',
       })
       .setOrigin(1, 1);
-    menuContainer.add(versionText);
+
+    // Keep the design clean as shown in the mockup - no additional decorations
 
     // Create but hide the leaderboard popup initially
     this.createLeaderboardPopup();
 
-    startButton.on('pointerdown', () => {
-      // Add a button press sound effect (if available)
-      // this.sound.play('button_click');
-
-      // Add a flash effect
-      this.cameras.main.flash(300, 255, 255, 255, true);
-
-      // Start the game with a slight delay for the visual effect
-      this.time.delayedCall(300, () => {
-        this.startGame();
-      });
-    });
-
-    customizeButton.on('pointerdown', () => {
-      // Add a button press sound effect (if available)
-      // this.sound.play('button_click');
-
-      // Reset leaderboard state before changing scenes
-      this.resetLeaderboardState();
-
-      // Add subtle camera effect
-      this.cameras.main.flash(300, 100, 100, 255, true);
-
-      // Start scene with slight delay for visual effect
-      this.time.delayedCall(200, () => {
-        this.scene.start('CustomizationScene');
-      });
-    });
-
-    leaderboardButton.on('pointerdown', () => {
-      // Add a button press sound effect (if available)
-      // this.sound.play('button_click');
-
-      // Add subtle pulse effect
-      this.tweens.add({
-        targets: leaderboardButton,
-        scale: { from: 0.95, to: 1 },
-        duration: 300,
-        ease: 'Bounce.Out',
-      });
-
-      // Show leaderboard with slight delay
-      this.time.delayedCall(100, () => {
-        void this.showLeaderboard(); // Use void to explicitly mark promise as handled
-      });
-    });
-
-    // Add Build Mode button handler if it exists
-    if (buildModeButton && isFeatureEnabled('ENABLE_BUILD_MODE')) {
-      buildModeButton.on('pointerdown', () => {
-        // Add a button press sound effect (if available)
-        // this.sound.play('button_click');
-
-        // Reset leaderboard state before changing scenes
-        this.resetLeaderboardState();
-
-        // Add subtle camera effect
-        this.cameras.main.flash(300, 100, 200, 255, true);
-
-        // Start Build Mode scene directly in Design with slight delay
-        this.time.delayedCall(200, () => {
-          this.scene.start('BuildModeScene', { action: 'design' });
-        });
-      });
-    }
+    // Legacy handlers removed in favor of UiKit button bindings above
 
     // Test data button event handler - commented out for production
     /*
@@ -428,8 +147,7 @@ export class MainMenu extends Phaser.Scene {
     });
     */
 
-    // Create but hide the leaderboard popup initially
-    this.createLeaderboardPopup();
+    // Create but hide the leaderboard popup initially (already created above)
 
     // --- 2. Asynchronously load custom config and update if found ---
 
@@ -777,71 +495,20 @@ export class MainMenu extends Phaser.Scene {
     }
   }
 
-  private ensureStarsTexture() {
-    if (!this.textures.exists('stars')) {
-      this.createStarsFallback('stars_fallback', 256, 256, 120);
-      this.starsTextureKey = 'stars_fallback';
-    } else {
-      this.starsTextureKey = 'stars';
-    }
-  }
-
-  private createStarsFallback(key: string, w: number, h: number, count: number) {
-    const g = this.add.graphics();
-
-    // Create a dark red background as shown in the mockup
-    const gradientCanvas = document.createElement('canvas');
-    gradientCanvas.width = w;
-    gradientCanvas.height = h;
-    const ctx = gradientCanvas.getContext('2d');
-    if (ctx) {
-      // Create a dark red background
-      const gradient = ctx.createLinearGradient(0, 0, 0, h);
-      gradient.addColorStop(0, 'rgba(70, 0, 0, 1)');
-      gradient.addColorStop(1, 'rgba(50, 0, 0, 1)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, w, h);
-
-      // No nebulas - keeping it simple as in the mockup
-      this.textures.addCanvas(key + '_background', gradientCanvas);
-    }
-
-    // Create a simple starfield with white stars, similar to the mockup
-    // Generate simple white stars of varying sizes
-    for (let i = 0; i < count; i++) {
-      const x = Phaser.Math.Between(0, w - 1);
-      const y = Phaser.Math.Between(0, h - 1);
-
-      // Simple star size variation
-      const starSize = Phaser.Math.FloatBetween(0.5, 2);
-
-      // Use white stars only
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(x, y, starSize);
-    }
-
-    // Add just a few larger stars
-    for (let i = 0; i < Math.min(15, count / 30); i++) {
-      const x = Phaser.Math.Between(0, w - 1);
-      const y = Phaser.Math.Between(0, h - 1);
-      const size = Phaser.Math.Between(2, 3);
-
-      // Simple white stars with no glow effect
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(x, y, size);
-    }
-
-    g.generateTexture(key, w, h);
-    g.destroy();
-  }
+  // removed local starfield generators; BackgroundManager handles it
 
   private generateCustomBackground(config: { density: number }) {
     const key = 'custom_stars';
-    if (this.textures.exists(key)) {
-      this.textures.remove(key);
-    }
-    this.createStarsFallback(key, this.scale.width, this.scale.height, config.density);
-    // No animated elements - keeping it simple as in the mockup
+    if (this.textures.exists(key)) this.textures.remove(key);
+    const w = this.scale.width;
+    const h = this.scale.height;
+    BackgroundManager.createStarsFallback(
+      this,
+      key,
+      w,
+      h,
+      Math.max(60, Math.min(400, config.density))
+    );
   }
 
   private createLeaderboardPopup(): void {

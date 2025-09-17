@@ -1,6 +1,9 @@
 import { Scene } from 'phaser';
 import * as Phaser from 'phaser';
 import { submitScore, getLeaderboard } from '../api';
+import { BackgroundManager } from '../services/BackgroundManager';
+import { titleText, bodyText, createPanel, createButton } from '../ui/UiKit';
+import { shineSweep } from '../effects/Effects';
 // TODO: Update below to the correct location of the Score type if it exists elsewhere.
 // import { Score } from '../../shared/types/api';
 
@@ -12,14 +15,15 @@ type Score = {
 
 export class GameOver extends Scene {
   private camera!: Phaser.Cameras.Scene2D.Camera;
-  private restartButton!: Phaser.GameObjects.Text;
-  private mainMenuButton!: Phaser.GameObjects.Text;
+  private restartBtn?: ReturnType<typeof createButton>;
+  private menuBtn?: ReturnType<typeof createButton>;
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private score = 0;
   private leaderboard: Score[] = [];
   private startTime: Date = new Date();
   private panelY: number = 0;
   private panelHeight: number = 420;
+  private starfield!: Phaser.GameObjects.TileSprite;
   // Removed unused scoreText property
 
   constructor() {
@@ -59,72 +63,15 @@ export class GameOver extends Scene {
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-    // Configure camera
+    // Configure camera and background
     this.camera = this.cameras.main;
     this.camera.setBackgroundColor(0x000000);
-
-    // Add a semi-transparent overlay background with fade-in animation
-    const graphics = this.add.graphics();
-    graphics.fillStyle(0x000000, 0.7);
-    graphics.fillRect(0, 0, this.scale.width, this.scale.height);
-
-    // Create a dark space-themed background gradient - expanded to cover all black space
-    console.log(`[${new Date().toISOString()}] [GameOver] Creating background elements`);
-    const bgGraphics = this.add.graphics();
-    bgGraphics.fillGradientStyle(
-      0x000066, // brighter blue at top
-      0x000044, // mid blue
-      0x000033, // darker blue
-      0x000022, // darkest blue at bottom
-      1,
-      1,
-      1,
-      1
-    );
-    bgGraphics.fillRect(0, 0, this.scale.width, this.scale.height);
-
-    // Add more stars to fill the background nicely
-    for (let i = 0; i < 150; i++) {
-      const x = Phaser.Math.Between(0, this.scale.width);
-      const y = Phaser.Math.Between(0, this.scale.height);
-      const size = Phaser.Math.FloatBetween(0.5, 2.5);
-      const alpha = Phaser.Math.FloatBetween(0.3, 0.9);
-
-      const star = this.add.circle(x, y, size, 0xffffff, alpha);
-
-      // Add twinkling animation to more stars
-      if (Math.random() > 0.5) {
-        this.tweens.add({
-          targets: star,
-          alpha: 0.2,
-          yoyo: true,
-          repeat: -1,
-          duration: Phaser.Math.Between(1000, 4000),
-          ease: 'Sine.easeInOut',
-          delay: Phaser.Math.Between(0, 2000), // randomize start time
-        });
-      }
-
-      // Add some brighter blue stars
-      if (Math.random() > 0.9) {
-        const bluestar = this.add.circle(
-          Phaser.Math.Between(0, this.scale.width),
-          Phaser.Math.Between(0, this.scale.height),
-          Phaser.Math.FloatBetween(1, 3),
-          0x88aaff,
-          0.7
-        );
-
-        this.tweens.add({
-          targets: bluestar,
-          alpha: 0.3,
-          yoyo: true,
-          repeat: -1,
-          duration: Phaser.Math.Between(1000, 2000),
-          ease: 'Sine.easeInOut',
-        });
-      }
-    }
+    const starsKey = BackgroundManager.ensureStars(this);
+    this.starfield = this.add
+      .tileSprite(0, 0, this.scale.width, this.scale.height, starsKey)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(-10);
 
     // Add a panel for the game content - adjusted to be more centered
     console.log(`[${new Date().toISOString()}] [GameOver] Creating game panel`);
@@ -134,114 +81,21 @@ export class GameOver extends Scene {
     // Calculate panel position - moved up to reduce empty space at the top
     this.panelY = this.scale.height / 2 - 200;
 
-    // Create a more substantial panel with rounded corners
-    const panel = this.add.graphics();
-    panel.fillStyle(0x111155, 0.7);
-    panel.lineStyle(3, 0x4466ff, 0.4);
-    panel.fillRoundedRect(
-      this.scale.width! / 2 - panelWidth / 2,
+    // Themed panel
+    createPanel(
+      this,
+      this.scale.width / 2 - panelWidth / 2,
       this.panelY,
       panelWidth,
-      this.panelHeight,
-      15
+      this.panelHeight
     );
-
-    // Add a more pronounced inner glow to the panel
-    const glow = this.add.graphics();
-    glow.lineStyle(5, 0x4488ff, 0.15);
-    glow.strokeRoundedRect(
-      this.scale.width / 2 - panelWidth / 2 + 10,
-      this.panelY + 10,
-      panelWidth - 20,
-      this.panelHeight - 20,
-      15
-    );
-
-    // Add an outer glow effect
-    const outerGlow = this.add.graphics();
-    outerGlow.lineStyle(8, 0x3355dd, 0.1);
-    outerGlow.strokeRoundedRect(
-      this.scale.width / 2 - panelWidth / 2 - 10,
-      this.panelY - 10,
-      panelWidth + 20,
-      this.panelHeight + 20,
-      25
-    );
-
-    // More complex animation for panel and glow effects
-    panel.alpha = 0;
-    glow.alpha = 0;
-    outerGlow.alpha = 0;
-
-    // Add a slight scale animation to the panel for a more dynamic entry
-    this.tweens.add({
-      targets: [panel, glow, outerGlow],
-      alpha: { from: 0, to: 1 },
-      duration: 1000,
-      ease: 'Power2',
-      delay: 200,
-    });
-
-    // Add a subtle pulse effect to the outer glow
-    this.tweens.add({
-      targets: outerGlow,
-      alpha: 0.2,
-      yoyo: true,
-      repeat: -1,
-      duration: 2000,
-      ease: 'Sine.easeInOut',
-      delay: 1200,
-    });
 
     // "Game Over" text with enhanced styling and animation - positioned higher
-    const gameOverText = this.add
-      .text(this.scale.width / 2, this.scale.height / 2 - 160, 'Game Over', {
-        fontFamily: 'Arial Black, sans-serif',
-        fontSize: '60px',
-        color: '#ffffff',
-        stroke: '#000033',
-        strokeThickness: 6,
-        align: 'center',
-        shadow: {
-          offsetX: 2,
-          offsetY: 2,
-          color: '#000033',
-          blur: 8,
-          stroke: true,
-          fill: true,
-        },
-      })
-      .setOrigin(0.5)
-      .setScale(0.8)
+    const title = titleText(this, this.scale.width / 2, this.scale.height / 2 - 160, 'Game Over')
+      .setScale(0.9)
       .setAlpha(0);
-
-    // Animate the Game Over text
-    this.tweens.add({
-      targets: gameOverText,
-      scale: 1,
-      alpha: 1,
-      duration: 800,
-      ease: 'Back.out',
-      delay: 400,
-    });
-
-    // Add a shine effect across the title
-    this.time.delayedCall(1200, () => {
-      const shine = this.add.graphics();
-      shine.fillStyle(0xffffff, 0.3);
-      shine.fillRect(-100, this.scale.height / 2 - 110 - 30, 50, 60);
-      shine.x = -50;
-
-      this.tweens.add({
-        targets: shine,
-        x: this.scale.width + 100,
-        duration: 1000,
-        ease: 'Cubic.easeOut',
-        onComplete: () => {
-          shine.destroy();
-        },
-      });
-    });
+    this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 700, ease: 'Back.out' });
+    this.time.delayedCall(700, () => shineSweep(this, title.y));
 
     // Submit score and get leaderboard
     try {
@@ -265,26 +119,14 @@ export class GameOver extends Scene {
     }
 
     // Score text with enhanced styling and animation - adjusted position
-    const scoreText = this.add
-      .text(this.scale.width / 2, this.scale.height / 2 - 80, `Score: ${this.score}`, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '36px',
-        color: '#ffffff',
-        align: 'center',
-        stroke: '#000033',
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setAlpha(0);
-
-    // Animate the score text
-    this.tweens.add({
-      targets: scoreText,
-      alpha: 1,
-      duration: 600,
-      ease: 'Power2',
-      delay: 800,
-    });
+    const scoreText = bodyText(
+      this,
+      this.scale.width / 2,
+      this.scale.height / 2 - 80,
+      `Score: ${this.score}`,
+      32
+    ).setAlpha(0);
+    this.tweens.add({ targets: scoreText, alpha: 1, duration: 600, ease: 'Power2', delay: 300 });
 
     // Add decorative separator line - adjusted position
     const separator = this.add.graphics();
@@ -297,14 +139,7 @@ export class GameOver extends Scene {
     );
 
     // Display only the top score for this post with better styling - adjusted position
-    this.add
-      .text(this.scale.width / 2, this.scale.height / 2 - 10, 'Post High Score', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '24px',
-        color: '#88bbff',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    bodyText(this, this.scale.width / 2, this.scale.height / 2 - 10, 'Post High Score', 22);
 
     // Create buttons before waiting for leaderboard - improves perceived performance
     this.createButtons();
@@ -380,63 +215,13 @@ export class GameOver extends Scene {
   }
 
   private createButtons() {
-    // Define button positions
+    // Avoid duplicates if called twice
+    if (this.restartBtn || this.menuBtn) return;
+
     const buttonY = this.panelY + this.panelHeight - 100;
     const buttonSpacing = 60;
-
-    // Create restart button background with gradient and border
-    const restartBg = this.add.graphics();
-    restartBg.fillGradientStyle(0xaa1111, 0xaa1111, 0x771111, 0x771111, 1, 1, 1, 1);
-    restartBg.lineStyle(2, 0xff3333, 0.5);
-    restartBg.fillRoundedRect(this.scale.width / 2 - 80, buttonY - 20, 160, 40, 10);
-    restartBg.strokeRoundedRect(this.scale.width / 2 - 80, buttonY - 20, 160, 40, 10);
-
-    // Restart button with improved styling
-    this.restartButton = this.add
-      .text(this.scale.width / 2, buttonY, 'Restart', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '26px',
-        color: '#ffffff',
-        align: 'center',
-        stroke: '#330000',
-        strokeThickness: 1,
-        shadow: {
-          offsetX: 1,
-          offsetY: 1,
-          color: '#000000',
-          blur: 2,
-          fill: true,
-        },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-
-    // Main menu button background with gradient and border
-    const menuBg = this.add.graphics();
-    menuBg.fillGradientStyle(0x113388, 0x113388, 0x112266, 0x112266, 1, 1, 1, 1);
-    menuBg.lineStyle(2, 0x4477ff, 0.5);
-    menuBg.fillRoundedRect(this.scale.width / 2 - 80, buttonY + buttonSpacing - 15, 160, 40, 10);
-    menuBg.strokeRoundedRect(this.scale.width / 2 - 80, buttonY + buttonSpacing - 15, 160, 40, 10);
-
-    // Add Main Menu button with improved styling
-    this.mainMenuButton = this.add
-      .text(this.scale.width / 2, buttonY + buttonSpacing, 'Main Menu', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '24px',
-        color: '#ffffff',
-        align: 'center',
-        stroke: '#000033',
-        strokeThickness: 1,
-        shadow: {
-          offsetX: 1,
-          offsetY: 1,
-          color: '#000000',
-          blur: 2,
-          fill: true,
-        },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+    this.restartBtn = createButton(this, this.scale.width / 2, buttonY, 'Restart');
+    this.menuBtn = createButton(this, this.scale.width / 2, buttonY + buttonSpacing, 'Main Menu');
 
     // Add space key instruction text below the panel with a clear background for better visibility
     // Add space key instruction text below the panel with a clear background for better visibility
@@ -459,24 +244,13 @@ export class GameOver extends Scene {
       10
     );
 
-    const spaceInstruction = this.add
-      .text(this.scale.width / 2, this.panelY + this.panelHeight + 32, 'Press SPACE to restart', {
-        fontSize: '20px',
-        color: '#ffffff',
-        align: 'center',
-        fontStyle: 'italic',
-        stroke: '#000033',
-        strokeThickness: 3,
-        shadow: {
-          offsetX: 1,
-          offsetY: 1,
-          color: '#000000',
-          blur: 2,
-          fill: true,
-        },
-      })
-      .setOrigin(0.5)
-      .setAlpha(1);
+    const spaceInstruction = bodyText(
+      this,
+      this.scale.width / 2,
+      this.panelY + this.panelHeight + 32,
+      'Press SPACE to restart',
+      18
+    ).setAlpha(1);
 
     // Animate the space instruction for better visibility
     this.tweens.add({
@@ -490,90 +264,44 @@ export class GameOver extends Scene {
 
     // Button interactions with hover effects
     // Restart button interactions
-    this.restartButton
-      .on('pointerover', () => {
-        this.restartButton.setScale(1.1);
-        // Create a glow effect
-        const glow = this.add.graphics();
-        glow.name = 'restartGlow';
-        glow.fillStyle(0xff3333, 0.3);
-        glow.fillCircle(this.scale.width / 2, buttonY, 90);
-        glow.setBlendMode(Phaser.BlendModes.ADD);
-        glow.setDepth(-1);
-        // Place the glow behind the button
-        this.children.bringToTop(this.restartButton);
-      })
-      .on('pointerout', () => {
-        this.restartButton.setScale(1.0);
-        // Remove the glow effect
-        const glow = this.children.getByName('restartGlow');
-        if (glow) {
-          glow.destroy();
-        }
-      })
-      .on('pointerdown', () => {
-        this.restartButton.setScale(0.95);
+    this.restartBtn.container.once('pointerdown', () => {
+      console.log('[GameOver] Restart button clicked');
+      console.log('[GameOver] Starting fresh StarshipScene');
 
-        console.log('[GameOver] Restart button clicked');
-        console.log('[GameOver] Starting fresh StarshipScene');
+      // First, make sure any existing scene is completely gone
+      if (this.scene.get('StarshipScene')) {
+        console.log('[GameOver] Stopping existing StarshipScene');
+        this.scene.stop('StarshipScene');
+      }
 
-        // First, make sure any existing scene is completely gone
-        if (this.scene.get('StarshipScene')) {
-          console.log('[GameOver] Stopping existing StarshipScene');
-          this.scene.stop('StarshipScene');
-        }
-
-        // Wait a tiny bit to ensure the scene is fully stopped
-        this.time.delayedCall(50, () => {
-          // Start a fresh StarshipScene
-          console.log('[GameOver] Creating new StarshipScene');
-          const last = this.registry.get('lastRunMode');
-          this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
-        });
+      // Wait a tiny bit to ensure the scene is fully stopped
+      this.time.delayedCall(50, () => {
+        // Start a fresh StarshipScene
+        console.log('[GameOver] Creating new StarshipScene');
+        const last = this.registry.get('lastRunMode');
+        this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
       });
+    });
 
     // Main menu button interactions
-    this.mainMenuButton
-      .on('pointerover', () => {
-        this.mainMenuButton.setScale(1.1);
-        // Create a glow effect for the menu button
-        const glow = this.add.graphics();
-        glow.name = 'menuGlow';
-        glow.fillStyle(0x3366ff, 0.3);
-        glow.fillCircle(this.scale.width / 2, buttonY + buttonSpacing, 90);
-        glow.setBlendMode(Phaser.BlendModes.ADD);
-        glow.setDepth(-1);
-        // Place the glow behind the button
-        this.children.bringToTop(this.mainMenuButton);
-      })
-      .on('pointerout', () => {
-        this.mainMenuButton.setScale(1.0);
-        // Remove the glow effect
-        const glow = this.children.getByName('menuGlow');
-        if (glow) {
-          glow.destroy();
-        }
-      })
-      .on('pointerdown', () => {
-        this.mainMenuButton.setScale(0.95);
+    this.menuBtn.container.once('pointerdown', () => {
+      console.log(`[${new Date().toISOString()}] [GameOver] Main Menu button clicked`);
 
-        console.log(`[${new Date().toISOString()}] [GameOver] Main Menu button clicked`);
+      // First, make sure any existing scene is completely gone
+      if (this.scene.get('StarshipScene')) {
+        console.log(
+          `[${new Date().toISOString()}] [GameOver] Stopping existing StarshipScene before going to menu`
+        );
+        this.scene.stop('StarshipScene');
+      }
 
-        // First, make sure any existing scene is completely gone
-        if (this.scene.get('StarshipScene')) {
-          console.log(
-            `[${new Date().toISOString()}] [GameOver] Stopping existing StarshipScene before going to menu`
-          );
-          this.scene.stop('StarshipScene');
-        }
-
-        // Wait a tiny bit to ensure the scene is fully stopped
-        this.time.delayedCall(50, () => {
-          // Go back to the main menu
-          console.log(`[${new Date().toISOString()}] [GameOver] Starting MainMenu scene`);
-          this.scene.start('MainMenu');
-        });
+      // Wait a tiny bit to ensure the scene is fully stopped
+      this.time.delayedCall(50, () => {
+        // Go back to the main menu
+        console.log(`[${new Date().toISOString()}] [GameOver] Starting MainMenu scene`);
+        this.scene.start('MainMenu');
       });
+    });
 
     // Log completion time of create method
     const endTime = new Date();
@@ -584,6 +312,9 @@ export class GameOver extends Scene {
   }
 
   override update() {
+    if (this.starfield) {
+      this.starfield.tilePositionY += 0.2;
+    }
     // Check for spacebar press
     if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
       console.log(`[${new Date().toISOString()}] [GameOver] Space key pressed, restarting game`);

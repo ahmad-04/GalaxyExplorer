@@ -5,16 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
       :root {
-        --bg: #0b1220;
-        --fg: #e5e7eb;
-        --muted: #9ca3af;
-        --accent: #60a5fa;
-        --accent-2: #3b82f6;
+        --gx-bg: #1d313c;
+        --gx-fg: #ecd6c3;
+        --gx-muted: #b9a99a;
+        --gx-orange: #f6733a;
+        --gx-cyan: #4fa3ab;
+        --gx-green: #387654;
+        --gx-white: #ffffff;
       }
       html,
       body {
         height: 100%;
-        background: var(--bg);
+        background: var(--gx-bg);
       }
       /* Inline splash to avoid FOUC before external CSS loads */
       #splash {
@@ -23,8 +25,8 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--bg);
-        color: var(--fg);
+        background: var(--gx-bg);
+        color: var(--gx-fg);
         z-index: 99999;
         transition: opacity 0.25s ease;
       }
@@ -45,16 +47,16 @@
       }
       #splash .title {
         font:
-          700 22px/1.2 Inter,
+          700 22px/1.2 'League Spartan',
           system-ui,
           sans-serif;
         letter-spacing: 0.4px;
       }
       #splash .subtitle {
         margin-top: 6px;
-        color: var(--muted);
+        color: var(--gx-muted);
         font:
-          500 14px/1.4 Inter,
+          500 14px/1.4 'League Spartan',
           system-ui,
           sans-serif;
       }
@@ -62,22 +64,22 @@
         margin: 22px auto 0;
         width: 72%;
         height: 8px;
-        background: #111827;
-        border: 1px solid #253248;
+        background: #14242c;
+        border: 1px solid #2a4957;
         border-radius: 999px;
         overflow: hidden;
       }
       #splash .fill {
         width: 0%;
         height: 100%;
-        background: linear-gradient(90deg, var(--accent-2), var(--accent));
+        background: linear-gradient(90deg, var(--gx-green), var(--gx-cyan));
         transition: width 0.2s ease;
       }
       #splash .hint {
         margin-top: 10px;
-        color: var(--muted);
+        color: var(--gx-muted);
         font:
-          500 12px/1.4 Inter,
+          500 12px/1.4 'League Spartan',
           system-ui,
           sans-serif;
       }
@@ -103,7 +105,7 @@
     <link rel="stylesheet" href="buildmode-ui.css" />
     <link rel="stylesheet" href="buildmode-form.css" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=League+Spartan:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
     <title>Galaxy Game - Build Mode</title>

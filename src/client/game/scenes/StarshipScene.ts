@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { EnemyManager } from '../entities/EnemyManager';
 import { Enemy, EnemyType } from '../entities/Enemy';
+import { BackgroundManager } from '../services/BackgroundManager';
 
 // Add an enum for power-up types
 enum PowerUpType {
@@ -325,8 +326,8 @@ export class StarshipScene extends Phaser.Scene {
     console.log('[StarshipScene] Setting fixed black background');
     this.cameras.main.setBackgroundColor(0x000000);
 
-    // Use MainMenu-style starfield texture (prefer 'stars', fallback to a generated 'stars_fallback')
-    const starsKey = this.ensureMenuStyleStarsTexture();
+    // Use shared starfield texture from BackgroundManager
+    const starsKey = BackgroundManager.ensureStars(this);
     this.starfield = this.add
       .tileSprite(0, 0, this.scale.width, this.scale.height, starsKey)
       .setOrigin(0, 0)
@@ -1296,54 +1297,7 @@ export class StarshipScene extends Phaser.Scene {
     // Stars background skipped here (handled earlier with MainMenu-style texture)
   }
 
-  // Use the same star texture strategy as MainMenu: prefer 'stars', otherwise build a nice fallback
-  private ensureMenuStyleStarsTexture(): string {
-    if (this.textures.exists('stars')) {
-      return 'stars';
-    }
-    if (this.textures.exists('stars_fallback')) {
-      return 'stars_fallback';
-    }
-    this.createMenuStyleStarsFallback('stars_fallback', 256, 256, 120);
-    return 'stars_fallback';
-  }
-
-  // Matches MainMenu.createStarsFallback: simple white starfield on a dark gradient
-  private createMenuStyleStarsFallback(key: string, w: number, h: number, count: number) {
-    const g = this.add.graphics();
-
-    // Create gradient background via canvas for subtle depth (colors kept simple)
-    const gradientCanvas = document.createElement('canvas');
-    gradientCanvas.width = w;
-    gradientCanvas.height = h;
-    const ctx = gradientCanvas.getContext('2d');
-    if (ctx) {
-      const gradient = ctx.createLinearGradient(0, 0, 0, h);
-      gradient.addColorStop(0, 'rgba(70, 0, 0, 1)');
-      gradient.addColorStop(1, 'rgba(50, 0, 0, 1)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, w, h);
-      this.textures.addCanvas(key + '_background', gradientCanvas);
-    }
-
-    // White stars
-    for (let i = 0; i < count; i++) {
-      const x = Phaser.Math.Between(0, w - 1);
-      const y = Phaser.Math.Between(0, h - 1);
-      const starSize = Phaser.Math.FloatBetween(0.5, 2);
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(x, y, starSize);
-    }
-    for (let i = 0; i < Math.min(15, count / 30); i++) {
-      const x = Phaser.Math.Between(0, w - 1);
-      const y = Phaser.Math.Between(0, h - 1);
-      const size = Phaser.Math.Between(2, 3);
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(x, y, size);
-    }
-    g.generateTexture(key, w, h);
-    g.destroy();
-  }
+  // Removed local starfield helpers in favor of BackgroundManager
 
   private createShipFallback(key: string) {
     const g = this.add.graphics();
