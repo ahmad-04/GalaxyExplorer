@@ -3,6 +3,7 @@ import { LoadingScene } from './scenes/LoadingScene';
 import { MainMenu } from './scenes/MainMenu';
 import { CustomizationScene } from './scenes/CustomizationScene';
 import { GameOver } from './scenes/GameOver';
+import { LevelComplete } from './scenes/LevelComplete';
 import { StarshipScene } from './scenes/StarshipScene';
 import { EndlessScene } from './scenes/EndlessScene';
 import { CustomLevelScene } from './scenes/CustomLevelScene';
@@ -33,6 +34,7 @@ const config: Phaser.Types.Core.GameConfig = {
     StarshipScene,
     EndlessScene,
     CustomLevelScene,
+    LevelComplete,
     GameOver,
     CustomizationScene,
     ...(isFeatureEnabled('ENABLE_BUILD_MODE') ? [BuildModeScene] : []),

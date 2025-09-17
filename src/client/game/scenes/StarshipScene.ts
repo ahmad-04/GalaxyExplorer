@@ -130,6 +130,9 @@ export class StarshipScene extends Phaser.Scene {
     // Ensure test state resets on every init
     this.testCompleted = false;
     this.expectedEnemiesToDefeat = 0;
+    if (this.isCustomLevelPlaythrough) {
+      this.registry.set('enemiesDefeated', 0);
+    }
 
     // Log registry state at initialization
     console.log('[StarshipScene] Registry state at init:', {
@@ -322,25 +325,11 @@ export class StarshipScene extends Phaser.Scene {
     console.log('[StarshipScene] Setting fixed black background');
     this.cameras.main.setBackgroundColor(0x000000);
 
-    // Create a generic starfield texture if we don't have one already
-    if (!this.textures.exists('stars_fallback')) {
-      console.log('[StarshipScene] Creating fallback stars texture');
-      this.createGenericTexture('stars_fallback', 0x00001a, 256, 256);
-    }
-
-    // Set the texture to use for stars
-    this.tex.stars = 'stars_fallback';
-
-    // Create the starfield with the appropriate texture
+    // Use MainMenu-style starfield texture (prefer 'stars', fallback to a generated 'stars_fallback')
+    const starsKey = this.ensureMenuStyleStarsTexture();
     this.starfield = this.add
-      .tileSprite(
-        this.scale.width / 2,
-        this.scale.height / 2,
-        this.scale.width,
-        this.scale.height,
-        this.tex.stars
-      )
-      .setOrigin(0.5)
+      .tileSprite(0, 0, this.scale.width, this.scale.height, starsKey)
+      .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-10);
 
@@ -742,12 +731,16 @@ export class StarshipScene extends Phaser.Scene {
       enemySprite.destroy();
     }
 
-    // Increment enemy defeat counter for test stats if the enemy was destroyed
-    if (destroyed && this.registry.get('buildModeTest') === true) {
+    // Increment enemy defeat counter for stats if the enemy was destroyed
+    if (
+      destroyed &&
+      (this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough)
+    ) {
       const currentDefeats = this.registry.get('enemiesDefeated') || 0;
       this.registry.set('enemiesDefeated', currentDefeats + 1);
-      console.log(`[StarshipScene] Test mode: Enemy defeated (total: ${currentDefeats + 1})`);
-    } // Only add points and show effects if the enemy was destroyed
+      console.log(`[StarshipScene] Enemy defeated (total: ${currentDefeats + 1})`);
+    }
+    // Only add points and show effects if the enemy was destroyed
     if (destroyed) {
       this.score += points * this.scoreMultiplier;
       this.scoreText.setText(`Score: ${this.score}`);
@@ -857,13 +850,11 @@ export class StarshipScene extends Phaser.Scene {
 
       // Destroy the enemy that hit the shield
       if (enemy && enemy.active) {
-        // Count shield-based enemy destruction in Build Mode tests
-        if (this.registry.get('buildModeTest') === true) {
+        // Count shield-based enemy destruction in Build Mode tests or custom playthrough
+        if (this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough) {
           const currentDefeats = this.registry.get('enemiesDefeated') || 0;
           this.registry.set('enemiesDefeated', currentDefeats + 1);
-          console.log(
-            `[StarshipScene] Test mode: Enemy destroyed by shield (total: ${currentDefeats + 1})`
-          );
+          console.log(`[StarshipScene] Enemy destroyed by shield (total: ${currentDefeats + 1})`);
         }
         enemy.destroy();
 
@@ -903,12 +894,10 @@ export class StarshipScene extends Phaser.Scene {
 
     // If the enemy is still present and active at collision, count as destroyed-by-crash
     if (enemy && enemy.active) {
-      if (this.registry.get('buildModeTest') === true) {
+      if (this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough) {
         const currentDefeats = this.registry.get('enemiesDefeated') || 0;
         this.registry.set('enemiesDefeated', currentDefeats + 1);
-        console.log(
-          `[StarshipScene] Test mode: Enemy destroyed by crash (total: ${currentDefeats + 1})`
-        );
+        console.log(`[StarshipScene] Enemy destroyed by crash (total: ${currentDefeats + 1})`);
       }
       enemy.destroy();
       // Check completion after crash-based destruction
@@ -1304,30 +1293,56 @@ export class StarshipScene extends Phaser.Scene {
       return;
     }
 
-    // Stars background
-    // If the texture doesn't exist, create a fallback
-    if (!this.textures.exists('stars')) {
-      console.warn(`[StarshipScene] Default 'stars' texture not found. Creating fallback.`);
-      this.createGenericTexture('stars_fallback', 0x00001a, 256, 256);
-      this.tex.stars = 'stars_fallback';
-    } else {
-      this.tex.stars = 'stars';
+    // Stars background skipped here (handled earlier with MainMenu-style texture)
+  }
+
+  // Use the same star texture strategy as MainMenu: prefer 'stars', otherwise build a nice fallback
+  private ensureMenuStyleStarsTexture(): string {
+    if (this.textures.exists('stars')) {
+      return 'stars';
+    }
+    if (this.textures.exists('stars_fallback')) {
+      return 'stars_fallback';
+    }
+    this.createMenuStyleStarsFallback('stars_fallback', 256, 256, 120);
+    return 'stars_fallback';
+  }
+
+  // Matches MainMenu.createStarsFallback: simple white starfield on a dark gradient
+  private createMenuStyleStarsFallback(key: string, w: number, h: number, count: number) {
+    const g = this.add.graphics();
+
+    // Create gradient background via canvas for subtle depth (colors kept simple)
+    const gradientCanvas = document.createElement('canvas');
+    gradientCanvas.width = w;
+    gradientCanvas.height = h;
+    const ctx = gradientCanvas.getContext('2d');
+    if (ctx) {
+      const gradient = ctx.createLinearGradient(0, 0, 0, h);
+      gradient.addColorStop(0, 'rgba(70, 0, 0, 1)');
+      gradient.addColorStop(1, 'rgba(50, 0, 0, 1)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, w, h);
+      this.textures.addCanvas(key + '_background', gradientCanvas);
     }
 
-    // Create the starfield if it doesn't exist or recreate it
-    if (!this.starfield) {
-      this.starfield = this.add
-        .tileSprite(
-          this.scale.width / 2,
-          this.scale.height / 2,
-          this.scale.width,
-          this.scale.height,
-          this.tex.stars
-        )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(-10);
+    // White stars
+    for (let i = 0; i < count; i++) {
+      const x = Phaser.Math.Between(0, w - 1);
+      const y = Phaser.Math.Between(0, h - 1);
+      const starSize = Phaser.Math.FloatBetween(0.5, 2);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, starSize);
     }
+    for (let i = 0; i < Math.min(15, count / 30); i++) {
+      const x = Phaser.Math.Between(0, w - 1);
+      const y = Phaser.Math.Between(0, h - 1);
+      const size = Phaser.Math.Between(2, 3);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, size);
+    }
+    g.generateTexture(key, w, h);
+    g.destroy();
   }
 
   private createShipFallback(key: string) {
@@ -1599,13 +1614,7 @@ export class StarshipScene extends Phaser.Scene {
     typesToDeactivate.forEach((type) => this.deactivatePowerUp(type));
   }
 
-  private createGenericTexture(key: string, color: number, w = 32, h = 32): void {
-    const g = this.add.graphics();
-    g.fillStyle(color, 1);
-    g.fillRect(0, 0, w, h);
-    g.generateTexture(key, w, h);
-    g.destroy();
-  }
+  // Removed generic texture helper; menu-style starfield generator used instead
 
   /**
    * Ensures a texture exists, creating a fallback if needed.
@@ -2108,13 +2117,12 @@ export class StarshipScene extends Phaser.Scene {
       `[StarshipScene] Placed ${enemiesPlaced} enemies from custom level. Expected: ${effectiveLevelData.entities.filter((e) => e.type === EntityType.ENEMY_SPAWNER).length}`
     );
 
-    // Track expected kills for Build Mode auto-completion: only count placed enemies
-    if (this.registry.get('buildModeTest') === true) {
+    // Track expected kills for completion: only count placed enemies
+    if (this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough) {
       this.expectedEnemiesToDefeat = enemiesPlaced;
-      // Reset defeated count at start of a test just in case
       this.registry.set('enemiesDefeated', 0);
       console.log(
-        `[StarshipScene] Build test: expecting ${this.expectedEnemiesToDefeat} enemies to be defeated by fire`
+        `[StarshipScene] Completion target set to ${this.expectedEnemiesToDefeat} enemies`
       );
     }
 
@@ -2381,7 +2389,17 @@ export class StarshipScene extends Phaser.Scene {
         if (deaths > 0) return;
       }
       const expected = this.expectedEnemiesToDefeat || 0;
-      if (expected <= 0) return; // Do not auto-complete when nothing was placed
+      if (expected <= 0) {
+        // For custom playthroughs with zero expected (e.g., no spawners), only complete when no enemies remain
+        if (this.isCustomLevelPlaythrough) {
+          const activeCountNow = this.enemies ? this.enemies.countActive() : 0;
+          if (activeCountNow === 0) {
+            console.log('[StarshipScene] No enemies expected and none active; completing level');
+            this.completeBuildTest('no-expected-no-active');
+          }
+        }
+        return;
+      }
       const defeated = this.registry.get('enemiesDefeated') || 0;
       if (defeated >= expected) {
         console.log('[StarshipScene] All placed enemies defeated; completing level');
@@ -2420,12 +2438,22 @@ export class StarshipScene extends Phaser.Scene {
       score: this.score,
       durationMs,
     });
-    // If this is a published custom-level playthrough, end the game (victory)
+    // If this is a published custom-level playthrough, end the game with victory screen
     if (this.isCustomLevelPlaythrough) {
       console.log('[StarshipScene] Custom level completed. Ending game with victory flow.');
       const finalScore = this.score;
+      const levelData = this.registry.get('testLevelData');
+      const durationMs = this.levelStartTime ? Date.now() - this.levelStartTime : undefined;
+      const enemiesDefeated = this.registry.get('enemiesDefeated') || 0;
+      const enemiesExpected = this.expectedEnemiesToDefeat || 0;
       this.scene.stop('StarshipScene');
-      this.scene.start('GameOver', { score: finalScore });
+      this.scene.start('LevelComplete', {
+        score: finalScore,
+        durationMs,
+        levelName: levelData?.settings?.name,
+        enemiesDefeated,
+        enemiesExpected,
+      });
       return;
     }
     // Otherwise, notify BuildModeScene so TestStep can stop the test
