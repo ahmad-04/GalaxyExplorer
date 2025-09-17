@@ -122,9 +122,17 @@ export class LoadingScene extends Phaser.Scene {
 
       // Step 1.5: Fetch init info to detect published-level context
       try {
+        console.log('[LoadingScene] Fetching init info for published-level context...');
         const init = await getInit();
         if (init.publishedLevel) {
           this.registry.set('publishedLevelPointer', init.publishedLevel);
+          console.log(
+            '[LoadingScene] Set publishedLevelPointer from init:',
+            init.publishedLevel.postId,
+            init.publishedLevel.title
+          );
+        } else {
+          console.log('[LoadingScene] No publishedLevel in init response');
         }
       } catch (e) {
         // Non-fatal; proceed without published level context

@@ -892,7 +892,22 @@ export class PublishStep {
       };
 
       const openBtn = makeLinkBtn(-90, 190, 'Open Post', () => {
-        window.open(this.permalink!, '_blank');
+        try {
+          const w = window.open(this.permalink!, '_blank');
+          if (!w) {
+            // Pop-up blocked; fallback to copying link
+            navigator.clipboard
+              .writeText(this.permalink!)
+              .then(() => this.showToast('Pop-up blocked. Link copied!', 'info'))
+              .catch(() => this.showToast('Pop-up blocked. Copy failed.', 'error'));
+          }
+        } catch {
+          this.showToast('Unable to open post. Copying link...', 'info');
+          navigator.clipboard
+            .writeText(this.permalink!)
+            .then(() => this.showToast('Post link copied!', 'success'))
+            .catch(() => this.showToast('Failed to copy link', 'error'));
+        }
       });
       const copyBtn = makeLinkBtn(90, 190, 'Copy Post Link', () => {
         navigator.clipboard

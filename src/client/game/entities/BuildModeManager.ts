@@ -137,14 +137,14 @@ export class BuildModeManager {
    * @param size The size of the grid cells
    */
   setGridSize(size: number): void {
-    // Enforce fixed grid size regardless of input
-    const fixed = BuildModeManager.FIXED_GRID_SIZE;
-    const changed = this.state.gridSize !== fixed;
-    this.state.gridSize = fixed;
+    // Clamp to a reasonable pixel size and round to integer
+    const clamped = Math.max(8, Math.min(96, Math.round(size)));
+    const changed = this.state.gridSize !== clamped;
+    this.state.gridSize = clamped;
     if (changed) {
-      this.events.emit('grid:sizeChange', fixed);
+      this.events.emit('grid:sizeChange', clamped);
     }
-    console.log(`[BuildModeManager] Grid size fixed at ${fixed}; ignoring input ${size}`);
+    console.log(`[BuildModeManager] Grid size set to ${clamped}`);
   }
 
   /**

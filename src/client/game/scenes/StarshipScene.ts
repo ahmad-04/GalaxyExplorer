@@ -71,6 +71,11 @@ export class StarshipScene extends Phaser.Scene {
   private testCompleted = false;
   private testCompletionMonitor: Phaser.Time.TimerEvent | undefined;
   private expectedEnemiesToDefeat = 0;
+  // Custom published-level playthrough (non-build-test)
+  private isCustomLevelPlaythrough = false;
+  // Logging + timing
+  private runId = '';
+  private levelStartTime = 0;
 
   constructor() {
     super({ key: 'StarshipScene' });
@@ -100,6 +105,19 @@ export class StarshipScene extends Phaser.Scene {
       hasLevelData: !!data?.levelData,
       entityCount: data?.levelData?.entities?.length || 0,
     });
+    // Assign a short run/session id for correlating logs
+    this.runId = (
+      Math.random().toString(36).slice(2, 6) + Date.now().toString(36).slice(-4)
+    ).toUpperCase();
+    this.isCustomLevelPlaythrough = !!data?.levelData && !data?.buildModeTest;
+    // Expose to registry for cross-class access (e.g., EnemyManager)
+    this.registry.set('customLevelPlaythrough', this.isCustomLevelPlaythrough);
+    console.log(
+      '[StarshipScene] Custom level playthrough:',
+      this.isCustomLevelPlaythrough,
+      'runId:',
+      this.runId
+    );
 
     // Reset all game state when scene starts/restarts
     this.score = 0;
@@ -208,12 +226,9 @@ export class StarshipScene extends Phaser.Scene {
         console.error('[StarshipScene] DEBUG - Failed to load particle texture');
       });
 
-    this.load.image('stars', '/assets/stars.png'); // optional
+    // Do not load stars.png (often absent); we'll generate a fallback
 
-    // Load the power-up icon with error handler
-    this.load.image('powerup', '/assets/powerup.png').on('fileerror', () => {
-      console.log('Power-up image not found, will create fallback');
-    });
+    // Skip loading powerup sprite to avoid noise; we create fallback textures when needed
 
     // Always load galactic ship parts to ensure they're available if needed
     this.load.image('glacticShipPrimary', '/assets/glacticShipPrimary.png');
@@ -236,6 +251,7 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.levelStartTime = Date.now();
     console.log('[StarshipScene] create method starting');
     console.log(
       '[StarshipScene] Physics state:',
@@ -2071,15 +2087,14 @@ export class StarshipScene extends Phaser.Scene {
       );
     }
 
-    // For Build Mode tests, do NOT auto-respawn or revert to default spawns.
-    // Designers expect only their placed enemies to appear.
-    if (this.registry.get('buildModeTest') === true) {
+    // For custom levels and Build Mode tests, do NOT auto-respawn or revert to default spawns.
+    if (this.isCustomLevelPlaythrough || this.registry.get('buildModeTest') === true) {
       if (enemiesPlaced === 0) {
         console.log(
           '[StarshipScene] No enemy spawners found in custom level; staying idle in build test'
         );
       } else {
-        console.log('[StarshipScene] Build test: skipping auto-respawn timer');
+        console.log('[StarshipScene] Custom/Build test: skipping auto-respawn timer');
       }
     } else {
       // In normal play, keep screen from being empty
@@ -2113,7 +2128,22 @@ export class StarshipScene extends Phaser.Scene {
     console.log('[StarshipScene] Available EnemyTypes:', EnemyType);
 
     // Get position from the entity
-    const { x, y } = entity.position;
+    // Clamp spawn within designed playfield width if test data provides it
+    let { x, y } = entity.position;
+    try {
+      const levelData = this.registry.get('testLevelData') as
+        | { settings?: { playfieldWidth?: number; playfieldSafeMargin?: number } }
+        | undefined;
+      const defaultWidth = 960;
+      const w = levelData?.settings?.playfieldWidth || defaultWidth;
+      const safe = Math.max(0, levelData?.settings?.playfieldSafeMargin || 0);
+      const minX = 0 + safe;
+      const maxX = w - safe;
+      x = Phaser.Math.Clamp(x, minX, maxX);
+      y = Math.min(y, this.scale.height - 40); // don't spawn below bottom of screen
+    } catch {
+      // ignore clamping issues
+    }
     console.log(`[StarshipScene] Entity position: x=${x}, y=${y}`);
 
     // Determine enemy type
@@ -2309,37 +2339,63 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   private checkForTestCompletion(): void {
-    if (this.registry.get('buildModeTest') === true && !this.testCompleted) {
-      // If player has died in this run, do not allow completion
-      const deaths = this.registry.get('playerDeaths') || 0;
-      if (deaths > 0) return;
+    const inCompletionMode =
+      this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough;
+    if (inCompletionMode && !this.testCompleted) {
+      // For build tests, fail if player died; for custom playthrough ignore deaths (GameOver handles that)
+      if (this.registry.get('buildModeTest') === true) {
+        const deaths = this.registry.get('playerDeaths') || 0;
+        if (deaths > 0) return;
+      }
       const expected = this.expectedEnemiesToDefeat || 0;
       if (expected <= 0) return; // Do not auto-complete when nothing was placed
       const defeated = this.registry.get('enemiesDefeated') || 0;
       if (defeated >= expected) {
-        console.log('[StarshipScene] All placed enemies defeated; completing build test');
-        this.completeBuildTest();
+        console.log('[StarshipScene] All placed enemies defeated; completing level');
+        this.completeBuildTest('all-defeated');
         return;
       }
 
-      // Secondary completion: if no enemies remain active at all (on or off screen)
-      // This covers cases where enemies drift off and are culled by manager
+      // Secondary completion: if no enemies remain active at all
       const activeCount = this.enemies ? this.enemies.countActive() : 0;
       if (activeCount === 0) {
-        console.log('[StarshipScene] No active enemies remain; completing build test');
-        this.completeBuildTest();
+        console.log('[StarshipScene] No active enemies remain; completing level');
+        this.completeBuildTest('no-active');
       }
     }
   }
 
   // Removed getActiveEnemiesInBounds; completion now uses overall active count
 
-  private completeBuildTest(): void {
+  private completeBuildTest(reason?: string): void {
     if (this.testCompleted) return;
     this.testCompleted = true;
     // Send stats back first
     this.sendTestStats();
-    // Notify BuildModeScene so TestStep can stop the test
+    // Log concise completion summary
+    const levelData = this.registry.get('testLevelData');
+    const defeated = this.registry.get('enemiesDefeated') || 0;
+    const expected = this.expectedEnemiesToDefeat || 0;
+    const durationMs = this.levelStartTime ? Date.now() - this.levelStartTime : undefined;
+    console.log('[StarshipScene] LEVEL COMPLETE', {
+      runId: this.runId,
+      mode: this.isCustomLevelPlaythrough ? 'custom' : 'build-test',
+      reason: reason || 'unknown',
+      levelName: levelData?.settings?.name,
+      expected,
+      defeated,
+      score: this.score,
+      durationMs,
+    });
+    // If this is a published custom-level playthrough, end the game (victory)
+    if (this.isCustomLevelPlaythrough) {
+      console.log('[StarshipScene] Custom level completed. Ending game with victory flow.');
+      const finalScore = this.score;
+      this.scene.stop('StarshipScene');
+      this.scene.start('GameOver', { score: finalScore });
+      return;
+    }
+    // Otherwise, notify BuildModeScene so TestStep can stop the test
     const buildModeScene = this.scene.get('BuildModeScene');
     if (buildModeScene) {
       buildModeScene.events.emit('test:completed');

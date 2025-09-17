@@ -71,23 +71,41 @@ export const publishLevelToReddit = async (
 
 export const getPublishedLevel = async (postId?: string): Promise<GetLevelResponse> => {
   const url = postId ? `/api/level?postId=${encodeURIComponent(postId)}` : '/api/level';
+  const startTime = performance.now();
+  console.log(`[API] getPublishedLevel: GET ${url}`);
   const response = await fetch(url, { credentials: 'include' });
+  console.log(`[API] getPublishedLevel: status ${response.status}`);
   if (response.status === 304) {
+    console.log('[API] getPublishedLevel: 304 Not Modified');
     // Not modified; caller can decide what to do
     throw new Error('Not modified');
   }
   if (!response.ok) {
     const text = await response.text();
+    console.error(`[API] getPublishedLevel failed ${response.status}: ${text}`);
     throw new Error(text || 'Failed to fetch level');
   }
-  return (await response.json()) as GetLevelResponse;
+  const data = (await response.json()) as GetLevelResponse;
+  const duration = (performance.now() - startTime).toFixed(2);
+  console.log(
+    `[API] getPublishedLevel: ok in ${duration}ms, postId=${data.postId}, hasLevel=${!!data.level}`
+  );
+  return data;
 };
 
 export const getInit = async (): Promise<InitResponse> => {
+  const startTime = performance.now();
+  console.log('[API] getInit: GET /api/init');
   const response = await fetch('/api/init', { credentials: 'include' });
   if (!response.ok) {
     const text = await response.text();
+    console.error(`[API] getInit failed ${response.status}: ${text}`);
     throw new Error(text || 'Failed to initialize');
   }
-  return (await response.json()) as InitResponse;
+  const data = (await response.json()) as InitResponse;
+  const duration = (performance.now() - startTime).toFixed(2);
+  console.log(
+    `[API] getInit: ok in ${duration}ms, publishedLevel=${data.publishedLevel ? data.publishedLevel.postId : 'none'}`
+  );
+  return data;
 };

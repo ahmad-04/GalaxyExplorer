@@ -1,10 +1,11 @@
 import * as Phaser from 'phaser';
-import { getLeaderboard, getPublishedLevel } from '../api';
+import { getLeaderboard, getPublishedLevel, getInit } from '../api';
 import { isFeatureEnabled } from '../../../shared/config';
 
 export class MainMenu extends Phaser.Scene {
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private startEnabled = true;
+  private publishedPollAttempts = 0;
   private background!: Phaser.GameObjects.TileSprite;
   private starsTextureKey = 'stars';
   private leaderboardPopup!: Phaser.GameObjects.Container;
@@ -21,18 +22,15 @@ export class MainMenu extends Phaser.Scene {
     // Reset the leaderboard visibility state when returning to this scene
     this.leaderboardVisible = false;
     console.log('MainMenu scene initialized, startEnabled =', this.startEnabled);
+    this.logState('init');
   }
 
   create() {
-    // If we have a published-level context, prompt to start it
-    const publishedPtr = this.registry.get('publishedLevelPointer') as
-      | { postId: string; title: string }
-      | undefined;
-    if (publishedPtr) {
-      this.promptStartPublishedLevel(publishedPtr).catch((e) =>
-        console.warn('[MainMenu] Failed published-level prompt:', e)
-      );
-    }
+    console.log('[MainMenu] create() starting');
+    this.logState('create:before-load');
+    // If we have a published-level context, attempt to auto-load it silently
+    void this.ensurePublishedLevelLoaded();
+    console.log('[MainMenu] ensurePublishedLevelLoaded() invoked from create()');
     // --- 1. Draw the scene immediately with defaults ---
 
     this.ensureStarsTexture(); // Make sure a texture is available
@@ -345,7 +343,7 @@ export class MainMenu extends Phaser.Scene {
 
     // Add a version number/footer at the bottom
     const versionText = this.add
-      .text(this.scale.width - 10, this.scale.height - 10, 'v1.0', {
+      .text(this.scale.width - 10, this.scale.height - 10, 'v0.5', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '14px',
         color: '#666666',
@@ -449,95 +447,10 @@ export class MainMenu extends Phaser.Scene {
 
     // Add parallax elements to the background
     this.addParallaxElements();
+    this.logState('create:end');
   }
 
-  private async promptStartPublishedLevel(ptr: { postId: string; title: string }): Promise<void> {
-    // Build a simple modal overlay
-    const overlay = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(1000);
-    const bg = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.5);
-    bg.setInteractive();
-    overlay.add(bg);
-
-    const panelW = Math.min(520, this.scale.width * 0.9);
-    const panelH = 220;
-    const panel = this.add.rectangle(0, 0, panelW, panelH, 0x001133, 0.95);
-    panel.setStrokeStyle(2, 0x0088ff, 1);
-    overlay.add(panel);
-
-    const title = this.add
-      .text(0, -60, 'Start Published Level?', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '28px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    overlay.add(title);
-
-    const subtitle = this.add
-      .text(0, -20, ptr.title, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '18px',
-        color: '#aaccff',
-        align: 'center',
-        wordWrap: { width: panelW - 40 },
-      })
-      .setOrigin(0.5);
-    overlay.add(subtitle);
-
-    const makeBtn = (x: number, text: string) => {
-      const btn = this.add.container(x, 50);
-      const r = this.add.rectangle(0, 0, 140, 42, 0x002255, 1).setStrokeStyle(2, 0x00aaff);
-      const t = this.add
-        .text(0, 0, text, { fontFamily: 'Arial, sans-serif', fontSize: '18px', color: '#ffffff' })
-        .setOrigin(0.5);
-      btn.add([r, t]);
-      btn.setInteractive(
-        new Phaser.Geom.Rectangle(-70, -21, 140, 42),
-        Phaser.Geom.Rectangle.Contains
-      );
-      btn.on('pointerover', () => r.setFillStyle(0x003377));
-      btn.on('pointerout', () => r.setFillStyle(0x002255));
-      return { btn, r, t };
-    };
-
-    const { btn: playBtn } = makeBtn(-80, 'Play');
-    const { btn: cancelBtn } = makeBtn(80, 'Cancel');
-    overlay.add([playBtn, cancelBtn]);
-
-    const close = () => {
-      overlay.destroy(true);
-      // Clear pointer so it doesn't prompt again
-      this.registry.set('publishedLevelPointer', undefined);
-    };
-
-    await new Promise<void>((resolve) => {
-      cancelBtn.on('pointerdown', () => {
-        close();
-        resolve();
-      });
-      playBtn.on('pointerdown', async () => {
-        try {
-          // Small loading indicator
-          title.setText('Loading level...');
-          subtitle.setText('Fetching from server');
-          const resp = await getPublishedLevel(ptr.postId);
-          // Start the game with this level data in registry for StarshipScene
-          this.registry.set('testLevelData', resp.level);
-          this.registry.set('buildModeTest', false);
-          this.registry.set('testMode', false);
-          close();
-          this.scene.start('StarshipScene');
-        } catch (e) {
-          title.setText('Failed to load level');
-          subtitle.setText('Please try again');
-          this.time.delayedCall(1200, () => close());
-        }
-        resolve();
-      });
-    });
-  }
+  // Removed modal prompt; published levels are preloaded silently
 
   private async loadConfigFromServer(): Promise<void> {
     try {
@@ -680,6 +593,27 @@ export class MainMenu extends Phaser.Scene {
   }
 
   private startGame() {
+    this.logState('startGame:entered');
+    // If published level not yet loaded, attempt a last-second fetch
+    const hasCustom = !!this.registry.get('testLevelData');
+    const loading = this.registry.get('publishedLevelLoading') === true;
+    if (!hasCustom && !loading) {
+      console.log('[MainMenu] No custom level loaded yet; attempting fallback fetch');
+      void this.ensurePublishedLevelLoaded();
+    }
+
+    // If a published level is still loading, wait a moment then retry
+    if (this.registry.get('publishedLevelLoading') === true) {
+      if (this.publishedPollAttempts < 15) {
+        this.publishedPollAttempts++;
+        console.log('[MainMenu] Waiting for published level to load...');
+        this.time.delayedCall(200, () => this.startGame());
+        return;
+      } else {
+        console.warn('[MainMenu] Published level did not load in time; starting default game');
+      }
+    }
+
     if (!this.startEnabled) {
       console.log('Start game attempted but startEnabled is false');
       return;
@@ -692,13 +626,47 @@ export class MainMenu extends Phaser.Scene {
     // Reset leaderboard state when starting the game
     this.resetLeaderboardState();
 
+    // Reset poll attempts for next time
+    this.publishedPollAttempts = 0;
+
     // Get ship configuration from registry if available
     const shipConfig = this.registry.get('shipConfig');
+    const levelData = this.registry.get('testLevelData');
+    console.log('[MainMenu] startGame state:', {
+      hasCustomLevel: !!levelData,
+      hasShipConfig: !!shipConfig,
+      pollAttempts: this.publishedPollAttempts,
+    });
+
+    // If we have a custom level loaded, pass it explicitly to StarshipScene
+    if (levelData) {
+      const payload = {
+        ...(shipConfig || {
+          ship: 'ship',
+          primaryTint: 0xffffff,
+          secondaryTint: 0xffffff,
+        }),
+        levelData,
+        testMode: false,
+        buildModeTest: false,
+      } as const;
+      const entityCount = Array.isArray(
+        (levelData as unknown as { entities?: unknown[] })?.entities
+      )
+        ? ((levelData as unknown as { entities?: unknown[] }).entities?.length ?? undefined)
+        : undefined;
+      console.log('[MainMenu] Starting game with custom level payload', {
+        entityCount,
+      });
+      this.scene.start('StarshipScene', payload as unknown as Record<string, unknown>);
+      return;
+    }
+
+    // Fall back to normal game without custom level
     if (shipConfig) {
       console.log('Starting game with ship config:', shipConfig);
       this.scene.start('StarshipScene', shipConfig);
     } else {
-      // Use default configuration if none is saved
       const defaultShipConfig = {
         ship: 'ship',
         primaryTint: 0xffffff,
@@ -706,6 +674,106 @@ export class MainMenu extends Phaser.Scene {
       };
       console.log('Starting game with default ship config');
       this.scene.start('StarshipScene', defaultShipConfig);
+    }
+  }
+
+  // Try to load the published level (from pointer if present, otherwise via context)
+  private async ensurePublishedLevelLoaded(): Promise<boolean> {
+    try {
+      const t0 = performance.now();
+      this.logState('ensure:start');
+      const already = this.registry.get('testLevelData');
+      if (already) {
+        console.log(
+          '[MainMenu] ensurePublishedLevelLoaded: custom level already present; skipping'
+        );
+        return true;
+      }
+
+      let ptr = this.registry.get('publishedLevelPointer') as
+        | { postId: string; title: string }
+        | undefined;
+
+      // If we don't have a pointer yet, try fetching init info now
+      if (!ptr) {
+        try {
+          console.log('[MainMenu] ensurePublishedLevelLoaded: fetching init for pointer');
+          const init = await getInit();
+          if (init.publishedLevel) {
+            ptr = init.publishedLevel;
+            this.registry.set('publishedLevelPointer', ptr);
+            console.log('[MainMenu] Acquired published level pointer via init:', ptr.title);
+          } else {
+            console.log('[MainMenu] ensurePublishedLevelLoaded: init returned no publishedLevel');
+          }
+        } catch (e) {
+          console.warn('[MainMenu] getInit failed while probing for pointer:', e);
+        }
+      }
+
+      this.registry.set('publishedLevelLoading', true);
+      console.log('[MainMenu] ensurePublishedLevelLoaded: set publishedLevelLoading=true');
+
+      let resp;
+      if (ptr?.postId) {
+        console.log('[MainMenu] Preloading published level by pointer:', ptr.title);
+        resp = await getPublishedLevel(ptr.postId);
+      } else {
+        console.log('[MainMenu] Preloading published level by context (no pointer)');
+        resp = await getPublishedLevel();
+      }
+
+      if (resp && resp.level) {
+        this.registry.set('testLevelData', resp.level);
+        this.registry.set('buildModeTest', false);
+        this.registry.set('testMode', false);
+        if (ptr) {
+          // Clear pointer only on successful load
+          this.registry.set('publishedLevelPointer', undefined);
+        }
+        const entityCount = Array.isArray(
+          (resp.level as unknown as { entities?: unknown[] })?.entities
+        )
+          ? ((resp.level as unknown as { entities?: unknown[] }).entities?.length ?? undefined)
+          : undefined;
+        console.log('[MainMenu] Published level loaded successfully', {
+          postId: resp.postId,
+          entityCount,
+        });
+        this.logState('ensure:after-success');
+        const dt = (performance.now() - t0).toFixed(2);
+        console.log(`[MainMenu] ensurePublishedLevelLoaded completed in ${dt}ms`);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[MainMenu] ensurePublishedLevelLoaded failed:', e);
+    } finally {
+      this.registry.set('publishedLevelLoading', false);
+      console.log('[MainMenu] ensurePublishedLevelLoaded: set publishedLevelLoading=false');
+      this.logState('ensure:finally');
+    }
+    return false;
+  }
+
+  private logState(where: string) {
+    try {
+      const ptr = this.registry.get('publishedLevelPointer') as
+        | { postId?: string; title?: string }
+        | undefined;
+      const hasLevel = !!this.registry.get('testLevelData');
+      const loading = this.registry.get('publishedLevelLoading') === true;
+      const testMode = this.registry.get('testMode');
+      const buildModeTest = this.registry.get('buildModeTest');
+      console.log(`[MainMenu] State@${where}:`, {
+        pointerPostId: ptr?.postId,
+        pointerTitle: ptr?.title,
+        hasTestLevelData: hasLevel,
+        publishedLevelLoading: loading,
+        testMode,
+        buildModeTest,
+      });
+    } catch (err) {
+      console.warn('[MainMenu] logState error:', err);
     }
   }
 

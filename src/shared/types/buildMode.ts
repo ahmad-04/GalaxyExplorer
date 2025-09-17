@@ -117,6 +117,10 @@ export interface LevelSettings {
   backgroundSpeed: number;
   backgroundTexture: string;
   musicTrack: string;
+  // Canonical playable width in pixels for design/runtime alignment
+  playfieldWidth?: number;
+  // Optional horizontal safety margin (pixels) to keep entities fully visible
+  playfieldSafeMargin?: number;
   description?: string;
   version: string;
 }

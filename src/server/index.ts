@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import {
   InitResponse,
   IncrementResponse,
@@ -36,16 +37,19 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
     }
 
     try {
+      console.log(`[API] /api/init for postId=${postId}`);
       const count = await redis.get('count');
 
       // If this app is opened from a Reddit post, we may have a published level stored
       let publishedLevel: InitResponse['publishedLevel'] | undefined = undefined;
       if (postId) {
         const levelExists = await redis.exists(`level:${postId}`);
+        console.log(`[API] /api/init: level exists for postId=${postId}? ${!!levelExists}`);
         if (levelExists) {
           // Try to fetch a compact title we stored alongside the level
           const title = (await redis.get(`level:title:${postId}`)) || 'Published Level';
           publishedLevel = { postId, title };
+          console.log('[API] /api/init: returning publishedLevel pointer', publishedLevel);
         }
       }
 
@@ -55,6 +59,7 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
         count: count ? parseInt(count) : 0,
         ...(publishedLevel ? { publishedLevel } : {}),
       };
+      console.log('[API] /api/init response:', base);
       res.json(base);
     } catch (error) {
       console.error(`API Init Error for post ${postId}:`, error);
@@ -102,14 +107,12 @@ router.post<
         // Return existing record if possible
         const permalink = await redis.get(`level:permalink:${existingPostId}`);
         const title = (await redis.get(`level:title:${existingPostId}`)) || `${name}`;
-        res
-          .status(200)
-          .json({
-            postId: existingPostId,
-            permalink: permalink || '',
-            title,
-            createdAt: new Date().toISOString(),
-          });
+        res.status(200).json({
+          postId: existingPostId,
+          permalink: permalink || '',
+          title,
+          createdAt: new Date().toISOString(),
+        });
         return;
       }
     }
@@ -118,13 +121,11 @@ router.post<
     const rawSize = Buffer.byteLength(JSON.stringify(levelData), 'utf8');
     const MAX_BYTES = 200 * 1024; // 200 KB
     if (rawSize > MAX_BYTES) {
-      res
-        .status(413)
-        .json({
-          status: 'error',
-          message: 'Level too large to publish',
-          code: 'payload_too_large',
-        });
+      res.status(413).json({
+        status: 'error',
+        message: 'Level too large to publish',
+        code: 'payload_too_large',
+      });
       return;
     }
 
@@ -200,21 +201,34 @@ router.get<Record<string, never>, GetLevelResponse | { status: string; message: 
     try {
       const query = req.query as { postId?: string };
       const effectivePostId = query.postId || context.postId;
+      console.log('[API] /api/level request:', {
+        queryPostId: query.postId,
+        contextPostId: context.postId,
+        effectivePostId,
+      });
       if (!effectivePostId) {
         res.status(400).json({ status: 'error', message: 'postId is required' });
         return;
       }
       const levelStr = await redis.get(`level:${effectivePostId}`);
       if (!levelStr) {
+        console.warn(`[API] /api/level: no level found for postId=${effectivePostId}`);
+      }
+      if (!levelStr) {
         res.status(404).json({ status: 'error', message: 'Level not found' });
         return;
       }
-      const etag = `W/"${Buffer.byteLength(levelStr, 'utf8')}-${(await redis.get(`level:title:${effectivePostId}`)) ?? ''}"`;
+      const size = Buffer.byteLength(levelStr, 'utf8');
+      const hash = crypto.createHash('sha1').update(levelStr).digest('hex');
+      const etag = `W/"${size}-${hash}"`;
       res.setHeader('ETag', etag);
+      console.log('[API] /api/level: generated ETag', etag);
       if (req.headers['if-none-match'] === etag) {
+        console.log('[API] /api/level: returning 304 Not Modified');
         res.status(304).end();
         return;
       }
+      console.log('[API] /api/level: returning level json for postId', effectivePostId);
       res.json({ postId: effectivePostId, level: JSON.parse(levelStr), etag });
     } catch (error) {
       console.error('[API] Error in /api/level:', error);

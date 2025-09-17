@@ -120,6 +120,9 @@ export class DesignStep {
     // Set up events
     this.setupEvents();
 
+    // Ensure a visible Player Start marker exists for first-time/new levels
+    this.ensureDefaultPlayerStartIfMissing();
+
     // Keep inline test utilities referenced for optional developer use
     void this.startInlineTest;
     void this.stopInlineTest;
@@ -243,7 +246,8 @@ export class DesignStep {
     this.bgRect.setOrigin(0, 0);
     this.container.add(this.bgRect);
 
-    // Create grid
+    // Create grid (after computing an initial grid size that yields a nice column count)
+    this.configureGridSizeForPlayfield();
     this.createGrid();
 
     // Grid controls removed (grid is fixed-size and always toggleable via code)
@@ -371,6 +375,8 @@ export class DesignStep {
         | Phaser.GameObjects.Graphics
         | undefined;
       if (gridGraphics && this.manager.isGridVisible()) {
+        // Keep a nice horizontal column count on size changes
+        this.configureGridSizeForPlayfield();
         this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
       }
     };
@@ -403,6 +409,7 @@ export class DesignStep {
         | Phaser.GameObjects.Graphics
         | undefined;
       if (gridGraphics && this.manager.isGridVisible()) {
+        this.configureGridSizeForPlayfield();
         this.updateGridDisplay(gridGraphics, this.manager.getGridSize(), true);
       }
 
@@ -437,6 +444,17 @@ export class DesignStep {
       }
     };
     this.scene.events.on('ui:header:heightChanged', this.headerHeightHandler);
+  }
+
+  // Choose a grid size that produces exactly 20 columns across the current viewport width
+  // Constrain to 8..96 pixels and step to multiples of 2.
+  private configureGridSizeForPlayfield(): void {
+    const viewportWidth = this.scene.scale.width;
+    const targetColumns = 20;
+    let size = Math.max(8, Math.min(96, Math.round(viewportWidth / targetColumns)));
+    // snap to even values to avoid 1px artifacts on some devices
+    if (size % 2 === 1) size += 1;
+    this.manager.setGridSize(size);
   }
 
   /**
@@ -553,29 +571,27 @@ export class DesignStep {
       return;
     }
 
-    // Get viewport dimensions and camera position
+    // Get camera (for vertical range only) and viewport size for horizontal span
     const camera = this.scene.cameras.main;
-    const viewport = {
-      width: this.scene.scale.width,
-      height: this.scene.scale.height, // Draw across full scene height
-    };
+    const viewportWidth = this.scene.scale.width;
+    const viewportHeight = this.scene.scale.height;
 
-    // Calculate grid boundaries based on camera position
-    const startX = Math.floor(camera.scrollX / gridSize) * gridSize - gridSize;
+    // Compute vertical draw range, only upwards from origin (y <= 0)
     const rawStartY = Math.floor(camera.scrollY / gridSize) * gridSize - gridSize;
-    const endX = startX + viewport.width + gridSize * 2;
-    const rawEndY = rawStartY + viewport.height + gridSize * 2;
-
-    // Only render grid upwards from origin (y <= 0)
+    const rawEndY = rawStartY + viewportHeight + gridSize * 2;
     const yLimit = 0;
     const startY = Math.min(rawStartY, yLimit);
     const endY = Math.min(rawEndY, yLimit);
 
+    // Always show exactly 20 columns horizontally
+    const leftEdge = 0;
+    const rightEdge = gridSize * 20;
+
     // Subtle minor grid lines
     graphics.lineStyle(1, 0x3b4756, 0.5);
 
-    // Draw vertical lines (clamped to y <= 0)
-    for (let x = startX; x <= endX; x += gridSize) {
+    // Draw vertical lines across the playfield width only
+    for (let x = leftEdge; x <= rightEdge + 0.0001; x += gridSize) {
       graphics.beginPath();
       graphics.moveTo(x, startY);
       graphics.lineTo(x, endY);
@@ -585,33 +601,61 @@ export class DesignStep {
     // Draw horizontal lines (only y <= 0)
     for (let y = startY; y <= endY; y += gridSize) {
       graphics.beginPath();
-      graphics.moveTo(startX, y);
-      graphics.lineTo(endX, y);
+      graphics.moveTo(leftEdge, y);
+      graphics.lineTo(rightEdge, y);
       graphics.strokePath();
     }
 
     // Subtle major grid lines (every 5 cells)
     const majorGridSize = gridSize * 5;
-    const majorStartX = Math.floor(camera.scrollX / majorGridSize) * majorGridSize;
     const rawMajorStartY = Math.floor(camera.scrollY / majorGridSize) * majorGridSize;
     const majorStartY = Math.min(rawMajorStartY, yLimit);
 
     graphics.lineStyle(1, 0x4a5568, 0.6);
 
-    // Draw major vertical lines (clamped)
-    for (let x = majorStartX; x <= endX; x += majorGridSize) {
+    // Draw major vertical lines (within playfield)
+    const firstMajorX = 0; // origin aligned
+    for (let x = firstMajorX; x <= rightEdge + 0.0001; x += majorGridSize) {
       graphics.beginPath();
       graphics.moveTo(x, startY);
       graphics.lineTo(x, endY);
       graphics.strokePath();
     }
 
-    // Draw major horizontal lines (only y <= 0)
+    // Draw major horizontal lines (only y <= 0) within playfield
     for (let y = majorStartY; y <= endY; y += majorGridSize) {
       graphics.beginPath();
-      graphics.moveTo(startX, y);
-      graphics.lineTo(endX, y);
+      graphics.moveTo(leftEdge, y);
+      graphics.lineTo(rightEdge, y);
       graphics.strokePath();
+    }
+
+    // Draw playfield width bounds as subtle vertical lines if settings available
+    try {
+      // Draw playfield safe margins if present (for reference)
+      // Note: Grid width is viewport-driven (20 columns), overlay may not align exactly with arbitrary playfield widths.
+      const idForBounds = this.levelId || this.manager.getCurrentLevelId();
+      const levelForBounds = idForBounds ? this.service.loadLevel(idForBounds) : null;
+      const width = levelForBounds?.settings?.playfieldWidth || viewportWidth;
+      const margin = Math.max(0, levelForBounds?.settings?.playfieldSafeMargin || 0);
+      const leftX = 0 + margin;
+      const rightX = width - margin;
+      graphics.lineStyle(2, 0x60a5fa, 0.5);
+      // Clamp to our current start/end
+      const gyStart = startY;
+      const gyEnd = endY;
+      // Left bound
+      graphics.beginPath();
+      graphics.moveTo(leftX, gyStart);
+      graphics.lineTo(leftX, gyEnd);
+      graphics.strokePath();
+      // Right bound
+      graphics.beginPath();
+      graphics.moveTo(rightX, gyStart);
+      graphics.lineTo(rightX, gyEnd);
+      graphics.strokePath();
+    } catch {
+      // ignore drawing issues
     }
 
     // No axes/origin for cleaner look matching mockup
@@ -1054,6 +1098,19 @@ export class DesignStep {
 
       // Shortcut P previously toggled properties panel; now unused
     }
+
+    // Update coordinate readout as the mouse moves across the canvas
+    this.scene.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      // Ignore if pointer is over sticky UI (palette/top/status) so numbers reflect canvas
+      if (this.isPointerOverAnyUi(p)) return;
+      this.updateStatusBarCoords(p);
+    });
+
+    // Also update immediately on click-down to feel snappy
+    this.scene.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.isPointerOverAnyUi(p)) return;
+      this.updateStatusBarCoords(p);
+    });
   }
 
   /**
@@ -1283,7 +1340,9 @@ export class DesignStep {
     const gx = this.manager.getGridSize();
     const snappedX = Math.round(p.x / gx) * gx;
     const snappedY = Math.round(p.y / gx) * gx;
-    this.statusTextCoords.setText(`(${snappedX}, ${snappedY})`);
+    // Display Y as positive (editor uses upward-negative world Y); clamp at 0 for safety
+    const displayY = Math.max(0, -snappedY);
+    this.statusTextCoords.setText(`(${snappedX}, ${displayY})`);
     this.layoutStatusBarText();
   }
 
@@ -1403,6 +1462,55 @@ export class DesignStep {
     this.manager.setDirty(true);
   }
 
+  // Ensure there's a Player Start marker; if none, add one near the bottom center
+  private ensureDefaultPlayerStartIfMissing(): void {
+    // Do not add during inline test
+    if (this.inlineTesting) return;
+    const hasPlayerStart = this.entities.some((e) => {
+      const ed = e.getData('entityData') as BaseEntity | undefined;
+      return ed?.type === EntityType.PLAYER_START;
+    });
+    if (hasPlayerStart) return;
+
+    // Compute a good default position: centered horizontally, just above y=0
+    const cam = this.scene.cameras.main;
+    const gx = this.manager.getGridSize();
+    // Start from screen center world point
+    const centerWorld = cam.getWorldPoint(this.scene.scale.width / 2, this.scene.scale.height / 2);
+    let x = centerWorld.x;
+    let y = -gx - 25; // one cell above bottom, plus 15px upward offset
+
+    // Clamp horizontally to playfield width and safe margins if available
+    try {
+      const currentLevelId = this.levelId || this.manager.getCurrentLevelId();
+      const level = currentLevelId ? this.service.loadLevel(currentLevelId) : null;
+      const defaultWidth = 960;
+      const w = level?.settings?.playfieldWidth || defaultWidth;
+      const safe = Math.max(0, level?.settings?.playfieldSafeMargin || 0);
+      const minX = 0 + safe;
+      const maxX = w - safe;
+      x = Phaser.Math.Clamp(x, minX, maxX);
+    } catch {
+      // ignore and keep current x
+    }
+
+    // Snap to grid
+    x = Math.round(x / gx) * gx;
+    y = Math.round(y / gx) * gx;
+
+    const playerStart: BaseEntity = {
+      id: `player_start_${Date.now().toString(36)}`,
+      type: EntityType.PLAYER_START,
+      position: { x, y },
+      rotation: 0,
+      scale: 1,
+    };
+    const container = this.createEntityFromData(playerStart);
+    if (container) {
+      this.manager.setDirty(true);
+    }
+  }
+
   // Apply or remove a simple lock visual (tint/outline)
   private applyLockVisual(entity: Phaser.GameObjects.Container, locked: boolean): void {
     const sprite = entity.list[0] as Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
@@ -1514,9 +1622,11 @@ export class DesignStep {
       }
 
       case EntityType.PLAYER_START: {
-        // Player start position (green rectangle)
+        // Player indicator (non-interactive marker)
         sprite = this.scene.add.rectangle(0, 0, 32, 32, 0x00ff00, 0.7);
         sprite.setStrokeStyle(2, 0xffffff);
+        // Mark container locked and non-editable
+        entityContainer.setData('locked', true);
         break;
       }
 
@@ -1574,68 +1684,88 @@ export class DesignStep {
 
     entityContainer.add(label);
 
-    // Make entity interactive
-    sprite.setInteractive({ useHandCursor: true, draggable: true });
+    // Make entity interactive unless it's the Player indicator
+    const isPlayerIndicator = entityData.type === EntityType.PLAYER_START;
+    if (!isPlayerIndicator) {
+      sprite.setInteractive({ useHandCursor: true, draggable: true });
 
-    // Entity selection
-    sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.inlineTesting) return;
-      if (entityContainer.getData('locked')) return;
-      const addToSelection = pointer.event.shiftKey;
-      this.selectEntity(entityContainer, addToSelection);
-      this.manager.setDirty(true);
-      // Always allow dragging: store drag offset
-      entityContainer.setData('dragOffsetX', entityContainer.x - pointer.worldX);
-      entityContainer.setData('dragOffsetY', entityContainer.y - pointer.worldY);
-    });
-
-    // Drag start
-    sprite.on('dragstart', () => {
-      if (this.inlineTesting) return;
-      if (entityContainer.getData('locked')) return;
-      if (!this.manager.getSelectedEntityIds().includes(entityContainer.getData('id'))) {
-        this.selectEntity(entityContainer);
-      }
-    });
-
-    // Drag movement
-    sprite.on('drag', (pointer: Phaser.Input.Pointer) => {
-      if (this.inlineTesting) return;
-      if (entityContainer.getData('locked')) return;
-      // Get the drag offset
-      const offsetX = entityContainer.getData('dragOffsetX') || 0;
-      const offsetY = entityContainer.getData('dragOffsetY') || 0;
-
-      // Calculate new position
-      const newX = pointer.worldX + offsetX;
-      const newY = pointer.worldY + offsetY;
-
-      // Snap to grid if enabled
-      const snappedPosition = this.manager.snapToGridIfEnabled({
-        x: newX,
-        y: newY,
+      // Entity selection
+      sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        if (this.inlineTesting) return;
+        if (entityContainer.getData('locked')) return;
+        const addToSelection = pointer.event.shiftKey;
+        this.selectEntity(entityContainer, addToSelection);
+        this.manager.setDirty(true);
+        // Always allow dragging: store drag offset
+        entityContainer.setData('dragOffsetX', entityContainer.x - pointer.worldX);
+        entityContainer.setData('dragOffsetY', entityContainer.y - pointer.worldY);
       });
 
-      // Update entity position
-      entityContainer.setPosition(snappedPosition.x, snappedPosition.y);
+      // Drag start
+      sprite.on('dragstart', () => {
+        if (this.inlineTesting) return;
+        if (entityContainer.getData('locked')) return;
+        if (!this.manager.getSelectedEntityIds().includes(entityContainer.getData('id'))) {
+          this.selectEntity(entityContainer);
+        }
+      });
 
-      // Mark the level as dirty
-      this.manager.setDirty(true);
-    });
+      // Drag movement with playfield clamps
+      sprite.on('drag', (pointer: Phaser.Input.Pointer) => {
+        if (this.inlineTesting) return;
+        if (entityContainer.getData('locked')) return;
+        // Get the drag offset
+        const offsetX = entityContainer.getData('dragOffsetX') || 0;
+        const offsetY = entityContainer.getData('dragOffsetY') || 0;
 
-    // Drag end
-    sprite.on('dragend', () => {
-      if (this.inlineTesting) return;
-      if (entityContainer.getData('locked')) return;
-      // Update the entity data with the new position
-      const entityData = entityContainer.getData('entityData');
-      if (entityData) {
-        entityData.position = {
-          x: entityContainer.x,
-          y: entityContainer.y,
-        };
-      }
-    });
+        // Calculate new position
+        let newX = pointer.worldX + offsetX;
+        let newY = pointer.worldY + offsetY;
+
+        // Clamp horizontally to playfield width
+        const currentLevelId = this.levelId || this.manager.getCurrentLevelId();
+        const level = currentLevelId ? this.service.loadLevel(currentLevelId) : null;
+        const defaultWidth = 960;
+        const w = level?.settings?.playfieldWidth || defaultWidth;
+        const safe = Math.max(0, level?.settings?.playfieldSafeMargin || 0);
+        const minX = 0 + safe;
+        const maxX = w - safe;
+        if (Number.isFinite(minX) && Number.isFinite(maxX)) {
+          newX = Phaser.Math.Clamp(newX, minX, maxX);
+        }
+        // Prevent dragging below origin
+        newY = Math.min(newY, 0);
+
+        // Snap to grid if enabled
+        const snappedPosition = this.manager.snapToGridIfEnabled({
+          x: newX,
+          y: newY,
+        });
+
+        // Update entity position
+        entityContainer.setPosition(snappedPosition.x, snappedPosition.y);
+
+        // Mark the level as dirty
+        this.manager.setDirty(true);
+      });
+
+      // Drag end
+      sprite.on('dragend', () => {
+        if (this.inlineTesting) return;
+        if (entityContainer.getData('locked')) return;
+        // Update the entity data with the new position
+        const entityData = entityContainer.getData('entityData');
+        if (entityData) {
+          entityData.position = {
+            x: entityContainer.x,
+            y: entityContainer.y,
+          };
+        }
+      });
+    } else {
+      // Ensure no interactivity/cursor for the Player indicator
+      sprite.disableInteractive();
+    }
 
     // Set rotation if specified (allow 0)
     if (typeof entityData.rotation === 'number') {
@@ -1666,7 +1796,7 @@ export class DesignStep {
       }
 
       case EntityType.PLAYER_START: {
-        return 'Player Start';
+        return 'Player';
       }
 
       case EntityType.OBSTACLE: {
@@ -1827,7 +1957,17 @@ export class DesignStep {
     x: number,
     y: number
   ): Phaser.GameObjects.Container | undefined {
-    console.log(`[DesignStep] Placing ${entityType} at (${x}, ${y})`);
+    // Clamp requested position to playfield width and y<=0
+    const currentLevelId = this.levelId || this.manager.getCurrentLevelId();
+    const level = currentLevelId ? this.service.loadLevel(currentLevelId) : null;
+    const defaultWidth = 960;
+    const w = level?.settings?.playfieldWidth || defaultWidth;
+    const safe = Math.max(0, level?.settings?.playfieldSafeMargin || 0);
+    const minX = 0 + safe;
+    const maxX = w - safe;
+    const cx = Phaser.Math.Clamp(x, minX, maxX);
+    const cy = Math.min(y, 0);
+    console.log(`[DesignStep] Placing ${entityType} at (${cx}, ${cy}) (requested ${x}, ${y})`);
 
     // Generate a unique ID for the entity
     const entityId = `entity_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
@@ -1846,7 +1986,7 @@ export class DesignStep {
         entityData = {
           id: entityId,
           type: EntityType.ENEMY_SPAWNER,
-          position: { x, y },
+          position: { x: cx, y: cy },
           rotation: 0,
           scale: 1,
           enemyType: entityType,
@@ -1886,6 +2026,8 @@ export class DesignStep {
         backgroundSpeed: 1,
         backgroundTexture: 'stars',
         musicTrack: 'default',
+        playfieldWidth: 960,
+        playfieldSafeMargin: 16,
         version: '1.0.0',
       });
 
@@ -1929,6 +2071,8 @@ export class DesignStep {
         name: 'My Custom Level',
         author: 'Player',
         difficulty: 1,
+        playfieldWidth: 960,
+        playfieldSafeMargin: 16,
       });
       levelData.id = this.levelId;
     }
@@ -1949,11 +2093,18 @@ export class DesignStep {
     const hasPlayerStart = entities.some((entity) => entity.type === EntityType.PLAYER_START);
     if (!hasPlayerStart) {
       console.log('[DesignStep] Adding default player start position');
-      // Add a default player start at the bottom center
+      // Place at bottom center within playfield margins, one grid cell above y=0
+      const gx = this.manager.getGridSize();
+      const currentLevelId = this.levelId || this.manager.getCurrentLevelId();
+      const level = currentLevelId ? this.service.loadLevel(currentLevelId) : null;
+      const w = level?.settings?.playfieldWidth || this.scene.scale.width;
+      const safe = Math.max(0, level?.settings?.playfieldSafeMargin || 0);
+      const px = Math.round(((w - safe * 2) / 2 + safe) / gx) * gx;
+      const py = Math.round(-gx / gx) * gx; // just above bottom (y<=0)
       const playerStartEntity: BaseEntity = {
         id: `player_start_${Date.now().toString(36)}`,
         type: EntityType.PLAYER_START,
-        position: { x: 400, y: 500 },
+        position: { x: px, y: py },
         rotation: 0,
         scale: 1,
       };

@@ -288,14 +288,23 @@ export class BuildModeService {
       issues.push('Level must have a player start position');
     }
 
-    // Check for entities outside of bounds
-    const outOfBoundsEntities = levelData.entities?.filter(
-      (entity) =>
-        entity.position.x < 0 ||
-        entity.position.x > 3000 ||
-        entity.position.y < 0 ||
-        entity.position.y > 3000
-    );
+    // Determine playfield bounds for validation
+    const defaultWidth = 960;
+    const width = levelData.settings?.playfieldWidth || defaultWidth;
+    const safeMargin = Math.max(0, levelData.settings?.playfieldSafeMargin || 0);
+    const minX = 0 + safeMargin;
+    const maxX = width - safeMargin;
+    const minY = -Infinity; // vertical freeform for now
+    const maxY = 0; // origin at bottom; negative upwards in editor
+
+    // Check for entities outside of horizontal bounds or far outside vertical working area
+    const outOfBoundsEntities = levelData.entities?.filter((entity) => {
+      const x = entity.position.x;
+      const y = entity.position.y;
+      const outX = x < minX || x > maxX;
+      const outY = y > maxY || y < minY; // y>0 is below origin in our editor
+      return outX || outY;
+    });
 
     if (outOfBoundsEntities && outOfBoundsEntities.length > 0) {
       issues.push(`${outOfBoundsEntities.length} entities are outside the level bounds`);
@@ -322,6 +331,8 @@ export class BuildModeService {
         backgroundSpeed: 1,
         backgroundTexture: 'stars',
         musicTrack: 'default',
+        playfieldWidth: settings.playfieldWidth ?? 960,
+        playfieldSafeMargin: settings.playfieldSafeMargin ?? 16,
         version: '1.0.0',
         ...settings,
       },
