@@ -1180,6 +1180,8 @@ export class DesignStep {
     this.statusBarContainer = this.scene.add.container(0, this.scene.scale.height - barHeight);
     // Ensure the status bar remains fixed relative to the camera
     this.statusBarContainer.setScrollFactor(0);
+    // Render above grid/entities so the bar is never overlapped
+    this.statusBarContainer.setDepth(120);
 
     this.statusBg = this.scene.add.rectangle(0, 0, this.scene.scale.width, barHeight, 0x1f2937);
     this.statusBg.setOrigin(0, 0);

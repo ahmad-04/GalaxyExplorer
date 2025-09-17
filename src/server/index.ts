@@ -129,7 +129,7 @@ router.post<
       return;
     }
 
-    // Derive username for title
+    // Derive username for title (prefer actual Reddit username over client-provided display)
     let username = 'Anonymous';
     try {
       const user = await reddit.getCurrentUser();
@@ -137,8 +137,11 @@ router.post<
     } catch {
       /* ignore */
     }
-    const author = (authorDisplay || username).replace(/^u\//, '');
-    const title = `${author} (u/${author})’s ${name}`; // uses right single quote
+    // Prefer Reddit username; fall back to sanitized authorDisplay, then Anonymous
+    const preferred = username || (authorDisplay ? String(authorDisplay) : 'Anonymous');
+    const author = preferred.replace(/^u\//, '');
+    // Final title format: u/<username>’s <LevelName>
+    const title = `u/${author}’s ${name}`; // uses right single quote
 
     // Create a temporary key for level; postId not known yet, so store after creation
     // Create the Reddit post first (postData must be tiny)
