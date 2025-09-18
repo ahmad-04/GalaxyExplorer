@@ -3,7 +3,6 @@ import * as Phaser from 'phaser';
 import { submitScore, getLeaderboard } from '../api';
 import { BackgroundManager } from '../services/BackgroundManager';
 import { titleText, bodyText, createPanel, createButton } from '../ui/UiKit';
-import { shineSweep } from '../effects/Effects';
 // TODO: Update below to the correct location of the Score type if it exists elsewhere.
 // import { Score } from '../../shared/types/api';
 
@@ -95,7 +94,7 @@ export class GameOver extends Scene {
       .setScale(0.9)
       .setAlpha(0);
     this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 700, ease: 'Back.out' });
-    this.time.delayedCall(700, () => shineSweep(this, title.y));
+    // Shine sweep removed
 
     // Submit score and get leaderboard
     try {

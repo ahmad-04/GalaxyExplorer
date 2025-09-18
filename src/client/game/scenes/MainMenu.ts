@@ -8,7 +8,7 @@ import {
   createButton,
   createPanel,
 } from '../ui/UiKit';
-import { shineSweep } from '../effects/Effects';
+// shineSweep removed
 
 export class MainMenu extends Phaser.Scene {
   private spaceKey!: Phaser.Input.Keyboard.Key;
@@ -76,8 +76,7 @@ export class MainMenu extends Phaser.Scene {
     });
 
     // Title and subtitle using UiKit
-    const title = uiTitleText(this, this.scale.width / 2, 100, 'GALAXY EXPLORER');
-    this.time.delayedCall(600, () => shineSweep(this, title.y));
+    uiTitleText(this, this.scale.width / 2, 100, 'GALAXY EXPLORER');
     uiBodyText(this, this.scale.width / 2, 170, 'CONQUER THE COSMOS', 24);
 
     // Buttons using UiKit

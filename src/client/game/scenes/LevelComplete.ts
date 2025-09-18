@@ -2,7 +2,6 @@ import { Scene } from 'phaser';
 import * as Phaser from 'phaser';
 import { createPanel, createButton, titleText, bodyText } from '../ui/UiKit';
 import { BackgroundManager } from '../services/BackgroundManager';
-import { shineSweep } from '../effects/Effects';
 
 type LevelCompleteData = {
   score: number;
@@ -65,13 +64,11 @@ export class LevelComplete extends Scene {
     );
 
     // Title
-    const title = titleText(this, this.scale.width / 2, this.panelY + 40, 'Level Complete!')
+    titleText(this, this.scale.width / 2, this.panelY + 40, 'Level Complete!')
       .setScale(0.85)
       .setAlpha(0);
-    this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 700, ease: 'Back.out' });
 
-    // Shine sweep across title
-    this.time.delayedCall(700, () => shineSweep(this, title.y));
+    // Shine sweep removed
 
     // Subtitle (level name)
     if (this.levelName) {
