@@ -13,6 +13,8 @@ enum PowerUpType {
 export class StarshipScene extends Phaser.Scene {
   private shipPrimary!: Phaser.Physics.Arcade.Sprite;
   private ship!: Phaser.Physics.Arcade.Sprite; // Main ship reference for physics
+  private engineFx?: Phaser.GameObjects.Sprite;
+  private engineModule?: Phaser.GameObjects.Sprite;
   private bullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private powerUps!: Phaser.Physics.Arcade.Group;
@@ -39,12 +41,7 @@ export class StarshipScene extends Phaser.Scene {
   private difficulty = 1;
   private starScrollDir = -1; // -1 = up, 1 = down (reversed)
   private shipAcceleration = 220;
-  private shipConfig!: {
-    ship: string;
-    primaryTint: number;
-    secondaryTint: number;
-    combinedTextureKey?: string;
-  };
+  // Single-ship approach: Aseprite main ship only
   // Flag to track if collision detection is active
   private collisionsActive = false;
 
@@ -77,6 +74,10 @@ export class StarshipScene extends Phaser.Scene {
   // Logging + timing
   private runId = '';
   private levelStartTime = 0;
+  // Resolved ship animation keys (handles different naming patterns)
+  private shipAnims: Partial<{ idle: string; thrust: string; left: string; right: string }> = {};
+  // Post-update handler to sync engine FX to ship after physics step
+  private syncEnginePos: (() => void) | undefined;
 
   constructor(config?: { key?: string }) {
     super({ key: config?.key ?? 'StarshipScene' });
@@ -176,44 +177,12 @@ export class StarshipScene extends Phaser.Scene {
       this.scoreMultiplierTimer = null as unknown as Phaser.Time.TimerEvent;
     }
 
-    // If we have data passed directly, use it
-    if (data && Object.keys(data).length > 0) {
-      this.shipConfig = {
-        ship: data.ship || 'ship',
-        primaryTint: data.primaryTint || 0xffffff,
-        secondaryTint: data.secondaryTint || 0xffffff,
-      };
-
-      // Only add combinedTextureKey if it exists
-      if (data.combinedTextureKey) {
-        this.shipConfig.combinedTextureKey = data.combinedTextureKey;
-      }
-
-      console.log('Using ship config from scene data:', this.shipConfig);
-    }
-    // Otherwise check if there's config in the registry
-    else {
-      const registryConfig = this.registry.get('shipConfig');
-      if (registryConfig) {
-        this.shipConfig = registryConfig;
-        console.log('Using ship config from registry:', this.shipConfig);
-      }
-      // Fall back to defaults if nothing is available
-      else {
-        this.shipConfig = {
-          ship: 'ship',
-          primaryTint: 0xffffff,
-          secondaryTint: 0xffffff,
-        };
-        console.log('Using default ship config');
-      }
-    }
+    // Ignore external ship configs; we always use the Aseprite main ship
   }
 
   preload(): void {
     // Load from Vite publicDir (src/client/public) => served at /assets/*
-    this.load.image('ship', '/assets/ship.png');
-    this.load.image('ShipClassic', '/assets/ShipClassic.png');
+    // Legacy ship images removed; main ship comes from Aseprite (loaded in LoadingScene)
     this.load.image('bullet', '/assets/bullet.png');
     this.load.image('enemy', '/assets/enemy.png');
 
@@ -234,9 +203,7 @@ export class StarshipScene extends Phaser.Scene {
 
     // Skip loading powerup sprite to avoid noise; we create fallback textures when needed
 
-    // Always load galactic ship parts to ensure they're available if needed
-    this.load.image('glacticShipPrimary', '/assets/glacticShipPrimary.png');
-    this.load.image('glacticShipSecondary', '/assets/glacticShipSecondary.png');
+    // Remove galactic ship parts; not used with Aseprite main ship
 
     this.load.audio('shoot', '/assets/SpaceShipClassicShootingSFX.wav'); // optional
     this.load.audio('boom', '/assets/Boom.wav'); // optional
@@ -291,19 +258,16 @@ export class StarshipScene extends Phaser.Scene {
 
     console.log('[StarshipScene] Physics should now be active');
 
-    // Enable Arcade physics debug in this scene only
+    // Ensure Arcade physics debug overlay is disabled (removes purple ring)
     try {
-      if (!this.physics.world.debugGraphic) {
-        this.physics.world.createDebugGraphic();
+      this.physics.world.drawDebug = false;
+      if (this.physics.world.debugGraphic) {
+        this.physics.world.debugGraphic.clear();
+        this.physics.world.debugGraphic.setVisible(false);
       }
-      this.physics.world.drawDebug = true;
-      // Keep debug overlay above gameplay
-      if (this.physics.world.debugGraphic?.setDepth) {
-        this.physics.world.debugGraphic.setDepth(1000);
-      }
-      console.log('[StarshipScene] Arcade debug enabled for this scene');
+      console.log('[StarshipScene] Arcade debug disabled for this scene');
     } catch (e) {
-      console.warn('[StarshipScene] Failed to enable arcade debug:', e);
+      console.warn('[StarshipScene] Failed to disable arcade debug:', e);
     }
 
     // Clear existing starfield if present to prevent duplicate backgrounds on restart
@@ -333,6 +297,9 @@ export class StarshipScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-10);
+
+    // Improve pixel stability for sprite movement
+    this.cameras.main.roundPixels = true;
 
     // Resolve all textures or create fallbacks to avoid green boxes
     this.ensureTextures(true); // Skip stars since we've already handled them
@@ -365,25 +332,86 @@ export class StarshipScene extends Phaser.Scene {
     const shipX = w / 2;
     const shipY = h - 80;
 
-    if (this.shipConfig.ship === 'galactic' && this.shipConfig.combinedTextureKey) {
-      // Use the combined texture for the galactic ship
-      this.shipPrimary = this.physics.add.sprite(shipX, shipY, this.shipConfig.combinedTextureKey);
-      // No need for tinting as the texture already has the colors applied
-      this.setupShip(this.shipPrimary, true);
-    } else if (this.shipConfig.ship === 'galactic') {
-      // Fallback if no combined texture is available
-      this.shipPrimary = this.physics.add.sprite(shipX, shipY, 'glacticShipPrimary');
-      this.shipPrimary.setTint(this.shipConfig.primaryTint || 0xffffff);
-      this.setupShip(this.shipPrimary, true);
-    } else {
-      // Single-layer ship
-      this.shipPrimary = this.physics.add.sprite(
-        shipX,
-        shipY,
-        this.shipConfig.ship || this.tex.ship
-      );
-      this.shipPrimary.setTint(this.shipConfig.primaryTint || 0xffffff);
-      this.setupShip(this.shipPrimary, true);
+    // Create Aseprite main ship
+    const shipKey = this.textures.exists('mainShip') ? 'mainShip' : this.tex.ship;
+    this.shipPrimary = this.physics.add.sprite(shipX, shipY, shipKey);
+    this.setupShip(this.shipPrimary, true);
+    // Resolve and play initial animation
+    const idleKey = this.resolveShipAnim('Idle');
+    if (idleKey) this.shipAnims.idle = idleKey;
+    const thrustKey = this.resolveShipAnim('Thrust');
+    if (thrustKey) this.shipAnims.thrust = thrustKey;
+    const leftKey = this.resolveShipAnim('TurnLeft');
+    if (leftKey) this.shipAnims.left = leftKey;
+    const rightKey = this.resolveShipAnim('TurnRight');
+    if (rightKey) this.shipAnims.right = rightKey;
+    const startKey = this.shipAnims.idle || this.shipAnims.thrust;
+    if (startKey) this.shipPrimary.play({ key: startKey, repeat: -1 });
+
+    // Attach engine effect sprite (behind the ship)
+    if (this.textures.exists('engineBaseIdle') || this.textures.exists('engineBasePower')) {
+      const fxKey = this.textures.exists('engineBaseIdle') ? 'engineBaseIdle' : 'engineBasePower';
+      this.engineFx = this.add.sprite(shipX, shipY, fxKey);
+      // Scale engine to roughly match ship scaling (ship is displayed at 128x128 from 48x48 source)
+      const shipScale = this.shipPrimary.displayWidth / 48;
+      this.engineFx.setScale(shipScale);
+      this.engineFx.setBlendMode(Phaser.BlendModes.ADD);
+      // Try to use a pivot/origin from frame (Aseprite exports may have it)
+      const setOriginFromFrame = (this.engineFx as unknown as { setOriginFromFrame?: () => void })
+        .setOriginFromFrame;
+      if (typeof setOriginFromFrame === 'function') {
+        setOriginFromFrame.call(this.engineFx);
+      } else {
+        // Anchor top-center so the flame's top stays at the nozzle point
+        this.engineFx.setOrigin(0.5, 0);
+      }
+      // Default to idle loop if available
+      try {
+        const idleAnim =
+          this.resolveEngineAnim('Idle', fxKey) ||
+          (this.anims.exists('engineIdle') ? 'engineIdle' : undefined);
+        if (idleAnim) this.engineFx.play({ key: idleAnim, repeat: -1 });
+      } catch (e) {
+        void e;
+      }
+      // Sync engine FX position after physics step to prevent perceptible lag.
+      this.syncEnginePos = () => {
+        if (!this.engineFx || !this.shipPrimary) return;
+        const engineBaseOffset = this.shipPrimary.displayHeight * 0;
+        this.engineFx.x = this.shipPrimary.x;
+        this.engineFx.y = this.shipPrimary.y + engineBaseOffset;
+      };
+      this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.syncEnginePos, this);
+    }
+
+    // Attach engine module (between flame and ship) if available
+    if (this.textures.exists('engineModule')) {
+      this.engineModule = this.add
+        .sprite(shipX, shipY, 'engineModule')
+        .setDepth(this.shipPrimary.depth - 1);
+      // Ensure flame sits behind module, and module behind ship
+      if (this.engineFx) this.engineFx.setDepth(this.shipPrimary.depth - 2);
+      // Scale and origin to match ship proportions
+      const shipScale = this.shipPrimary.displayWidth / 48;
+      this.engineModule.setScale(shipScale);
+      const setOriginFromFrame = (
+        this.engineModule as unknown as { setOriginFromFrame?: () => void }
+      ).setOriginFromFrame;
+      if (typeof setOriginFromFrame === 'function') {
+        setOriginFromFrame.call(this.engineModule);
+      } else {
+        this.engineModule.setOrigin(0.5, 0.5);
+      }
+      // Keep engine module aligned to ship after physics
+      const syncModule = () => {
+        if (!this.engineModule || !this.shipPrimary) return;
+        this.engineModule.x = this.shipPrimary.x;
+        this.engineModule.y = this.shipPrimary.y;
+      };
+      this.events.on(Phaser.Scenes.Events.POST_UPDATE, syncModule, this);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.events.off(Phaser.Scenes.Events.POST_UPDATE, syncModule, this);
+      });
     }
 
     // Input
@@ -459,6 +487,13 @@ export class StarshipScene extends Phaser.Scene {
         console.warn('[StarshipScene] isBuildModeTest flag is not set');
       }
 
+      // Clean up post-update listener on shutdown to avoid leaks
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        if (this.syncEnginePos) {
+          this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.syncEnginePos, this);
+          this.syncEnginePos = undefined;
+        }
+      });
       // Start enemy spawning - faster initial spawn rate for immediate action
       console.log('[StarshipScene] Using default enemy spawning');
       this.enemyManager.startSpawning(900);
@@ -499,8 +534,29 @@ export class StarshipScene extends Phaser.Scene {
     // Use default speed values
     const speedMultiplier = 1;
 
-    ship.setOrigin(0.5).setAngle(-90);
+    // Respect Aseprite per-frame pivot if present; else center origin
+    try {
+      const frameAny = ship.frame as unknown as { customPivot?: boolean };
+      const hasPivot = !!frameAny?.customPivot;
+      const setOriginFromFrame = (ship as unknown as { setOriginFromFrame?: () => void })
+        .setOriginFromFrame;
+      if (hasPivot && typeof setOriginFromFrame === 'function') {
+        (ship as unknown as { setOriginFromFrame: () => void }).setOriginFromFrame();
+      } else {
+        ship.setOrigin(0.5);
+      }
+    } catch (_err) {
+      void _err;
+      ship.setOrigin(0.5);
+    }
     ship.setDisplaySize(128, 128);
+    // Normalize physics to account for trimmed frames
+    try {
+      const maybeSizer = ship as unknown as { setSizeToFrame?: () => void };
+      if (typeof maybeSizer.setSizeToFrame === 'function') maybeSizer.setSizeToFrame();
+    } catch (_err) {
+      void _err;
+    }
 
     if (isPrimary) {
       // Set this as the main ship reference
@@ -528,7 +584,7 @@ export class StarshipScene extends Phaser.Scene {
       body.setCircle(radius, offsetX, offsetY);
       body.allowRotation = false;
       ship.setAngularVelocity(0);
-      ship.setRotation(Phaser.Math.DegToRad(-90));
+      ship.setRotation(0);
     }
   }
 
@@ -645,7 +701,8 @@ export class StarshipScene extends Phaser.Scene {
       vy *= inv;
     }
 
-    if (vx !== 0 || vy !== 0) {
+    const wasMoving = vx !== 0 || vy !== 0;
+    if (wasMoving) {
       this.ship.setVelocity(vx, vy);
     } else {
       // quick damping when no input for more responsive controls
@@ -653,7 +710,45 @@ export class StarshipScene extends Phaser.Scene {
       this.ship.setVelocity(body.velocity.x * 0.95, body.velocity.y * 0.95);
     }
 
-    // Shooting (unchanged — bullets go up since ship is fixed at -90°)
+    // Animate engine based on thrust (position is synced in POST_UPDATE)
+    if (this.engineFx && this.shipPrimary) {
+      try {
+        const targetAnim = up
+          ? this.resolveEngineAnim('Powering') ||
+            (this.anims.exists('enginePower') ? 'enginePower' : undefined)
+          : this.resolveEngineAnim('Idle') ||
+            (this.anims.exists('engineIdle') ? 'engineIdle' : undefined);
+        if (targetAnim && this.engineFx.anims?.currentAnim?.key !== targetAnim) {
+          this.engineFx.play({ key: targetAnim, repeat: -1 });
+        }
+      } catch (e) {
+        void e;
+      }
+    }
+
+    // Drive Aseprite animations if available
+    try {
+      if (this.shipPrimary.anims) {
+        if (wasMoving) {
+          const key = left ? this.shipAnims.left : right ? this.shipAnims.right : undefined;
+          if (key && this.shipPrimary.anims.currentAnim?.key !== key) {
+            this.shipPrimary.play(key);
+          } else if (this.shipAnims.thrust) {
+            if (this.shipPrimary.anims.currentAnim?.key !== this.shipAnims.thrust) {
+              this.shipPrimary.play(this.shipAnims.thrust);
+            }
+          }
+        } else if (this.shipAnims.idle) {
+          if (this.shipPrimary.anims.currentAnim?.key !== this.shipAnims.idle) {
+            this.shipPrimary.play(this.shipAnims.idle);
+          }
+        }
+      }
+    } catch (_err) {
+      void _err;
+    }
+
+    // Shooting (always fire bullets upward)
     if (fire && time > this.lastFired) {
       const bullet = this.bullets.create(
         this.ship.x,
@@ -663,8 +758,9 @@ export class StarshipScene extends Phaser.Scene {
       if (bullet?.body) {
         const body = bullet.body as Phaser.Physics.Arcade.Body;
         body.setAllowGravity(false);
-        bullet.setRotation(this.ship.rotation); // stays -90
-        this.physics.velocityFromRotation(this.ship.rotation, 750, body.velocity); // Super fast bullets
+        const upRad = Phaser.Math.DegToRad(-90);
+        bullet.setRotation(upRad);
+        this.physics.velocityFromRotation(upRad, 750, body.velocity); // Super fast bullets upward
         this.time.delayedCall(1400, () => bullet.destroy()); // Even longer bullet lifetime
         this.lastFired = time + this.fireRate;
         this.shootSfx?.play();
@@ -684,6 +780,57 @@ export class StarshipScene extends Phaser.Scene {
         this.shieldObject.y = this.player.y;
       }
     }
+  }
+
+  // Try common animation key variants for Aseprite tags created via createFromAseprite
+  private resolveShipAnim(tag: string): string | undefined {
+    const candidates = [
+      tag,
+      `mainShip_${tag}`,
+      `mainship_${tag}`,
+      `mainShip-${tag}`,
+      `mainShip:${tag}`,
+      `mainShip/${tag}`,
+      `${tag}_mainShip`,
+      `${tag}_mainship`,
+    ];
+    for (const key of candidates) {
+      try {
+        if (this.anims.exists(key)) return key;
+      } catch {
+        // ignore
+      }
+    }
+    return undefined;
+  }
+
+  // Resolve engine animation keys across possible prefixes
+  private resolveEngineAnim(tag: string, baseKey?: string): string | undefined {
+    const engineTextureKeys = new Set(['engineBaseIdle', 'engineBasePower']);
+    const candidates = [
+      baseKey ? `${baseKey}_${tag}` : undefined,
+      baseKey ? `${baseKey}-${tag}` : undefined,
+      baseKey ? `${baseKey}:${tag}` : undefined,
+      baseKey ? `${baseKey}/${tag}` : undefined,
+      baseKey ? `${baseKey}${tag}` : undefined,
+      `engine_${tag}`,
+      `Engine_${tag}`,
+      `Base_${tag}`,
+      `Idle_${tag}`,
+      tag,
+    ].filter(Boolean) as string[];
+    for (const key of candidates) {
+      try {
+        const anim = this.anims.get(key);
+        const firstFrameTex = anim?.frames?.[0]?.textureKey as string | undefined;
+        if (anim && firstFrameTex && engineTextureKeys.has(firstFrameTex)) {
+          return key;
+        }
+      } catch (e) {
+        void e;
+      }
+    }
+    return undefined;
   }
 
   private wrap(obj: Phaser.GameObjects.GameObject): void {

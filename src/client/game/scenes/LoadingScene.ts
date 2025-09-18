@@ -18,6 +18,33 @@ export class LoadingScene extends Phaser.Scene {
     this.load.image('bullet', '/assets/bullet.png');
     this.load.image('enemy', '/assets/enemy.png');
     this.load.audio('boom', '/assets/Boom.wav');
+
+    // Load Aseprite-exported main ship (spritesheet + JSON)
+    this.load.aseprite(
+      'mainShip',
+      '/assets/Void_MainShip/export/main_ship.png',
+      '/assets/Void_MainShip/export/main_ship.json'
+    );
+
+    // Load engine effects (optional; will be ignored if missing on disk)
+    // Base engine module (static or tagged); exported PNG+JSON expected in export/
+    this.load.aseprite(
+      'engineModule',
+      '/assets/Void_MainShip/export/engine_module.png',
+      '/assets/Void_MainShip/export/engine_module.json'
+    );
+    // Base engine idle
+    this.load.aseprite(
+      'engineBaseIdle',
+      '/assets/Void_MainShip/export/engine_base_idle.png',
+      '/assets/Void_MainShip/export/engine_base_idle.json'
+    );
+    // Base engine powering
+    this.load.aseprite(
+      'engineBasePower',
+      '/assets/Void_MainShip/export/engine_base_power.png',
+      '/assets/Void_MainShip/export/engine_base_power.json'
+    );
   }
 
   create() {
@@ -84,6 +111,50 @@ export class LoadingScene extends Phaser.Scene {
     // Start loading process and update external splash
     this.hookSplashProgress('Initializing...');
     void this.startLoading();
+
+    // Register animations from Aseprite once available
+    try {
+      if (this.textures.exists('mainShip')) {
+        this.anims.createFromAseprite('mainShip');
+      }
+      if (this.textures.exists('engineModule')) {
+        this.anims.createFromAseprite('engineModule');
+      }
+      if (this.textures.exists('engineBaseIdle')) {
+        this.anims.createFromAseprite('engineBaseIdle');
+      }
+      if (this.textures.exists('engineBasePower')) {
+        this.anims.createFromAseprite('engineBasePower');
+      }
+
+      // Fallback: if tags weren't exported, build simple looping animations from frames
+      const ensureFramesAnim = (texKey: string, animKey: string, frameRate = 10) => {
+        try {
+          if (!this.textures.exists(texKey) || this.anims.exists(animKey)) return;
+          const tex = this.textures.get(texKey);
+          // getFrameNames() returns frame names; sort to keep numeric order if present
+          const names = tex
+            .getFrameNames()
+            .filter((n) => n !== '__BASE')
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+          if (names.length > 0) {
+            this.anims.create({
+              key: animKey,
+              frames: names.map((n) => ({ key: texKey, frame: n })),
+              frameRate,
+              repeat: -1,
+            });
+          }
+        } catch {
+          /* noop */
+        }
+      };
+
+      ensureFramesAnim('engineBaseIdle', 'engineIdle', 8);
+      ensureFramesAnim('engineBasePower', 'enginePower', 14);
+    } catch {
+      // Non-fatal if not present yet; StarshipScene can lazily handle if needed
+    }
   }
 
   private updateLoadingDots() {
@@ -230,7 +301,7 @@ export class LoadingScene extends Phaser.Scene {
 
   private async waitForAssetsReady(): Promise<void> {
     // Check if all essential textures are loaded
-    const essentialTextures = ['ship', 'bullet', 'enemy'];
+    const essentialTextures = ['bullet', 'enemy', 'mainShip'];
 
     return new Promise((resolve) => {
       const checkAssets = () => {
@@ -240,6 +311,12 @@ export class LoadingScene extends Phaser.Scene {
 
         if (allLoaded) {
           console.log('[LoadingScene] All essential assets are ready');
+          // Ensure Aseprite animations are registered
+          try {
+            this.anims.createFromAseprite('mainShip');
+          } catch {
+            // ignore if already created
+          }
           resolve();
         } else {
           // Check again in next frame
