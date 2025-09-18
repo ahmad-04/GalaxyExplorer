@@ -13,6 +13,8 @@ import {
   EnemySpawnerType,
   LevelData,
 } from '../../../../shared/types/buildMode';
+import { createHeaderPanel, createPillButton } from '../../ui/UiKit';
+import { theme } from '../../../theme';
 
 /**
  * Design step in the Build Mode workflow
@@ -36,8 +38,10 @@ export class DesignStep {
   private entityPaletteContainer!: Phaser.GameObjects.Container;
   private paletteRevealButton?: Phaser.GameObjects.Container;
   private bgRect!: Phaser.GameObjects.Rectangle;
-  private backNavText!: Phaser.GameObjects.Text;
-  private nextNavText!: Phaser.GameObjects.Text;
+  private testBtnContainer?: Phaser.GameObjects.Container;
+  private publishBtnContainer?: Phaser.GameObjects.Container;
+  private testBtnWidth: number = 110;
+  private publishBtnWidth: number = 120;
   // Save button
   private saveButtonContainer?: Phaser.GameObjects.Container;
   // No header title text in the new design
@@ -274,65 +278,16 @@ export class DesignStep {
     // Add save button
     this.createSaveButton();
 
-    // Add top-left Back button styled like Save
+    // Add top-left Back button and bottom status bar
     this.createTopBackButton();
-
-    // Create top sticky bar background to match bottom status bar
-    const initialHeaderHeight = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-    const topBarHeight = Math.max(48, initialHeaderHeight);
-    this.topBarBg = this.scene.add.rectangle(
-      0,
-      0,
-      this.scene.scale.width,
-      topBarHeight,
-      0x1f2937,
-      1
-    );
-    this.topBarBg.setOrigin(0, 0);
-    this.topBarBg.setScrollFactor(0);
-    this.topBarBg.setStrokeStyle(1, 0x374151, 1);
-    this.topBarBg.setDepth(80); // Below title/save (100), above grid
-
-    // Create bottom status bar
     this.createStatusBar();
-
-    // Handle viewport resize to keep UI anchored and fill screen
+    // Define and attach resize handler to keep layout responsive
     this.resizeHandler = () => {
-      // Background fills available space
-      this.bgRect.width = this.scene.scale.width;
-      this.bgRect.height = this.scene.scale.height - this.container.y;
-
-      // Reposition right-side UI panels (sticky palette)
-      if (this.entityPaletteContainer) {
-        this.entityPaletteContainer.x = this.scene.scale.width - this.paletteWidth / 2;
-        const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        const topBarH = Math.max(48, headerH);
-        this.entityPaletteContainer.y = topBarH + 20 + this.paletteHeight / 2;
-      }
-      // Left toolbar removed; no repositioning needed
-      if (this.paletteRevealButton) {
-        this.paletteRevealButton.x = this.scene.scale.width - 12;
-        const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
-        const topBarH = Math.max(48, headerH);
-        this.paletteRevealButton.y = topBarH + 20 + this.paletteHeight / 2;
-      }
-      // update palette mask position
-      if (this.paletteMaskGraphics && this.entityPaletteContainer) {
-        this.paletteMaskGraphics.clear();
-        this.paletteMaskGraphics.fillStyle(0xffffff);
-        const maskWidth = this.paletteWidth - 40;
-        const maskHeight = this.paletteHeight - 80; // consistent with initial creation
-        const contentTop = this.entityPaletteContainer.y - this.paletteHeight / 2 + 60; // below header
-        const maskX2 = this.entityPaletteContainer.x - maskWidth / 2;
-        const maskY2 = contentTop;
-        this.paletteMaskGraphics.fillRect(maskX2, maskY2, maskWidth, maskHeight);
-      }
-
       // Navigation buttons are laid out inside the status bar now
 
       // Anchor status bar at bottom (sticky)
       if (this.statusBarContainer && this.statusBg) {
-        const barHeight = 28;
+        const barHeight = 36;
         this.statusBarContainer.x = 0;
         this.statusBarContainer.y = this.scene.scale.height - barHeight;
         this.statusBg.width = this.scene.scale.width;
@@ -425,7 +380,7 @@ export class DesignStep {
 
       // Update status bar position after header change (sticky)
       if (this.statusBarContainer && this.statusBg) {
-        const barHeight = 28;
+        const barHeight = 36;
         this.statusBarContainer.y = this.scene.scale.height - barHeight;
         this.statusBg.width = this.scene.scale.width;
         this.layoutStatusBarText();
@@ -686,59 +641,16 @@ export class DesignStep {
     this.entityPaletteContainer.setScrollFactor(0);
     this.entityPaletteContainer.setDepth(90);
 
-    // Create palette background with clean contrast
-    const paletteBg = this.scene.add.rectangle(
+    // Palette panel with header via UiKit
+    const palettePanel = createHeaderPanel(
+      this.scene,
       0,
       0,
       this.paletteWidth,
       this.paletteHeight,
-      0x1f2937,
-      0.98
+      'ENTITY PALETTE'
     );
-    paletteBg.setOrigin(0.5);
-    paletteBg.setStrokeStyle(1, 0x2b3a4a);
-    this.entityPaletteContainer.add(paletteBg);
-
-    // Left divider between canvas and drawer
-    const divider = this.scene.add.rectangle(
-      -this.paletteWidth / 2,
-      0,
-      1,
-      this.paletteHeight,
-      0x2b3a4a,
-      0.8
-    );
-    divider.setOrigin(0.5);
-    this.entityPaletteContainer.add(divider);
-
-    // Add a header bar
-    const headerBg = this.scene.add.rectangle(
-      0,
-      -this.paletteHeight / 2 + 40,
-      this.paletteWidth,
-      40,
-      0x111827,
-      1
-    );
-    headerBg.setOrigin(0.5);
-    this.entityPaletteContainer.add(headerBg);
-
-    // Title with better visibility
-    const title = this.scene.add
-      .text(0, -this.paletteHeight / 2 + 40, 'ENTITY PALETTE', {
-        fontSize: '16px',
-        color: '#e5e7eb',
-        fontStyle: 'bold',
-        shadow: {
-          offsetX: 1,
-          offsetY: 1,
-          color: '#00000088',
-          blur: 2,
-          fill: true,
-        },
-      })
-      .setOrigin(0.5);
-    this.entityPaletteContainer.add(title);
+    this.entityPaletteContainer.add(palettePanel.container);
 
     // Create a simple geometry mask for content area, then build lists
     this.paletteMaskGraphics = this.scene.add.graphics();
@@ -765,10 +677,14 @@ export class DesignStep {
     // Collapse button on the palette edge
     const collapse = this.scene.add.container(-this.paletteWidth / 2, 0);
     collapse.setScrollFactor(0);
-    const collapseBg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.9).setOrigin(0.5);
+    const collapseBg = this.scene.add.rectangle(0, 0, 18, 44, 0x111827, 0.95).setOrigin(0.5);
     collapseBg.setStrokeStyle(1, 0x2b3a4a, 1);
     const collapseIcon = this.scene.add
-      .text(0, 0, '>', { fontSize: '16px', color: '#9ca3af' })
+      .text(0, 0, '>', {
+        fontFamily: theme.fonts.body as string,
+        fontSize: '16px',
+        color: '#e5e7eb',
+      })
       .setOrigin(0.5);
     collapse.add([collapseBg, collapseIcon]);
     collapse.setInteractive(
@@ -776,15 +692,10 @@ export class DesignStep {
       Phaser.Geom.Rectangle.Contains
     );
     collapse.on('pointerover', () => collapseBg.setFillStyle(0x1f2937, 1));
-    collapse.on('pointerout', () => collapseBg.setFillStyle(0x111827, 0.9));
+    collapse.on('pointerout', () => collapseBg.setFillStyle(0x111827, 0.95));
     collapse.on(
       'pointerdown',
-      (
-        _pointer: Phaser.Input.Pointer,
-        _lx: number,
-        _ly: number,
-        event: Phaser.Types.Input.EventData
-      ) => {
+      (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event: Phaser.Types.Input.EventData) => {
         if (event && (event as unknown as { stopPropagation?: () => void }).stopPropagation) {
           (event as unknown as { stopPropagation?: () => void }).stopPropagation!();
         }
@@ -839,8 +750,9 @@ export class DesignStep {
     if (!simpleList) {
       const subtitle = this.scene.add
         .text(0, -50, 'SELECT ENEMY TYPE', {
+          fontFamily: theme.fonts.body as string,
           fontSize: '14px',
-          color: '#aaaaaa',
+          color: '#e5e7eb',
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
@@ -927,7 +839,11 @@ export class DesignStep {
       }
 
       const label = this.scene.add
-        .text(-this.paletteWidth / 2 + 54, 0, enemy.name, { fontSize: '14px', color: '#e5e7eb' })
+        .text(-this.paletteWidth / 2 + 54, 0, enemy.name, {
+          fontFamily: theme.fonts.body as string,
+          fontSize: '14px',
+          color: theme.palette.beige,
+        })
         .setOrigin(0, 0.5);
 
       rowBg.on('pointerover', () => {
@@ -964,47 +880,45 @@ export class DesignStep {
    * Create navigation buttons between steps
    */
   private createStepNavigation(): void {
-    // Test button (replaces Back)
-    const backButton = this.scene.add
-      .text(this.scene.scale.width - 200, this.scene.scale.height - 40, 'Test ▶', {
-        fontSize: '14px',
-        color: '#93c5fd',
-      })
-      .setOrigin(0, 0.5);
-    this.backNavText = backButton;
-    backButton.setScrollFactor(0);
-
-    // Make button interactive
-    backButton.setInteractive({ useHandCursor: true });
-
-    // Start inline test from Design
-    backButton.on('pointerdown', () => {
+    // Create pill buttons; they will be re-parented into the status bar later
+    const testBtn = createPillButton(
+      this.scene,
+      this.scene.scale.width - 200,
+      this.scene.scale.height - 40,
+      'Test ▶',
+      {
+        width: 110,
+        height: 28,
+        variant: 'neutral',
+        fontSize: 14,
+      }
+    );
+    testBtn.container.setScrollFactor(0);
+    testBtn.container.on('pointerdown', () => {
       this.startInlineTest();
     });
-
-    // Next button -> Publish step
-    const nextButton = this.scene.add
-      .text(this.scene.scale.width - 80, this.scene.scale.height - 40, 'Publish ▶', {
-        fontSize: '14px',
-        color: '#93c5fd',
-      })
-      .setOrigin(0, 0.5);
-    this.nextNavText = nextButton;
-    nextButton.setScrollFactor(0);
-
-    // Make button interactive
-    nextButton.setInteractive({ useHandCursor: true });
-
-    // Go to Publish step (verify happens there)
-    nextButton.on('pointerdown', () => {
+    const publishBtn = createPillButton(
+      this.scene,
+      this.scene.scale.width - 80,
+      this.scene.scale.height - 40,
+      'Publish ▶',
+      {
+        width: 120,
+        height: 28,
+        variant: 'primary',
+        fontSize: 14,
+      }
+    );
+    publishBtn.container.setScrollFactor(0);
+    publishBtn.container.on('pointerdown', () => {
       this.saveProgress();
       const levelIdToPass = this.levelId || this.manager.getCurrentLevelId();
       this.scene.events.emit('step:change', 'publish', levelIdToPass);
     });
-
-    this.container.add([backButton, nextButton]);
-
-    // No header title in the new design
+    // Temporarily add to container; they'll be moved to the status bar in createStatusBar
+    this.container.add([testBtn.container, publishBtn.container]);
+    this.testBtnContainer = testBtn.container;
+    this.publishBtnContainer = publishBtn.container;
   }
 
   /**
@@ -1175,7 +1089,7 @@ export class DesignStep {
 
   // Create bottom status bar (sticky, non-scrolling)
   private createStatusBar(): void {
-    const barHeight = 28;
+    const barHeight = 36;
     // Place on the scene root so it doesn't scroll with the camera/container
     this.statusBarContainer = this.scene.add.container(0, this.scene.scale.height - barHeight);
     // Ensure the status bar remains fixed relative to the camera
@@ -1185,29 +1099,32 @@ export class DesignStep {
 
     this.statusBg = this.scene.add.rectangle(0, 0, this.scene.scale.width, barHeight, 0x1f2937);
     this.statusBg.setOrigin(0, 0);
-    this.statusBg.setStrokeStyle(1, 0x374151, 1);
+    this.statusBg.setStrokeStyle(1, 0x2b3a4a, 1);
     // Prevent status bar background from parallaxing
     this.statusBg.setScrollFactor(0);
     this.statusBarContainer.add(this.statusBg);
 
     this.statusTextCoords = this.scene.add
-      .text(10, Math.floor(barHeight / 2), '(0, 0)', {
+      .text(12, Math.floor(barHeight / 2), '(0, 0)', {
+        fontFamily: theme.fonts.body as string,
         fontSize: '12px',
-        color: '#e5e7eb',
+        color: theme.palette.beige,
       })
       .setOrigin(0, 0.5);
     this.statusTextCoords.setScrollFactor(0);
 
     this.statusTextSelection = this.scene.add
-      .text(180, Math.floor(barHeight / 2), 'Sel: 0', {
+      .text(200, Math.floor(barHeight / 2), 'Sel: 0', {
+        fontFamily: theme.fonts.body as string,
         fontSize: '12px',
-        color: '#e5e7eb',
+        color: theme.palette.beige,
       })
       .setOrigin(0, 0.5);
     this.statusTextSelection.setScrollFactor(0);
 
     this.statusTextDirty = this.scene.add
-      .text(260, Math.floor(barHeight / 2), 'Saved', {
+      .text(300, Math.floor(barHeight / 2), 'Saved', {
+        fontFamily: theme.fonts.body as string,
         fontSize: '12px',
         color: '#10b981',
       })
@@ -1231,31 +1148,23 @@ export class DesignStep {
     this.statusDivider2.setScrollFactor(0);
     this.statusBarContainer.add([this.statusDivider1, this.statusDivider2]);
 
-    // If navigation buttons were created earlier, move them into the status bar
-    if (this.backNavText) {
-      // Remove from previous parent if necessary and add to status bar
+    // If navigation pill buttons were created earlier, move them into the status bar
+    if (this.testBtnContainer) {
+      // Detach from old parent and add here
       const parent = (
-        this.backNavText as Phaser.GameObjects.GameObject & {
-          parentContainer?: Phaser.GameObjects.Container;
-        }
+        this.testBtnContainer as unknown as { parentContainer?: Phaser.GameObjects.Container }
       ).parentContainer;
-      if (parent) parent.remove(this.backNavText, false);
-      this.backNavText.setScrollFactor(0);
-      this.backNavText.setOrigin(1, 0.5);
-      this.backNavText.setStyle({ fontSize: '14px' });
-      this.statusBarContainer.add(this.backNavText);
+      if (parent) parent.remove(this.testBtnContainer, false);
+      this.testBtnContainer.setScrollFactor(0);
+      this.statusBarContainer.add(this.testBtnContainer);
     }
-    if (this.nextNavText) {
+    if (this.publishBtnContainer) {
       const parent = (
-        this.nextNavText as Phaser.GameObjects.GameObject & {
-          parentContainer?: Phaser.GameObjects.Container;
-        }
+        this.publishBtnContainer as unknown as { parentContainer?: Phaser.GameObjects.Container }
       ).parentContainer;
-      if (parent) parent.remove(this.nextNavText, false);
-      this.nextNavText.setScrollFactor(0);
-      this.nextNavText.setOrigin(1, 0.5);
-      this.nextNavText.setStyle({ fontSize: '14px' });
-      this.statusBarContainer.add(this.nextNavText);
+      if (parent) parent.remove(this.publishBtnContainer, false);
+      this.publishBtnContainer.setScrollFactor(0);
+      this.statusBarContainer.add(this.publishBtnContainer);
     }
 
     // Listen for selection changes and dirty state
@@ -1276,7 +1185,7 @@ export class DesignStep {
   }
 
   private layoutStatusBarText(): void {
-    const padding = 10;
+    const padding = 14;
     const barHeight = this.statusBg ? this.statusBg.height : 28;
     const centerY = Math.floor(barHeight / 2);
 
@@ -1286,26 +1195,27 @@ export class DesignStep {
     this.statusTextSelection.x = this.statusTextCoords.x + this.statusTextCoords.width + 24;
     this.statusTextSelection.y = centerY;
 
-    // Right side items: Next (far right), Back to its left, Dirty left of those
+    // Right side items: Publish (far right), Test to its left, Dirty left of those
     const rightEdge = this.scene.scale.width - padding;
 
-    if (this.nextNavText) {
-      this.nextNavText.x = rightEdge; // right-anchored (origin 1,0.5)
-      this.nextNavText.y = centerY;
+    // Position publish button at far right
+    if (this.publishBtnContainer) {
+      this.publishBtnContainer.x = rightEdge - this.publishBtnWidth / 2;
+      this.publishBtnContainer.y = centerY;
     }
-
-    if (this.backNavText) {
-      const nextLeft = this.nextNavText
-        ? this.nextNavText.x - this.nextNavText.width - 12
+    // Position test button to the left of publish
+    if (this.testBtnContainer) {
+      const afterRight = this.publishBtnContainer
+        ? this.publishBtnContainer.x - this.publishBtnWidth / 2 - 18
         : rightEdge;
-      this.backNavText.x = nextLeft; // right-anchored
-      this.backNavText.y = centerY;
+      this.testBtnContainer.x = afterRight - this.testBtnWidth / 2;
+      this.testBtnContainer.y = centerY;
     }
 
-    const anchorRightForDirty = this.backNavText
-      ? this.backNavText.x - this.backNavText.width - 16
-      : this.nextNavText
-        ? this.nextNavText.x - this.nextNavText.width - 16
+    const anchorRightForDirty = this.testBtnContainer
+      ? this.testBtnContainer.x - this.testBtnWidth / 2 - 20
+      : this.publishBtnContainer
+        ? this.publishBtnContainer.x - this.publishBtnWidth / 2 - 20
         : rightEdge;
     this.statusTextDirty.x = anchorRightForDirty - this.statusTextDirty.width; // left-anchored
     this.statusTextDirty.y = centerY;
@@ -1313,19 +1223,19 @@ export class DesignStep {
     // Dividers: between Dirty|Back and Back|Next
     if (this.statusDivider1) {
       const dirtyRight = this.statusTextDirty.x + this.statusTextDirty.width;
-      const backLeft = this.backNavText
-        ? this.backNavText.x - this.backNavText.width
-        : this.nextNavText
-          ? this.nextNavText.x - this.nextNavText.width
+      const testLeft = this.testBtnContainer
+        ? this.testBtnContainer.x - this.testBtnWidth / 2
+        : this.publishBtnContainer
+          ? this.publishBtnContainer.x - this.publishBtnWidth / 2
           : rightEdge;
-      this.statusDivider1.x = (dirtyRight + backLeft) / 2;
+      this.statusDivider1.x = (dirtyRight + testLeft) / 2;
       this.statusDivider1.y = centerY;
     }
     if (this.statusDivider2) {
-      if (this.backNavText && this.nextNavText) {
-        const backRight = this.backNavText.x; // right-anchored
-        const nextLeft = this.nextNavText.x - this.nextNavText.width;
-        this.statusDivider2.x = (backRight + nextLeft) / 2;
+      if (this.testBtnContainer && this.publishBtnContainer) {
+        const testRight = this.testBtnContainer.x + this.testBtnWidth / 2;
+        const publishLeft = this.publishBtnContainer.x - this.publishBtnWidth / 2;
+        this.statusDivider2.x = (testRight + publishLeft) / 2;
         this.statusDivider2.y = centerY;
         this.statusDivider2.setVisible(true);
       } else {
@@ -2189,50 +2099,25 @@ export class DesignStep {
   private createSaveButton(): void {
     const scene = this.scene as Phaser.Scene;
     const headerHeight = (scene.data && scene.data.get('headerHeight')) || 0;
-
     const y = Math.max(16, Math.floor(headerHeight / 2) + this.topBarPadding);
-
-    // Create label first to measure width
-    const label = scene.add
-      .text(0, 0, 'Save Level', {
-        fontSize: '14px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    label.setScrollFactor(0);
-    const horizontalPadding = 24; // 12px left/right
-    const computedWidth = Math.ceil(label.width + horizontalPadding);
-    this.saveButtonWidth = computedWidth;
-
     const leftPad = 20;
-    const x = scene.scale.width - (leftPad + this.saveButtonWidth / 2);
+    const width = 128; // Stable width for layout
+    this.saveButtonWidth = width;
+    const x = scene.scale.width - (leftPad + width / 2);
 
-    // Button group: rounded rect + label
-    const btnContainer = scene.add.container(x, y);
-    btnContainer.setScrollFactor(0);
-    const bg = scene.add.rectangle(0, 0, this.saveButtonWidth, 34, 0x3b82f6, 1);
-    bg.setScrollFactor(0);
-    bg.setStrokeStyle(1, 0x1f2937, 1);
-    bg.setOrigin(0.5);
-    bg.setInteractive({ useHandCursor: true, pixelPerfect: false });
-
-    // Add to container (bg behind label)
-    btnContainer.add([bg, label]);
-    btnContainer.setDepth(100);
-
-    // Hover/press states
-    bg.on('pointerover', () => bg.setFillStyle(0x60a5fa, 1));
-    bg.on('pointerout', () => bg.setFillStyle(0x3b82f6, 1));
-    bg.on('pointerdown', () => {
-      bg.setFillStyle(0x2563eb, 1);
+    const save = createPillButton(scene, x, y, 'Save Level', {
+      width,
+      height: 34,
+      variant: 'primary',
+      fontSize: 14,
+    });
+    save.container.setScrollFactor(0);
+    save.container.setDepth(100);
+    save.container.on('pointerdown', () => {
       this.saveProgress();
       this.updateStatusBarDirty();
     });
-    bg.on('pointerup', () => bg.setFillStyle(0x60a5fa, 1));
-
-    // Keep references for later layout
-    this.saveButtonContainer = btnContainer;
+    this.saveButtonContainer = save.container;
   }
 
   // Inline test: start the gameplay in StarshipScene and hide editor UI
@@ -2278,6 +2163,10 @@ export class DesignStep {
     this.scene.registry.set('isBuildModeTest', true);
 
     // Launch game scene in test mode
+    // Ensure no prior test scene is running
+    if (this.scene.scene.isActive('CustomLevelScene')) {
+      this.scene.scene.stop('CustomLevelScene');
+    }
     if (this.scene.scene.isActive('StarshipScene')) {
       const starship = this.scene.scene.get('StarshipScene');
       if (starship) starship.events.emit('test:stop');
@@ -2293,20 +2182,16 @@ export class DesignStep {
     });
 
     // Floating Stop button while testing (resize-aware)
-    const btn = this.scene.add.container(0, 0);
-    btn.setScrollFactor(0);
-    btn.setDepth(200);
-    const bg = this.scene.add.rectangle(0, 0, 120, 34, 0x991b1b, 1).setOrigin(0.5);
-    bg.setStrokeStyle(1, 0x7f1d1d, 1);
-    const label = this.scene.add
-      .text(0, 0, 'Stop ■', { fontSize: '14px', color: '#ffffff' })
-      .setOrigin(0.5);
-    bg.setInteractive({ useHandCursor: true });
-    bg.on('pointerover', () => bg.setFillStyle(0xb91c1c, 1));
-    bg.on('pointerout', () => bg.setFillStyle(0x991b1b, 1));
-    bg.on('pointerdown', () => this.stopInlineTest());
-    btn.add([bg, label]);
-    this.floatingStopButton = btn;
+    const stop = createPillButton(this.scene, 0, 0, 'Stop ■', {
+      width: 120,
+      height: 34,
+      variant: 'danger',
+      fontSize: 14,
+    });
+    stop.container.setScrollFactor(0);
+    stop.container.setDepth(200);
+    stop.container.on('pointerdown', () => this.stopInlineTest());
+    this.floatingStopButton = stop.container;
     this.positionFloatingStopButton();
     this.scene.scale.on('resize', this.positionFloatingStopButton, this);
   }
@@ -2315,11 +2200,19 @@ export class DesignStep {
   private stopInlineTest(): void {
     if (!this.inlineTesting) return;
     this.inlineTesting = false;
+    // Stop any active gameplay scene started for inline test
+    if (this.scene.scene.isActive('CustomLevelScene')) {
+      this.scene.scene.stop('CustomLevelScene');
+    }
     if (this.scene.scene.isActive('StarshipScene')) {
       const starship = this.scene.scene.get('StarshipScene');
       if (starship) starship.events.emit('test:stop');
       this.scene.scene.stop('StarshipScene');
     }
+    // Clear testing flags/state
+    this.scene.registry.set('testMode', false);
+    this.scene.registry.set('buildModeTest', false);
+    this.scene.registry.set('isBuildModeTest', false);
     // Remove test event listeners
     this.scene.events.off('test:completed', this.onInlineTestCompleted, this);
     this.scene.events.off('test:stats', this.onInlineTestStats, this);
@@ -2501,45 +2394,22 @@ export class DesignStep {
     const scene = this.scene as Phaser.Scene;
     const headerHeight = (scene.data && scene.data.get('headerHeight')) || 0;
     const y = Math.max(16, Math.floor(headerHeight / 2) + this.topBarPadding);
-
-    // Create label first to measure width
-    const label = scene.add
-      .text(0, 0, '< Back', {
-        fontSize: '14px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    label.setScrollFactor(0);
-    const horizontalPadding = 24;
-    const computedWidth = Math.ceil(label.width + horizontalPadding);
-    this.topBackButtonWidth = computedWidth;
-
     const leftPad = 20;
+    this.topBackButtonWidth = 100;
     const x = leftPad + this.topBackButtonWidth / 2;
-
-    const btnContainer = scene.add.container(x, y);
-    btnContainer.setScrollFactor(0);
-    const bg = scene.add.rectangle(0, 0, this.topBackButtonWidth, 34, 0x3b82f6, 1);
-    bg.setScrollFactor(0);
-    bg.setStrokeStyle(1, 0x1f2937, 1);
-    bg.setOrigin(0.5);
-    bg.setInteractive({ useHandCursor: true, pixelPerfect: false });
-
-    btnContainer.add([bg, label]);
-    btnContainer.setDepth(100);
-
-    // Hover/press states
-    bg.on('pointerover', () => bg.setFillStyle(0x60a5fa, 1));
-    bg.on('pointerout', () => bg.setFillStyle(0x3b82f6, 1));
-    bg.on('pointerdown', () => {
-      bg.setFillStyle(0x2563eb, 1);
+    const back = createPillButton(scene, x, y, '< Back', {
+      width: this.topBackButtonWidth,
+      height: 34,
+      variant: 'primary',
+      fontSize: 14,
+    });
+    back.container.setScrollFactor(0);
+    back.container.setDepth(100);
+    back.container.on('pointerdown', () => {
       this.saveProgress();
       this.scene.scene.start('MainMenu');
     });
-    bg.on('pointerup', () => bg.setFillStyle(0x60a5fa, 1));
-
-    this.topBackButtonContainer = btnContainer;
+    this.topBackButtonContainer = back.container;
   }
 
   // Center camera on the average position of current selection (fallback to origin)

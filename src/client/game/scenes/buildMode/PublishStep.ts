@@ -9,6 +9,13 @@ import { BuildModeManager } from '../../entities/BuildModeManager';
 import BuildModeService from '../../services/BuildModeService';
 import { isFeatureEnabled } from '../../../../shared/config';
 import { publishLevelToReddit } from '../../api';
+import {
+  createHeaderPanel,
+  createPillButton,
+  createCheckbox,
+  createOverlayBar,
+  showToast as uiToast,
+} from '../../ui/UiKit';
 
 /**
  * Publish step in the Build Mode workflow
@@ -32,9 +39,8 @@ export class PublishStep {
   private navMenuBtn?: Phaser.GameObjects.Container;
   private verifyStatusText?: Phaser.GameObjects.Text;
 
-  // Publish button visuals for enabled/disabled state
-  private publishBtnBg?: Phaser.GameObjects.Graphics;
-  private publishBtnContainer?: Phaser.GameObjects.Container;
+  // Publish button via UiKit
+  private publishBtn?: ReturnType<typeof createPillButton>;
 
   // Level data
   private levelId: string | undefined;
@@ -162,20 +168,8 @@ export class PublishStep {
    * Create the publishing form
    */
   private createPublishForm(): void {
-    // Panel styled like DesignStep palette
-    const panel = this.scene.add.rectangle(0, 0, 560, 400, 0x1f2937, 0.98).setOrigin(0.5);
-    panel.setStrokeStyle(1, 0x2b3a4a);
-    const headerBar = this.scene.add.rectangle(0, -180, 560, 48, 0x111827, 1).setOrigin(0.5);
-    const formTitle = this.scene.add
-      .text(0, -180, 'FINALIZE YOUR LEVEL', {
-        fontSize: '20px',
-        color: '#e5e7eb',
-        fontStyle: 'bold',
-        shadow: { offsetX: 1, offsetY: 1, color: '#00000066', blur: 2, fill: true },
-      })
-      .setOrigin(0.5);
-
-    this.publishContainer.add([panel, headerBar, formTitle]);
+    const panel = createHeaderPanel(this.scene, 0, 0, 560, 400, 'FINALIZE YOUR LEVEL');
+    this.publishContainer.add(panel.container);
 
     // Level info section
     const levelInfoTitle = this.scene.add
@@ -224,17 +218,13 @@ export class PublishStep {
     const buttonsRow = this.scene.add.container(0, 80);
     this.publishContainer.add(buttonsRow);
 
-    // Verify button
-    const verifyBtnContainer = this.scene.add.container(-150, 0);
-    const verifyBg = this.scene.add.graphics();
-    verifyBg.fillStyle(0x065f46, 1);
-    verifyBg.fillRoundedRect(-90, -20, 180, 40, 8);
-    verifyBg.lineStyle(1, 0x10b981, 1);
-    verifyBg.strokeRoundedRect(-90, -20, 180, 40, 8);
-    const verifyText = this.scene.add
-      .text(0, 0, 'VERIFY ▶', { fontSize: '16px', color: '#e5e7eb', fontStyle: 'bold' })
-      .setOrigin(0.5);
-    verifyBtnContainer.add([verifyBg, verifyText]);
+    // Verify button (UiKit)
+    const verifyBtn = createPillButton(this.scene, -150, 0, 'VERIFY ▶', {
+      width: 180,
+      height: 40,
+      variant: 'success',
+      fontSize: 16,
+    });
 
     // Status text area under buttons (not cramped)
     const statusText = this.scene.add
@@ -249,49 +239,25 @@ export class PublishStep {
     this.verifyStatusText = statusText;
     this.publishContainer.add(this.verifyContainer);
 
-    // Publish button (flat, disabled until verified)
-    this.publishBtnContainer = this.scene.add.container(150, 0);
-    this.publishBtnBg = this.scene.add.graphics();
-    this.publishBtnBg.fillStyle(0x1d4ed8, 1);
-    this.publishBtnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-    this.publishBtnBg.lineStyle(1, 0x60a5fa, 1);
-    this.publishBtnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
-
-    const publishButtonText = this.scene.add
-      .text(0, 0, 'PUBLISH LEVEL', { fontSize: '18px', color: '#e5e7eb', fontStyle: 'bold' })
-      .setOrigin(0.5);
-
-    const publishHit = this.scene.add.rectangle(0, 0, 200, 40, 0xffffff, 0.001).setOrigin(0.5);
-    publishHit.setInteractive({ useHandCursor: true });
-
-    this.publishBtnContainer.add([this.publishBtnBg, publishHit, publishButtonText]);
+    // Publish button via UiKit (disabled until verified)
+    this.publishBtn = createPillButton(this.scene, 150, 0, 'PUBLISH LEVEL', {
+      width: 200,
+      height: 40,
+      variant: 'primary',
+      fontSize: 18,
+      disabled: this.verifyState !== 'passed',
+    });
 
     // Add both buttons to row
-    buttonsRow.add([verifyBtnContainer, this.publishBtnContainer]);
+    buttonsRow.add([verifyBtn.container, this.publishBtn.container]);
 
-    publishHit.on('pointerover', () => {
-      if (this.verifyState !== 'passed') return;
-      this.publishBtnBg!.clear();
-      this.publishBtnBg!.fillStyle(0x2563eb, 1);
-      this.publishBtnBg!.fillRoundedRect(-100, -20, 200, 40, 8);
-      this.publishBtnBg!.lineStyle(1, 0x93c5fd, 1);
-      this.publishBtnBg!.strokeRoundedRect(-100, -20, 200, 40, 8);
-    });
-    publishHit.on('pointerout', () => {
-      if (this.verifyState !== 'passed') return;
-      this.publishBtnBg!.clear();
-      this.publishBtnBg!.fillStyle(0x1d4ed8, 1);
-      this.publishBtnBg!.fillRoundedRect(-100, -20, 200, 40, 8);
-      this.publishBtnBg!.lineStyle(1, 0x60a5fa, 1);
-      this.publishBtnBg!.strokeRoundedRect(-100, -20, 200, 40, 8);
-    });
-    publishHit.on('pointerdown', () => {
+    this.publishBtn.container.on('pointerdown', () => {
       if (this.verifyState !== 'passed') {
         this.showToast('Please verify your level before publishing', 'error');
         return;
       }
       this.scene.tweens.add({
-        targets: this.publishBtnContainer,
+        targets: this.publishBtn!.container,
         scaleX: 0.96,
         scaleY: 0.96,
         duration: 60,
@@ -301,23 +267,9 @@ export class PublishStep {
     });
 
     // Verify button interactions
-    verifyBg
-      .setInteractive(new Phaser.Geom.Rectangle(-90, -20, 180, 40), Phaser.Geom.Rectangle.Contains)
-      .on('pointerover', () => {
-        verifyBg.clear();
-        verifyBg.fillStyle(0x047857, 1);
-        verifyBg.fillRoundedRect(-90, -20, 180, 40, 8);
-        verifyBg.lineStyle(1, 0x34d399, 1);
-        verifyBg.strokeRoundedRect(-90, -20, 180, 40, 8);
-      })
-      .on('pointerout', () => {
-        verifyBg.clear();
-        verifyBg.fillStyle(0x065f46, 1);
-        verifyBg.fillRoundedRect(-90, -20, 180, 40, 8);
-        verifyBg.lineStyle(1, 0x10b981, 1);
-        verifyBg.strokeRoundedRect(-90, -20, 180, 40, 8);
-      })
-      .on('pointerdown', () => this.startVerification(statusText, verifyText));
+    verifyBtn.container.on('pointerdown', () =>
+      this.startVerification(statusText, verifyBtn.label)
+    );
 
     // Add disclaimer based on whether sharing is enabled
     const disclaimer = this.scene.add
@@ -351,20 +303,8 @@ export class PublishStep {
   }
 
   private updatePublishButtonState(): void {
-    if (!this.publishBtnBg) return;
     const enabled = this.verifyState === 'passed';
-    this.publishBtnBg.clear();
-    if (enabled) {
-      this.publishBtnBg.fillStyle(0x1d4ed8, 1);
-      this.publishBtnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-      this.publishBtnBg.lineStyle(1, 0x60a5fa, 1);
-      this.publishBtnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
-    } else {
-      this.publishBtnBg.fillStyle(0x1f3a8a, 0.6);
-      this.publishBtnBg.fillRoundedRect(-100, -20, 200, 40, 8);
-      this.publishBtnBg.lineStyle(1, 0x3b82f6, 0.5);
-      this.publishBtnBg.strokeRoundedRect(-100, -20, 200, 40, 8);
-    }
+    this.publishBtn?.setEnabled?.(enabled);
   }
 
   // Launch a verification run; player must beat the level without dying
@@ -422,6 +362,7 @@ export class PublishStep {
       verifyText.setText('RE-RUN ▶');
       this.updatePublishButtonState();
       this.cleanupVerifyListeners();
+      if (this.scene.scene.isActive('CustomLevelScene')) this.scene.scene.stop('CustomLevelScene');
       if (this.scene.scene.isActive('StarshipScene')) this.scene.scene.stop('StarshipScene');
       this.hideVerifyOverlay();
       this.publishContainer.setVisible(true);
@@ -435,6 +376,7 @@ export class PublishStep {
       verifyText.setText('RE-RUN ▶');
       this.updatePublishButtonState();
       this.cleanupVerifyListeners();
+      if (this.scene.scene.isActive('CustomLevelScene')) this.scene.scene.stop('CustomLevelScene');
       if (this.scene.scene.isActive('StarshipScene')) this.scene.scene.stop('StarshipScene');
       this.hideVerifyOverlay();
       this.publishContainer.setVisible(true);
@@ -475,63 +417,24 @@ export class PublishStep {
     const headerH = (this.scene.data && this.scene.data.get('headerHeight')) || 0;
     const topBarH = Math.max(48, headerH);
     const panelWidth = Math.min(this.scene.scale.width - 32, 640);
-    const stopWidth = 110;
     const overlayY = topBarH + 28;
 
     if (!this.verifyOverlay) {
-      const overlay = this.scene.add.container(this.scene.scale.width / 2, overlayY);
-      const bg = this.scene.add
-        .rectangle(0, 0, panelWidth, 44, 0x111827, 0.95)
-        .setOrigin(0.5)
-        .setName('verifyBg');
-      bg.setStrokeStyle(1, 0x2b3a4a, 1);
-      const text = this.scene.add
-        .text(0, 0, 'Verification running — beat the level without dying', {
-          fontSize: '14px',
-          color: '#e5e7eb',
-          wordWrap: { width: panelWidth - stopWidth - 36 },
-          align: 'left',
-        })
-        .setOrigin(0, 0.5)
-        .setName('verifyText');
-      const textX = -panelWidth / 2 + 12;
-      text.setX(textX);
-      const stopBtn = this.scene.add
-        .container(panelWidth / 2 - (stopWidth / 2 + 12), 0)
-        .setName('verifyStop');
-      const stopBg = this.scene.add.rectangle(0, 0, stopWidth, 28, 0x991b1b, 1).setOrigin(0.5);
-      stopBg.setStrokeStyle(1, 0x7f1d1d, 1);
-      const stopTxt = this.scene.add
-        .text(0, 0, 'Stop ■', { fontSize: '14px', color: '#ffffff' })
-        .setOrigin(0.5);
-      stopBg.setInteractive({ useHandCursor: true });
-      stopBg.on('pointerover', () => stopBg.setFillStyle(0xb91c1c, 1));
-      stopBg.on('pointerout', () => stopBg.setFillStyle(0x991b1b, 1));
-      stopBg.on('pointerdown', () => this.resetVerification('Verification cancelled'));
-      stopBtn.add([stopBg, stopTxt]);
-      overlay.add([bg, text, stopBtn]);
-      overlay.setDepth(10000);
+      const overlay = createOverlayBar(
+        this.scene,
+        'Verification running — beat the level without dying',
+        {
+          y: overlayY,
+          width: panelWidth,
+          rightButtonLabel: 'Stop ■',
+          onRightClick: () => this.resetVerification('Verification cancelled'),
+        }
+      ).container;
       this.container.add(overlay);
       this.verifyOverlay = overlay;
     } else {
-      // Update existing overlay layout and bring to top
       const overlay = this.verifyOverlay;
       overlay.setPosition(this.scene.scale.width / 2, overlayY);
-      const bg = overlay.getByName('verifyBg') as Phaser.GameObjects.Rectangle;
-      const text = overlay.getByName('verifyText') as Phaser.GameObjects.Text;
-      const stopBtn = overlay.getByName('verifyStop') as Phaser.GameObjects.Container;
-      if (bg) {
-        bg.width = panelWidth;
-        bg.height = 44;
-      }
-      if (text) {
-        text.setText('Verification running — beat the level without dying');
-        text.setWordWrapWidth(panelWidth - stopWidth - 36, true);
-        text.setX(-panelWidth / 2 + 12);
-      }
-      if (stopBtn) {
-        stopBtn.setX(panelWidth / 2 - (stopWidth / 2 + 12));
-      }
       overlay.setVisible(true);
       overlay.setDepth(10000);
     }
@@ -608,45 +511,15 @@ export class PublishStep {
       })
       .setOrigin(0, 0.5);
 
-    // Sharing checkbox
-    const shareCheckboxBg = this.scene.add.rectangle(-210, 50, 20, 20, 0x555555);
-    shareCheckboxBg.setOrigin(0.5);
-    shareCheckboxBg.setStrokeStyle(1, 0xaaaaaa);
+    const checkbox = createCheckbox(
+      this.scene,
+      -210,
+      50,
+      'Share with community leaderboards',
+      true
+    );
 
-    // Checkmark (shown when selected)
-    const checkmark = this.scene.add
-      .text(-210, 50, '✓', {
-        fontSize: '16px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5);
-
-    // Initially checked
-    shareCheckboxBg.setData('checked', true);
-
-    // Label
-    const shareLabel = this.scene.add
-      .text(-190, 50, 'Share with community leaderboards', {
-        fontSize: '16px',
-        color: '#ffffff',
-      })
-      .setOrigin(0, 0.5);
-
-    // Make checkbox interactive
-    shareCheckboxBg.setInteractive({ useHandCursor: true });
-    shareCheckboxBg.on('pointerdown', () => {
-      const isChecked = !shareCheckboxBg.getData('checked');
-      shareCheckboxBg.setData('checked', isChecked);
-      checkmark.setVisible(isChecked);
-
-      if (isChecked) {
-        shareCheckboxBg.setFillStyle(0x0066cc, 1);
-      } else {
-        shareCheckboxBg.setFillStyle(0x555555, 1);
-      }
-    });
-
-    this.publishContainer.add([sharingTitle, shareCheckboxBg, checkmark, shareLabel]);
+    this.publishContainer.add([sharingTitle, checkbox.container]);
   }
 
   /**
@@ -981,11 +854,16 @@ export class PublishStep {
 
   private resetVerification(reason?: string): void {
     // Stop running verification if any
+    if (this.scene.scene.isActive('CustomLevelScene')) {
+      this.scene.scene.stop('CustomLevelScene');
+    }
     if (this.scene.scene.isActive('StarshipScene')) {
       const starship = this.scene.scene.get('StarshipScene');
       if (starship) starship.events.emit('test:stop');
       this.scene.scene.stop('StarshipScene');
     }
+    this.scene.registry.set('testMode', false);
+    this.scene.registry.set('buildModeTest', false);
     this.cleanupVerifyListeners();
     this.verifyState = 'idle';
     this.everPassed = false;
@@ -1211,84 +1089,7 @@ export class PublishStep {
    * @param type The type of toast (success, error, info)
    */
   private showToast(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
-    // Create container for toast
-    const toast = this.scene.add.container(
-      this.scene.scale.width / 2,
-      this.scene.scale.height - 100
-    );
-
-    // Determine color based on type
-    let color = 0x0088ff; // info (blue)
-    if (type === 'success') {
-      color = 0x00aa44; // success (green)
-    } else if (type === 'error') {
-      color = 0xaa0000; // error (red)
-    }
-
-    // Toast background
-    const toastBg = this.scene.add.graphics();
-    toastBg.fillStyle(color, 0.9);
-    toastBg.fillRoundedRect(-200, -25, 400, 50, 8);
-    toastBg.lineStyle(2, 0xffffff, 0.5);
-    toastBg.strokeRoundedRect(-200, -25, 400, 50, 8);
-
-    // Toast message
-    const toastText = this.scene.add
-      .text(0, 0, message, {
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        align: 'center',
-        wordWrap: { width: 380 },
-      })
-      .setOrigin(0.5);
-
-    // Add icon based on type
-    let icon = '!';
-    if (type === 'success') {
-      icon = '✓';
-    } else if (type === 'error') {
-      icon = '✗';
-    }
-
-    const toastIcon = this.scene.add
-      .text(-170, 0, icon, {
-        fontSize: '24px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    // Add components to toast
-    toast.add([toastBg, toastText, toastIcon]);
-
-    // Add toast to scene
-    this.container.add(toast);
-
-    // Set initial state (off screen)
-    toast.setY(this.scene.scale.height + 50);
-
-    // Slide in animation
-    this.scene.tweens.add({
-      targets: toast,
-      y: this.scene.scale.height - 100,
-      duration: 300,
-      ease: 'Back.easeOut',
-      onComplete: () => {
-        // Auto-hide after delay
-        this.scene.time.delayedCall(3000, () => {
-          // Slide out animation
-          this.scene.tweens.add({
-            targets: toast,
-            y: this.scene.scale.height + 50,
-            alpha: 0,
-            duration: 300,
-            ease: 'Back.easeIn',
-            onComplete: () => toast.destroy(),
-          });
-        });
-      },
-    });
+    uiToast(this.scene, message, type);
   }
 
   // Background stars removed to match editor visual style
