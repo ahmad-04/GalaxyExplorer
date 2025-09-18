@@ -14,8 +14,8 @@ type Score = {
 
 export class GameOver extends Scene {
   private camera!: Phaser.Cameras.Scene2D.Camera;
-  private restartBtn?: ReturnType<typeof createButton>;
-  private menuBtn?: ReturnType<typeof createButton>;
+  private restartBtn: ReturnType<typeof createButton> | undefined;
+  private menuBtn: ReturnType<typeof createButton> | undefined;
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private score = 0;
   private leaderboard: Score[] = [];
@@ -33,9 +33,15 @@ export class GameOver extends Scene {
     this.score = data.score || 0;
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] [GameOver] Scene initialized with score: ${this.score}`);
+    // Ensure any stale UI from previous runs is cleaned up so buttons re-create properly
+    this.clearButtons();
   }
 
   async create() {
+    // Ensure cleanup occurs when this scene is shut down
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
+    // Defensive: clear any lingering button references before building UI
+    this.clearButtons();
     this.startTime = new Date();
     console.log(
       `[${this.startTime.toISOString()}] [GameOver] Scene create started. Score: ${this.score}`
@@ -308,6 +314,39 @@ export class GameOver extends Scene {
     console.log(
       `[${endTime.toISOString()}] [GameOver] Scene create completed. Total time: ${createDuration}ms`
     );
+  }
+
+  // Proactively destroy prior buttons/refs so a second Game Over re-renders controls
+  private clearButtons() {
+    try {
+      if (this.restartBtn?.container) {
+        this.restartBtn.container.destroy();
+      }
+    } catch {}
+    try {
+      if (this.menuBtn?.container) {
+        this.menuBtn.container.destroy();
+      }
+    } catch {}
+    this.restartBtn = undefined;
+    this.menuBtn = undefined;
+  }
+
+  // Clean up on scene shutdown to prevent stale state across restarts
+  private onShutdown() {
+    // Remove key and clear captures
+    try {
+      if (this.spaceKey) {
+        this.input.keyboard?.removeKey(this.spaceKey);
+      }
+      this.input.keyboard?.clearCaptures();
+    } catch {}
+    // Destroy starfield
+    try {
+      this.starfield?.destroy();
+    } catch {}
+    // Destroy buttons and clear refs
+    this.clearButtons();
   }
 
   override update() {
