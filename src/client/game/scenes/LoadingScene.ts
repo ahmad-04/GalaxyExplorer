@@ -26,7 +26,7 @@ export class LoadingScene extends Phaser.Scene {
       '/assets/Void_MainShip/export/main_ship.json'
     );
 
-    // Load engine effects (optional; will be ignored if missing on disk)
+  // Load engine effects (optional; will be ignored if missing on disk)
     // Base engine module (static or tagged); exported PNG+JSON expected in export/
     this.load.aseprite(
       'engineModule',
@@ -45,6 +45,22 @@ export class LoadingScene extends Phaser.Scene {
       '/assets/Void_MainShip/export/engine_base_power.png',
       '/assets/Void_MainShip/export/engine_base_power.json'
     );
+
+    // Load Auto Cannon weapon & projectile via Aseprite exports if available
+    try {
+      this.load.aseprite(
+        'autoCannon',
+        '/assets/Void_MainShip/export/auto_cannon.png',
+        '/assets/Void_MainShip/export/auto_cannon.json'
+      );
+      this.load.aseprite(
+        'autoCannonProjectile',
+        '/assets/Void_MainShip/export/auto_cannon_projectile.png',
+        '/assets/Void_MainShip/export/auto_cannon_projectile.json'
+      );
+    } catch {
+      // Non-fatal; fallback to PNG or placeholder will be used at runtime
+    }
   }
 
   create() {
@@ -126,6 +142,13 @@ export class LoadingScene extends Phaser.Scene {
       if (this.textures.exists('engineBasePower')) {
         this.anims.createFromAseprite('engineBasePower');
       }
+      // Register auto cannon animations if present
+      if (this.textures.exists('autoCannon')) {
+        this.anims.createFromAseprite('autoCannon');
+      }
+      if (this.textures.exists('autoCannonProjectile')) {
+        this.anims.createFromAseprite('autoCannonProjectile');
+      }
 
       // Fallback: if tags weren't exported, build simple looping animations from frames
       const ensureFramesAnim = (texKey: string, animKey: string, frameRate = 10) => {
@@ -151,7 +174,9 @@ export class LoadingScene extends Phaser.Scene {
       };
 
       ensureFramesAnim('engineBaseIdle', 'engineIdle', 8);
-      ensureFramesAnim('engineBasePower', 'enginePower', 14);
+  ensureFramesAnim('engineBasePower', 'enginePower', 14);
+  ensureFramesAnim('autoCannon', 'autoCannon_idle', 10);
+  ensureFramesAnim('autoCannonProjectile', 'autoCannonProjectile_idle', 10);
     } catch {
       // Non-fatal if not present yet; StarshipScene can lazily handle if needed
     }

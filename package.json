@@ -24,6 +24,9 @@
     "prettier": "prettier-package-json --write ./package.json && prettier --write .",
     "type-check": "tsc --build",
     "generate-powerups": "node tools/generate-powerups.cjs"
+    ,
+    "export:aseprite:auto-cannon": "node tools/export-aseprite-from-png.mjs",
+    "export:aseprite:auto-cannon:cli": "node tools/export-aseprite-cli.mjs"
   },
   "dependencies": {
     "@devvit/web": "0.12.0",

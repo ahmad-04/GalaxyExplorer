@@ -1,6 +1,8 @@
 import * as Phaser from 'phaser';
 import { EnemyManager } from '../entities/EnemyManager';
 import { Enemy, EnemyType } from '../entities/Enemy';
+import { Weapon } from '../entities/weapons/Weapon';
+import { AUTO_CANNON } from '../entities/weapons/definitions';
 import { BackgroundManager } from '../services/BackgroundManager';
 
 // Add an enum for power-up types
@@ -25,8 +27,7 @@ export class StarshipScene extends Phaser.Scene {
   private scoreMultiplier = 1;
   private scoreMultiplierTimer?: Phaser.Time.TimerEvent;
   private scoreText!: Phaser.GameObjects.Text;
-  private lastFired = 0;
-  private fireRate = 120; // ms - even faster fire rate for maximum fun
+  // Weapon controls fire cadence now
   private starfield!: Phaser.GameObjects.TileSprite;
   private keys!: {
     W: Phaser.Input.Keyboard.Key;
@@ -78,6 +79,7 @@ export class StarshipScene extends Phaser.Scene {
   private shipAnims: Partial<{ idle: string; thrust: string; left: string; right: string }> = {};
   // Post-update handler to sync engine FX to ship after physics step
   private syncEnginePos: (() => void) | undefined;
+  private weapon?: Weapon;
 
   constructor(config?: { key?: string }) {
     super({ key: config?.key ?? 'StarshipScene' });
@@ -124,7 +126,6 @@ export class StarshipScene extends Phaser.Scene {
     // Reset all game state when scene starts/restarts
     this.score = 0;
     this.difficulty = 1;
-    this.lastFired = 0;
     this.scoreMultiplier = 1;
     this.activePowerUps.clear();
     this.isShieldActive = false;
@@ -418,11 +419,25 @@ export class StarshipScene extends Phaser.Scene {
     this.cursors = this.input.keyboard!.createCursorKeys();
 
     // Groups (use resolved keys)
-    this.bullets = this.physics.add.group({ defaultKey: this.tex.bullet, maxSize: 60 });
+    this.bullets = this.physics.add.group({ defaultKey: this.tex.bullet, maxSize: 120 });
     this.enemies = this.physics.add.group();
     this.powerUps = this.physics.add.group({
       runChildUpdate: true,
     });
+
+    // Initialize player weapon (Auto Cannon)
+    {
+      const def = { ...AUTO_CANNON } as any;
+      def.projectileKey = this.textures.exists('autoCannonProjectile')
+        ? 'autoCannonProjectile'
+        : this.tex.bullet;
+      if (this.textures.exists('autoCannon')) {
+        def.weaponSpriteKey = 'autoCannon';
+      } else {
+        delete def.weaponSpriteKey;
+      }
+      this.weapon = new Weapon(this, this.ship, this.bullets, def);
+    }
 
     // Initialize enemy manager
     this.enemyManager = new EnemyManager(this, this.enemies, this.difficulty);
@@ -748,22 +763,13 @@ export class StarshipScene extends Phaser.Scene {
       void _err;
     }
 
-    // Shooting (always fire bullets upward)
-    if (fire && time > this.lastFired) {
-      const bullet = this.bullets.create(
-        this.ship.x,
-        this.ship.y,
-        this.tex.bullet
-      ) as Phaser.Physics.Arcade.Image;
-      if (bullet?.body) {
-        const body = bullet.body as Phaser.Physics.Arcade.Body;
-        body.setAllowGravity(false);
-        const upRad = Phaser.Math.DegToRad(-90);
-        bullet.setRotation(upRad);
-        this.physics.velocityFromRotation(upRad, 750, body.velocity); // Super fast bullets upward
-        this.time.delayedCall(1400, () => bullet.destroy()); // Even longer bullet lifetime
-        this.lastFired = time + this.fireRate;
-        this.shootSfx?.play();
+    // Shooting via weapon (hold-to-fire). Start looping anim on keydown, stop on keyup.
+    if (this.weapon) {
+      if (fire) {
+        this.weapon.startFiring();
+        this.weapon.tryFire(time);
+      } else {
+        this.weapon.stopFiring();
       }
     }
 
@@ -1421,12 +1427,14 @@ export class StarshipScene extends Phaser.Scene {
       this.tex.ship = 'ship';
     }
 
-    // Bullet
-    if (!this.textures.exists('bullet')) {
+    // Projectile: prefer Auto Cannon Aseprite projectile if available
+    if (this.textures.exists('autoCannonProjectile')) {
+      this.tex.bullet = 'autoCannonProjectile';
+    } else if (this.textures.exists('bullet')) {
+      this.tex.bullet = 'bullet';
+    } else {
       this.createCircleFallback('bullet_fallback', 8, 0xffffff);
       this.tex.bullet = 'bullet_fallback';
-    } else {
-      this.tex.bullet = 'bullet';
     }
 
     // Enemy
@@ -1528,7 +1536,8 @@ export class StarshipScene extends Phaser.Scene {
         labelText = 'x2';
         break;
       case PowerUpType.RAPID_FIRE:
-        this.fireRate = 100; // Faster fire rate
+        // Speed up firing: double the rate (reduce cooldown)
+        if (this.weapon) this.weapon.setFireRateMultiplier(2);
         iconTexture = 'powerup_rapidfire';
         labelText = 'RAPID';
         break;
@@ -1667,7 +1676,8 @@ export class StarshipScene extends Phaser.Scene {
     if (type === PowerUpType.SCORE_MULTIPLIER) {
       this.scoreMultiplier = 1;
     } else if (type === PowerUpType.RAPID_FIRE) {
-      this.fireRate = 200; // Reset fire rate
+      // Reset weapon fire rate multiplier
+      if (this.weapon) this.weapon.setFireRateMultiplier(1);
     } else if (type === PowerUpType.SHIELD) {
       this.isShieldActive = false;
       if (this.shieldObject) {
@@ -1951,9 +1961,7 @@ export class StarshipScene extends Phaser.Scene {
 
     // Reset game state variables
     this.score = 0;
-    this.scoreMultiplier = 1;
-    this.fireRate = 200;
-    this.lastFired = 0;
+  this.scoreMultiplier = 1;
     this.difficulty = 1;
 
     // Clear test-related registry flags and counters to avoid stale state on next run
@@ -2049,15 +2057,6 @@ export class StarshipScene extends Phaser.Scene {
           ),
         }
       : levelData;
-
-    // Detailed log of what we're working with
-    console.log('[StarshipScene] Custom level details:', {
-      name: effectiveLevelData.settings.name,
-      entitiesCount: effectiveLevelData.entities?.length || 0,
-      validEntities: effectiveLevelData.entities?.filter((e) => e.type && e.position).length || 0,
-      enemySpawners:
-        effectiveLevelData.entities?.filter((e) => e.type === 'ENEMY_SPAWNER').length || 0,
-    });
 
     // Stop the default enemy spawning
     console.log('[StarshipScene] Stopping default enemy spawning');
