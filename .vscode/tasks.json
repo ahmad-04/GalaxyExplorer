@@ -38,6 +38,36 @@
 			"command": "npm run type-check",
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "Export Kla'ed assets",
+			"type": "shell",
+			"command": "npm run export:kla:all",
+			"isBackground": false
+		},
+		{
+			"label": "Type-check workspace",
+			"type": "shell",
+			"command": "npm run type-check",
+			"group": "build"
+		},
+		{
+			"label": "Type-check workspace",
+			"type": "shell",
+			"command": "npm run type-check",
+			"group": "build"
+		},
+		{
+			"label": "Type-check workspace",
+			"type": "shell",
+			"command": "npm run type-check",
+			"group": "build"
+		},
+		{
+			"label": "Type-check workspace",
+			"type": "shell",
+			"command": "npm run type-check",
+			"group": "build"
 		}
 	]
 }

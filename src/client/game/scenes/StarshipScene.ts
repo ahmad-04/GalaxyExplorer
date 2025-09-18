@@ -899,6 +899,23 @@ export class StarshipScene extends Phaser.Scene {
         console.log('[StarshipScene] Enemy destroyed after hit');
         enemySprite.destroy();
       }
+    } else if (typeof (enemySprite as any).takeDamage === 'function') {
+      // New Kla'ed EnemyBase path: apply 1 damage per bullet
+      try {
+        const destroyedNow = (enemySprite as any).takeDamage(1) as boolean;
+        destroyed = destroyedNow;
+        if (destroyedNow) {
+          // Use getScore() if available on EnemyBase, otherwise keep default
+          if (typeof (enemySprite as any).getScore === 'function') {
+            try { points = (enemySprite as any).getScore(); } catch {}
+          }
+          console.log('[StarshipScene] EnemyBase destroyed after damage');
+          if (enemySprite.active) enemySprite.destroy();
+        }
+      } catch (e) {
+        console.warn('[StarshipScene] takeDamage failed, falling back to destroy:', e);
+        enemySprite.destroy();
+      }
     } else {
       // Legacy enemy - destroy immediately
       enemySprite.destroy();
@@ -1666,20 +1683,16 @@ export class StarshipScene extends Phaser.Scene {
     // Create or update UI entry for this power-up
     this.ensurePowerUpTexture(iconTexture);
     let ui = this.powerUpUI.get(type);
-    if (!ui) {
+    const recreateUi = () => {
       const index = this.powerUpUI.size; // zero-based index for layout
-      // Vertical list positioning
       const x = this.powerUpBasePos.x;
       const y = this.powerUpBasePos.y + index * this.powerUpSpacing;
-      // Background plate for better contrast against starfield
       const circle = this.add.graphics().setDepth(99);
       circle.fillStyle(0x000000, 0.55);
       circle.lineStyle(2, 0x555555, 0.8);
       circle.fillCircle(x, y, 26);
       circle.strokeCircle(x, y, 26);
-      // Larger, clearer icon; ensure texture exists (fallback created earlier if missing)
       const icon = this.add.sprite(x, y, iconTexture).setScale(0.75).setAlpha(0).setDepth(101);
-      // Add a subtle outline via tint flash approach (first frame only)
       icon.setTint(0xffffff);
       const label = this.add
         .text(x + 25, y, labelText, {
@@ -1693,6 +1706,10 @@ export class StarshipScene extends Phaser.Scene {
         .setAlpha(0);
       ui = { icon, circle, label };
       this.powerUpUI.set(type, ui);
+    };
+  const isSpriteUsable = (s: Phaser.GameObjects.Sprite | undefined) => !!s && !!s.scene;
+    if (!ui) {
+      recreateUi();
     } else {
       // Re-activating existing power-up before fade-out destroy finished can cause race conditions.
       // Stop any active tweens affecting icon/label (especially fade-out) to keep them visible.
@@ -1704,10 +1721,22 @@ export class StarshipScene extends Phaser.Scene {
       } catch (e) {
         // Safe guard – ignore if tween manager API differs.
       }
-      ui.icon.setTexture(iconTexture);
-      ui.label.setText(labelText);
-      ui.icon.setAlpha(1);
-      ui.label.setAlpha(1);
+      // If UI sprites were destroyed (e.g., during scene transitions), recreate safely
+      if (!isSpriteUsable(ui.icon) || !ui.label || (ui.label as any).destroyed) {
+        // Remove stale entry and rebuild
+        try {
+          ui.icon?.destroy();
+          ui.label?.destroy();
+          ui.circle?.destroy();
+        } catch {}
+        this.powerUpUI.delete(type);
+        recreateUi();
+      } else {
+        try { ui.icon.setTexture(iconTexture); } catch {}
+        try { ui.label.setText(labelText); } catch {}
+        ui.icon.setAlpha(1);
+        ui.label.setAlpha(1);
+      }
     }
 
     // Re-layout all existing power-up UI entries (compact them)
@@ -1732,12 +1761,13 @@ export class StarshipScene extends Phaser.Scene {
     });
 
     // Reveal / bounce icon & ensure label visible
-    ui.icon.setScale(0.85); // start slightly larger before bounce
-    ui.icon.setAlpha(1);
-    ui.label.setAlpha(1);
-    this.tweens.add({ targets: ui.icon, scale: 0.75, duration: 300, ease: 'Bounce.Out' });
-    if (ui.label.alpha < 1) {
-      this.tweens.add({ targets: ui.label, alpha: 1, duration: 200 });
+    const ensuredUi = this.powerUpUI.get(type)!; // ui was just created or validated above
+    ensuredUi.icon.setScale(0.85); // start slightly larger before bounce
+    ensuredUi.icon.setAlpha(1);
+    ensuredUi.label.setAlpha(1);
+    this.tweens.add({ targets: ensuredUi.icon, scale: 0.75, duration: 300, ease: 'Bounce.Out' });
+    if (ensuredUi.label.alpha < 1) {
+      this.tweens.add({ targets: ensuredUi.label, alpha: 1, duration: 200 });
     }
 
     // Draw initial timer arc for this power-up

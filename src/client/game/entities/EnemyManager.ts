@@ -5,6 +5,9 @@ import { EnemyPlaceholders } from '../factories/EnemyPlaceholders';
 import { SeekerDrone } from '../entities/enemies/SeekerDrone';
 import { EliteGunship } from '../entities/enemies/EliteGunship';
 import { ScoutInterceptor } from '../entities/enemies/ScoutInterceptor';
+import { EnemyProjectiles } from './enemies/EnemyProjectiles';
+import { EnemyBase } from './enemies/EnemyBase';
+import { ENEMIES } from './enemies/definitions';
 
 /**
  * EnemyManager - Handles enemy spawning, tracking, and updates
@@ -13,10 +16,12 @@ import { ScoutInterceptor } from '../entities/enemies/ScoutInterceptor';
 export class EnemyManager {
   private scene: Phaser.Scene;
   private enemies: Phaser.Physics.Arcade.Group;
-  private enemyBullets?: Phaser.Physics.Arcade.Group;
+  private enemyBullets?: Phaser.Physics.Arcade.Group; // legacy, retained for compatibility
+  private projectilePool: EnemyProjectiles;
   private difficulty: number;
   private spawnTimer?: Phaser.Time.TimerEvent | undefined;
   private speedMultiplier: number;
+  private useKlaRevamp = true; // prefer new Kla'ed enemies when assets are present
 
   constructor(scene: Phaser.Scene, enemies: Phaser.Physics.Arcade.Group, difficulty: number = 1) {
     this.scene = scene;
@@ -24,8 +29,12 @@ export class EnemyManager {
     this.difficulty = difficulty;
     this.speedMultiplier = 1;
 
-    // Create placeholder graphics for enemy types
+  // Create placeholder graphics for enemy types
     EnemyPlaceholders.createPlaceholders(scene);
+
+  // Set up centralized enemy projectile pool and expose on scene for convenience
+  this.projectilePool = new EnemyProjectiles(scene);
+  (this.scene as any).enemyProjectiles = this.projectilePool;
 
     console.log(`[EnemyManager] Initialized with difficulty ${difficulty}`);
   }
@@ -86,7 +95,28 @@ export class EnemyManager {
     // Determine enemy type based on difficulty
     const enemyType = EnemyFactory.determineEnemyType(this.difficulty);
 
-    // Create the enemy
+    // Prefer Kla'ed models when available (mapping legacy types to Kla'ed defs)
+    if (this.useKlaRevamp) {
+      const spawnKla = (defKey: keyof typeof ENEMIES): boolean => {
+        const def = ENEMIES?.[defKey];
+        if (!def) return false;
+        if (!this.scene.textures.exists(def.key)) return false;
+        const kla = new EnemyBase(this.scene, x, -60, def).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return true;
+      };
+
+      if (enemyType === EnemyType.SCOUT && spawnKla('scout')) return;
+      if (enemyType === EnemyType.FIGHTER && spawnKla('fighter')) return;
+      // Use bomber to represent legacy cruiser (slow and tougher)
+      if (enemyType === EnemyType.CRUISER && spawnKla('bomber')) return;
+      // Map seeker (tracker) to torpedo ship (homing torpedoes)
+      if (enemyType === EnemyType.SEEKER && spawnKla('torpedo')) return;
+      // Map gunship to frigate (heavier shooting unit). If frigate missing, fallback continues to legacy below.
+      if (enemyType === EnemyType.GUNSHIP && spawnKla('frigate')) return;
+    }
+
+    // Create legacy enemy
     const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, -60);
 
     // Add enemy to the group (cast to Phaser.GameObjects.GameObject for type compatibility)
@@ -203,33 +233,37 @@ export class EnemyManager {
     playerShip?: Phaser.Physics.Arcade.Sprite,
     bullets?: Phaser.Physics.Arcade.Group
   ): void {
+    // Update pooled enemy projectiles (homing, etc.)
+    this.projectilePool.update(time, delta, playerShip);
+
     // Update each enemy based on its type
     this.enemies.getChildren().forEach((enemySprite) => {
+      const anyEnemy = enemySprite as any;
+      const hasGetType = typeof anyEnemy.getType === 'function';
       const enemy = enemySprite as unknown as Enemy;
 
-      // Call the enemy's update method
-      enemy.update(time, delta);
-
-      // Special handling for each enemy type
-      if (enemy.getType() === EnemyType.SEEKER && playerShip?.active) {
-        // Update seeker to track the player
-        const seeker = enemy as SeekerDrone;
-        seeker.trackPlayer(playerShip);
+      // Call the enemy's update method (works for both legacy and EnemyBase)
+      if (typeof anyEnemy.update === 'function') {
+        anyEnemy.update(time, delta);
       }
 
-      // Scout can evade bullets
-      if (enemy.getType() === EnemyType.SCOUT && bullets) {
-        // Try to evade incoming bullets
-        const scout = enemy as ScoutInterceptor;
-        scout.attemptEvade(bullets);
-      }
-
-      // Gunship can fire at the player
-      if (enemy.getType() === EnemyType.GUNSHIP) {
-        const gunship = enemy as EliteGunship;
-        if (gunship.canShoot(time)) {
-          this.fireEnemyBullet(gunship);
-          gunship.resetShootCooldown(time);
+      if (hasGetType) {
+        // Special handling for legacy enemies that expose getType()
+        const type = enemy.getType();
+        if (type === EnemyType.SEEKER && playerShip?.active) {
+          const seeker = enemy as SeekerDrone;
+          seeker.trackPlayer(playerShip);
+        }
+        if (type === EnemyType.SCOUT && bullets) {
+          const scout = enemy as ScoutInterceptor;
+          scout.attemptEvade(bullets);
+        }
+        if (type === EnemyType.GUNSHIP) {
+          const gunship = enemy as EliteGunship;
+          if (gunship.canShoot(time)) {
+            this.fireEnemyBullet(gunship);
+            gunship.resetShootCooldown(time);
+          }
         }
       }
 
@@ -258,28 +292,9 @@ export class EnemyManager {
    * Fire a bullet from an enemy gunship
    */
   private fireEnemyBullet(gunship: EliteGunship): void {
-    // Initialize enemy bullets group if needed
-    if (!this.enemyBullets) {
-      this.enemyBullets = this.scene.physics.add.group({ defaultKey: 'enemy_bullet' });
-    }
-
-    // Create the bullet
-    const bullet = this.enemyBullets.create(
-      gunship.x,
-      gunship.y + 20
-    ) as Phaser.Physics.Arcade.Image;
-    if (bullet?.body) {
-      bullet.setTint(0xff0000);
-      bullet.setScale(0.7);
-      bullet.setVelocity(0, 300);
-
-      // Auto-destroy after 2 seconds
-      this.scene.time.delayedCall(2000, () => {
-        if (bullet.active) bullet.destroy();
-      });
-
-      console.log(`[EnemyManager] Gunship fired bullet at (${gunship.x}, ${gunship.y})`);
-    }
+    const key = this.resolveProjectileTextureKey();
+    this.projectilePool.spawnStraight(gunship.x, gunship.y + 20, key, 300, 2000, 0xff0000, 0.7);
+    console.log(`[EnemyManager] Gunship fired bullet at (${gunship.x}, ${gunship.y})`);
   }
 
   /**
@@ -291,15 +306,10 @@ export class EnemyManager {
     player: Phaser.Physics.Arcade.Sprite,
     callback: (bullet: Phaser.Physics.Arcade.Image) => void
   ): void {
-    // Initialize enemy bullets group if needed
-    if (!this.enemyBullets) {
-      this.enemyBullets = this.scene.physics.add.group({ defaultKey: 'enemy_bullet' });
-    }
-
     // Set up collision between player and enemy bullets
     this.scene.physics.add.overlap(
       player,
-      this.enemyBullets,
+      this.projectilePool.getGroup(),
       (_playerSprite, bulletSprite) => {
         callback(bulletSprite as Phaser.Physics.Arcade.Image);
       },
@@ -325,10 +335,20 @@ export class EnemyManager {
     this.stopSpawning();
 
     // Clean up bullets
-    if (this.enemyBullets) {
-      this.enemyBullets.clear(true, true);
+    if (this.enemyBullets) this.enemyBullets.clear(true, true);
+    // Clear pooled projectiles
+    if (this.projectilePool?.getGroup()) {
+      this.projectilePool.getGroup().clear(true, true);
     }
 
     console.log(`[EnemyManager] Resources cleaned up`);
+  }
+
+  private resolveProjectileTextureKey(): string {
+    if (this.scene.textures.exists('kla_bullet')) return 'kla_bullet';
+    if (this.scene.textures.exists('enemy_bullet')) return 'enemy_bullet';
+    if (this.scene.textures.exists('autoCannonProjectile')) return 'autoCannonProjectile';
+    if (this.scene.textures.exists('bullet')) return 'bullet';
+    return this.scene.textures.getTextureKeys()[0] || 'bullet';
   }
 }

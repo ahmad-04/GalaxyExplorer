@@ -5,6 +5,8 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
+  "export:kla:all": "node ./tools/export-kla-cli.mjs",
+  "export:kla:only": "node ./tools/export-kla-cli.mjs --only=%only%",
     "postinstall": "npm run build:client && npm run build:server",
     "build:client": "cd src/client && vite build",
     "build:server": "cd src/server && vite build",
