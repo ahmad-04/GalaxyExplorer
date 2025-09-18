@@ -79,6 +79,8 @@ export class StarshipScene extends Phaser.Scene {
   private shipAnims: Partial<{ idle: string; thrust: string; left: string; right: string }> = {};
   // Post-update handler to sync engine FX to ship after physics step
   private syncEnginePos: (() => void) | undefined;
+  // Post-update handler to keep shield locked to ship without frame lag
+  private syncShieldPos: (() => void) | undefined;
   private weapon?: Weapon;
 
   constructor(config?: { key?: string }) {
@@ -779,12 +781,6 @@ export class StarshipScene extends Phaser.Scene {
     // Update power-up timer if one is active
     if (this.activePowerUps.size > 0) {
       this.updatePowerUpTimerUI();
-
-      // Update shield position if it's active
-      if (this.isShieldActive && this.shieldObject && this.player) {
-        this.shieldObject.x = this.player.x;
-        this.shieldObject.y = this.player.y;
-      }
     }
   }
 
@@ -847,6 +843,29 @@ export class StarshipScene extends Phaser.Scene {
     else if (s.x > w) s.x = 0;
     if (s.y < 0) s.y = h;
     else if (s.y > h) s.y = 0;
+  }
+
+  // Keep shield perfectly attached to ship after physics step to avoid visual lag
+  private attachShieldSync(): void {
+    // Clear any previous handler
+    this.detachShieldSync();
+    this.syncShieldPos = () => {
+      if (!this.shieldObject || !this.player) return;
+      this.shieldObject.x = this.player.x;
+      this.shieldObject.y = this.player.y;
+      // Keep shield unrotated (most shields are circular); comment out if art requires rotation
+      this.shieldObject.rotation = 0;
+    };
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.syncShieldPos, this);
+    // Ensure cleanup on scene shutdown
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.detachShieldSync());
+  }
+
+  private detachShieldSync(): void {
+    if (this.syncShieldPos) {
+      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.syncShieldPos, this);
+      this.syncShieldPos = undefined;
+    }
   }
 
   // Enemy spawning is now handled by EnemyManager
@@ -1546,12 +1565,6 @@ export class StarshipScene extends Phaser.Scene {
         iconTexture = 'powerup_shield';
         labelText = 'SHIELD';
 
-        // Create shield texture if it doesn't exist
-        if (!this.textures.exists('shield')) {
-          console.log('[StarshipScene] Shield texture not found, creating fallback');
-          this.createShieldFallback('shield');
-        }
-
         // Clean up any existing shield object
         if (this.shieldObject) {
           this.shieldObject.destroy();
@@ -1560,20 +1573,92 @@ export class StarshipScene extends Phaser.Scene {
 
         // Create and show shield visual around player
         if (this.player) {
-          this.shieldObject = this.add.sprite(this.player.x, this.player.y, 'shield');
-          this.shieldObject.setScale(0.4);
-          this.shieldObject.setAlpha(0.8);
-          this.shieldObject.setVisible(true);
+          const finishCreateShield = (useShieldKey: string) => {
+            this.shieldObject = this.add
+              .sprite(this.player.x, this.player.y, useShieldKey)
+              // Ensure shield renders in front of the ship
+              .setDepth(this.shipPrimary.depth + 1)
+              .setAlpha(0.9)
+              .setVisible(true);
+            // Scale shield to roughly encompass the ship (use ship width heuristic)
+            const scale = this.shipPrimary.displayWidth / 48; // ship base ~48px
+            this.shieldObject.setScale(scale);
+            // Respect per-frame pivot if exported
+            const setOriginFromFrame = (
+              this.shieldObject as unknown as { setOriginFromFrame?: () => void }
+            ).setOriginFromFrame;
+            if (typeof setOriginFromFrame === 'function') setOriginFromFrame.call(this.shieldObject);
+            // Play tag-based or fallback idle
+            const idleKey = this.anims.exists(`${useShieldKey}_Idle`)
+              ? `${useShieldKey}_Idle`
+              : this.anims.exists(`${useShieldKey}_idle`)
+              ? `${useShieldKey}_idle`
+              : this.anims.exists('invincibilityShield_idle')
+              ? 'invincibilityShield_idle'
+              : undefined;
+            if (idleKey) this.shieldObject.play({ key: idleKey, repeat: -1 });
+            if (this.shieldObject.anims) this.shieldObject.anims.timeScale = 1.2;
+            // Lock shield to ship post-physics to avoid visible drag
+            this.attachShieldSync();
+          };
 
-          // Add a pulse effect to the shield
-          this.tweens.add({
-            targets: this.shieldObject,
-            alpha: { from: 0.8, to: 0.6 },
-            scale: { from: 0.38, to: 0.42 },
-            duration: 1000,
-            yoyo: true,
-            repeat: -1,
-          });
+          // Prefer Aseprite shield; lazy-load if missing
+          if (this.textures.exists('invincibilityShield')) {
+            finishCreateShield('invincibilityShield');
+          } else if (this.load) {
+            // Attempt on-demand load
+            this.load.aseprite(
+              'invincibilityShield',
+              '/assets/Void_MainShip/export/invincibility_shield.png',
+              '/assets/Void_MainShip/export/invincibility_shield.json'
+            );
+            this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+              try {
+                if (this.textures.exists('invincibilityShield')) {
+                  // Register animations if present
+                  this.anims.createFromAseprite('invincibilityShield');
+                  finishCreateShield('invincibilityShield');
+                  return;
+                }
+              } catch {}
+              // Fallback if still missing
+              if (!this.textures.exists('shield')) this.createShieldFallback('shield');
+              this.shieldObject = this.add.sprite(this.player!.x, this.player!.y, 'shield');
+              this.shieldObject
+                .setDepth(this.shipPrimary.depth + 1)
+                .setScale(0.4)
+                .setAlpha(0.8)
+                .setVisible(true);
+              this.tweens.add({
+                targets: this.shieldObject,
+                alpha: { from: 0.8, to: 0.6 },
+                scale: { from: 0.38, to: 0.42 },
+                duration: 1000,
+                yoyo: true,
+                repeat: -1,
+              });
+              this.attachShieldSync();
+            });
+            this.load.start();
+          } else {
+            // Fallback: generate and use procedural circle as before
+            if (!this.textures.exists('shield')) this.createShieldFallback('shield');
+            this.shieldObject = this.add.sprite(this.player.x, this.player.y, 'shield');
+            this.shieldObject
+              .setDepth(this.shipPrimary.depth + 1)
+              .setScale(0.4)
+              .setAlpha(0.8)
+              .setVisible(true);
+            this.tweens.add({
+              targets: this.shieldObject,
+              alpha: { from: 0.8, to: 0.6 },
+              scale: { from: 0.38, to: 0.42 },
+              duration: 1000,
+              yoyo: true,
+              repeat: -1,
+            });
+            this.attachShieldSync();
+          }
         }
         break;
     }
@@ -1684,6 +1769,8 @@ export class StarshipScene extends Phaser.Scene {
         // Optional: add a fade-out tween
         this.shieldObject.setVisible(false);
       }
+      // Stop syncing once shield deactivates
+      this.detachShieldSync();
     }
 
     // remove timer and from map
@@ -1951,6 +2038,7 @@ export class StarshipScene extends Phaser.Scene {
       this.shieldObject.destroy();
       this.shieldObject = undefined;
     }
+    this.detachShieldSync();
     // Cleanup multi power-up UI entries
     this.powerUpUI.forEach((ui) => {
       ui.icon.destroy();

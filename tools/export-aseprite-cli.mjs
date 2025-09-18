@@ -61,6 +61,7 @@ if (!asepriteExe) {
 
 const tasks = [
   {
+    name: 'autoCannon',
     src: path.join(
       root,
       'src/client/public/assets/Void_MainShip/Main Ship/Main Ship - Weapons/Aseprite/Main Ship - Weapons - Auto Cannon.aseprite'
@@ -69,6 +70,7 @@ const tasks = [
     outJson: path.join(root, 'src/client/public/assets/Void_MainShip/export/auto_cannon.json'),
   },
   {
+    name: 'autoCannonProjectile',
     src: path.join(
       root,
       'src/client/public/assets/Void_MainShip/Main ship weapons/Aseprite/Main ship weapon - Projectile - Auto cannon bullet.aseprite'
@@ -76,10 +78,24 @@ const tasks = [
     outPng: path.join(root, 'src/client/public/assets/Void_MainShip/export/auto_cannon_projectile.png'),
     outJson: path.join(root, 'src/client/public/assets/Void_MainShip/export/auto_cannon_projectile.json'),
   },
+  {
+    name: 'invincibilityShield',
+    src: path.join(
+      root,
+      'src/client/public/assets/Void_MainShip/Main Ship/Main Ship - Shields/Aseprite/Main Ship - Shields - Invincibility Shield.aseprite'
+    ),
+    outPng: path.join(root, 'src/client/public/assets/Void_MainShip/export/invincibility_shield.png'),
+    outJson: path.join(root, 'src/client/public/assets/Void_MainShip/export/invincibility_shield.json'),
+  },
 ];
 
+// Optional: filter tasks via --only=name
+const onlyArg = process.argv.find((a) => a.startsWith('--only='));
+const only = onlyArg ? onlyArg.split('=')[1] : undefined;
+const runTasks = only ? tasks.filter((t) => t.name === only) : tasks;
+
 let ok = true;
-for (const t of tasks) {
+for (const t of runTasks) {
   if (!fs.existsSync(t.src)) {
     console.warn(`[aseprite-cli] Source not found, skipping: ${t.src}`);
     ok = false;

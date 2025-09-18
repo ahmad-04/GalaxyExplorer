@@ -58,6 +58,12 @@ export class LoadingScene extends Phaser.Scene {
         '/assets/Void_MainShip/export/auto_cannon_projectile.png',
         '/assets/Void_MainShip/export/auto_cannon_projectile.json'
       );
+      // Invincibility Shield (Aseprite export expected at export/)
+      this.load.aseprite(
+        'invincibilityShield',
+        '/assets/Void_MainShip/export/invincibility_shield.png',
+        '/assets/Void_MainShip/export/invincibility_shield.json'
+      );
     } catch {
       // Non-fatal; fallback to PNG or placeholder will be used at runtime
     }
@@ -149,6 +155,9 @@ export class LoadingScene extends Phaser.Scene {
       if (this.textures.exists('autoCannonProjectile')) {
         this.anims.createFromAseprite('autoCannonProjectile');
       }
+      if (this.textures.exists('invincibilityShield')) {
+        this.anims.createFromAseprite('invincibilityShield');
+      }
 
       // Fallback: if tags weren't exported, build simple looping animations from frames
       const ensureFramesAnim = (texKey: string, animKey: string, frameRate = 10) => {
@@ -173,10 +182,11 @@ export class LoadingScene extends Phaser.Scene {
         }
       };
 
-      ensureFramesAnim('engineBaseIdle', 'engineIdle', 8);
-  ensureFramesAnim('engineBasePower', 'enginePower', 14);
-  ensureFramesAnim('autoCannon', 'autoCannon_idle', 10);
-  ensureFramesAnim('autoCannonProjectile', 'autoCannonProjectile_idle', 10);
+    ensureFramesAnim('engineBaseIdle', 'engineIdle', 8);
+    ensureFramesAnim('engineBasePower', 'enginePower', 14);
+    ensureFramesAnim('autoCannon', 'autoCannon_idle', 10);
+    ensureFramesAnim('autoCannonProjectile', 'autoCannonProjectile_idle', 10);
+    ensureFramesAnim('invincibilityShield', 'invincibilityShield_idle', 12);
     } catch {
       // Non-fatal if not present yet; StarshipScene can lazily handle if needed
     }

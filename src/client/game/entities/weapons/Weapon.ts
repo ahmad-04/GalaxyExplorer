@@ -137,6 +137,35 @@ export class Weapon {
   projectile.setRotation(host.rotation);
     // Ensure we aren't showing the entire sheet: set first frame by name if available
     this.setFirstFrame(projectile, key);
+    // If the projectile supports animations and an anim exists, play it in a loop (faster)
+    try {
+      const animCandidates = [
+        `${key}_idle`,
+        `${key}_loop`,
+        `${key}_anim`,
+      ];
+      let animKey: string | undefined;
+      for (const k of animCandidates) {
+        if (this.scene.anims.exists(k)) {
+          animKey = k;
+          break;
+        }
+      }
+      if (!animKey) {
+        const map = (this.scene.anims as any)?.anims as Map<string, any> | undefined;
+        const keyLc = key.toLowerCase();
+        map?.forEach((_val: any, name: string) => {
+          if (!animKey && name.toLowerCase().includes(keyLc)) animKey = name;
+        });
+      }
+      if (animKey) {
+        const anyProj = projectile as unknown as { play?: Function; anims?: { timeScale: number } };
+        anyProj.play?.({ key: animKey, repeat: -1 });
+        if (anyProj.anims) anyProj.anims.timeScale = 1.4;
+      }
+    } catch {
+      // ignore anim issues
+    }
     if (this.def.projectileScale) projectile.setScale(this.def.projectileScale);
     if (this.def.projectileTint !== undefined) projectile.setTint(this.def.projectileTint);
   this.scene.physics.velocityFromRotation(velRad, this.def.projectileSpeed, body.velocity);
