@@ -441,8 +441,8 @@ export class StarshipScene extends Phaser.Scene {
       this.weapon = new Weapon(this, this.ship, this.bullets, def);
     }
 
-    // Initialize enemy manager
-    this.enemyManager = new EnemyManager(this, this.enemies, this.difficulty);
+  // Initialize enemy manager (mixed spawns)
+  this.enemyManager = new EnemyManager(this, this.enemies, this.difficulty);
 
     // UI
     this.scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '20px', color: '#ffffff' });
@@ -491,6 +491,8 @@ export class StarshipScene extends Phaser.Scene {
         '[StarshipScene] Using custom level data for enemy spawning:',
         testLevelData.settings.name
       );
+      // Prevent any background/random spawns while testing a custom level
+      this.enemyManager.setDisableRandomSpawns(true);
       this.setupCustomLevel(testLevelData);
       // Start monitoring for completion when all custom enemies are cleared
       this.startTestCompletionMonitor();
@@ -544,6 +546,8 @@ export class StarshipScene extends Phaser.Scene {
       });
     } else {
       console.log('[StarshipScene] Skipping difficulty timer in Build Mode test with custom level');
+      // Also ensure no residual spawn timers are running
+      this.enemyManager.stopSpawning();
     }
   }
 
@@ -648,6 +652,30 @@ export class StarshipScene extends Phaser.Scene {
       // Handle player damage (reuse player hit logic)
       this.onPlayerHit(null as unknown as Phaser.Physics.Arcade.Sprite);
     });
+
+    // Allow player bullets to shoot down enemy projectiles
+    const enemyProjPool: any = (this as any).enemyProjectiles || (this.enemyManager as any).projectilePool;
+    const enemyProjGroup: Phaser.Physics.Arcade.Group | undefined = enemyProjPool?.getGroup?.();
+    if (enemyProjGroup) {
+      this.physics.add.overlap(
+        this.bullets,
+        enemyProjGroup,
+        (playerBullet, enemyProj) => {
+          if (!this.collisionsActive) return;
+          // Remove player bullet
+          (playerBullet as Phaser.Physics.Arcade.Image).destroy();
+          try {
+            const pool = enemyProjPool as { damageProjectile: (b: Phaser.GameObjects.GameObject, dmg?: number) => boolean };
+            pool.damageProjectile(enemyProj as Phaser.GameObjects.GameObject, 1);
+          } catch {
+            // If pooling API not present, just destroy projectile
+            (enemyProj as Phaser.Physics.Arcade.Sprite).destroy();
+          }
+        },
+        undefined,
+        this
+      );
+    }
 
     // Power-up collection
     this.physics.add.overlap(
@@ -884,7 +912,7 @@ export class StarshipScene extends Phaser.Scene {
     let points = 10; // Default points
     let destroyed = true;
 
-    if ('hit' in enemy && typeof enemy.hit === 'function') {
+    if (' hit' in enemy && typeof enemy.hit === 'function') {
       // Our custom enemy class - call hit method to handle damage
       console.log('[StarshipScene] Custom enemy hit');
       destroyed = enemy.hit();
@@ -1114,12 +1142,16 @@ export class StarshipScene extends Phaser.Scene {
     // If running a build mode verification, fail the test immediately
     if (this.registry.get('buildModeTest') === true) {
       console.log('[StarshipScene] Build Mode verification failed: player died');
-      // Notify BuildModeScene / PublishStep
+      // Send final statistics for the run
+      this.sendTestStats();
+      // Notify BuildModeScene / PublishStep about failure AND completion so editor returns
       const buildModeScene = this.scene.get('BuildModeScene');
       if (buildModeScene) {
         buildModeScene.events.emit('test:failed');
+        buildModeScene.events.emit('test:completed');
       } else {
         this.events.emit('test:failed');
+        this.events.emit('test:completed');
       }
       // Stop StarshipScene promptly
       this.scene.stop(this.scene.key);
@@ -2222,7 +2254,7 @@ export class StarshipScene extends Phaser.Scene {
     let enemiesPlaced = 0;
 
     // Process each entity in the level data
-    levelData.entities.forEach((entity, index) => {
+    effectiveLevelData.entities.forEach((entity, index) => {
       console.log(`[StarshipScene] Processing entity ${index}:`, entity);
 
       // Use a more flexible approach to entity type checking
@@ -2386,7 +2418,7 @@ export class StarshipScene extends Phaser.Scene {
 
     // Get position from the entity
     // Clamp spawn within designed playfield width if test data provides it
-    let { x, y } = entity.position;
+  let { x, y } = entity.position;
     try {
       const levelData = this.registry.get('testLevelData') as
         | { settings?: { playfieldWidth?: number; playfieldSafeMargin?: number } }
@@ -2397,7 +2429,8 @@ export class StarshipScene extends Phaser.Scene {
       const minX = 0 + safe;
       const maxX = w - safe;
       x = Phaser.Math.Clamp(x, minX, maxX);
-      y = Math.min(y, this.scale.height - 40); // don't spawn below bottom of screen
+  // Clamp to visible vertical range so enemies spawn on-screen in tests
+  y = Phaser.Math.Clamp(y, 0, this.scale.height - 40);
     } catch {
       // ignore clamping issues
     }
@@ -2420,6 +2453,15 @@ export class StarshipScene extends Phaser.Scene {
     } else if (normalizedType === EnemySpawnerType.SCOUT || normalizedType.includes('SCOUT')) {
       enemyType = EnemyType.SCOUT;
       console.log('[StarshipScene] Mapped to SCOUT');
+    } else if (normalizedType === EnemySpawnerType.BOMBER || normalizedType.includes('BOMBER')) {
+      enemyType = EnemyType.CRUISER; // EnemyManager maps CRUISER -> kla bomber
+      console.log('[StarshipScene] Mapped BOMBER -> CRUISER (kla bomber)');
+    } else if (normalizedType === EnemySpawnerType.TORPEDO || normalizedType.includes('TORPEDO')) {
+      enemyType = EnemyType.SEEKER; // EnemyManager maps SEEKER -> kla torpedo
+      console.log('[StarshipScene] Mapped TORPEDO -> SEEKER (kla torpedo)');
+    } else if (normalizedType === EnemySpawnerType.FRIGATE || normalizedType.includes('FRIGATE')) {
+      enemyType = EnemyType.GUNSHIP; // EnemyManager maps GUNSHIP -> kla frigate
+      console.log('[StarshipScene] Mapped FRIGATE -> GUNSHIP (kla frigate)');
     } else if (normalizedType === EnemySpawnerType.CRUISER || normalizedType.includes('CRUISER')) {
       enemyType = EnemyType.CRUISER;
       console.log('[StarshipScene] Mapped to CRUISER');
@@ -2466,6 +2508,9 @@ export class StarshipScene extends Phaser.Scene {
       RANDOM: string;
       FIGHTER: string;
       SCOUT: string;
+      BOMBER: string;
+      TORPEDO: string;
+      FRIGATE: string;
       CRUISER: string;
       SEEKER: string;
       GUNSHIP: string;
@@ -2484,6 +2529,9 @@ export class StarshipScene extends Phaser.Scene {
         RANDOM: 'RANDOM',
         FIGHTER: 'FIGHTER',
         SCOUT: 'SCOUT',
+        BOMBER: 'BOMBER',
+        TORPEDO: 'TORPEDO',
+        FRIGATE: 'FRIGATE',
         CRUISER: 'CRUISER',
         SEEKER: 'SEEKER',
         GUNSHIP: 'GUNSHIP',

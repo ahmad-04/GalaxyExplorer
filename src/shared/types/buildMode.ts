@@ -21,6 +21,11 @@ export enum EnemySpawnerType {
   RANDOM = 'RANDOM', // Random enemies based on difficulty
   FIGHTER = 'FIGHTER',
   SCOUT = 'SCOUT',
+  // New Kla'ed enemy types
+  BOMBER = 'BOMBER',
+  TORPEDO = 'TORPEDO',
+  FRIGATE = 'FRIGATE',
+  // Legacy names kept for backward compatibility with existing levels
   CRUISER = 'CRUISER',
   SEEKER = 'SEEKER',
   GUNSHIP = 'GUNSHIP',

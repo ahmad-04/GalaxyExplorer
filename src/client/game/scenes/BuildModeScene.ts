@@ -113,6 +113,37 @@ export class BuildModeScene extends Phaser.Scene {
       g.fillPath();
     });
 
+    // Bomber (teal trapezoid)
+    createTexture('enemy_bomber', (g) => {
+      g.fillStyle(0x14b8a6, 1);
+      g.beginPath();
+      g.moveTo(6, 8);
+      g.lineTo(26, 8);
+      g.lineTo(30, 26);
+      g.lineTo(2, 26);
+      g.closePath();
+      g.fillPath();
+    });
+
+    // Torpedo ship (yellow triangle)
+    createTexture('enemy_torpedo', (g) => {
+      g.fillStyle(0xf59e0b, 1);
+      g.beginPath();
+      g.moveTo(16, 2);
+      g.lineTo(30, 30);
+      g.lineTo(2, 30);
+      g.closePath();
+      g.fillPath();
+    });
+
+    // Frigate (blue rectangle with stripe)
+    createTexture('enemy_frigate', (g) => {
+      g.fillStyle(0x3b82f6, 1);
+      g.fillRect(2, 6, 28, 20);
+      g.fillStyle(0x93c5fd, 1);
+      g.fillRect(4, 14, 24, 4);
+    });
+
     // Cruiser (orange rectangle)
     createTexture('enemy_cruiser', (g) => {
       g.fillStyle(0xff6600, 1);

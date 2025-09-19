@@ -69,6 +69,8 @@ export class DesignStep {
   private readonly paletteWidth: number = 220;
   private readonly paletteHeight: number = 460;
   private paletteAnimating: boolean = false;
+  // Subtle tooltip for palette entries
+  private paletteTooltip?: Phaser.GameObjects.Container;
   // Toolbar removed: state no longer used
   // private toolbarOpen: boolean = true;
   // private toolbarAnimating: boolean = false;
@@ -639,7 +641,7 @@ export class DesignStep {
       topBarH + 20 + this.paletteHeight / 2
     );
     this.entityPaletteContainer.setScrollFactor(0);
-    this.entityPaletteContainer.setDepth(90);
+  this.entityPaletteContainer.setDepth(10000);
 
     // Palette panel with header via UiKit
     const palettePanel = createHeaderPanel(
@@ -651,6 +653,8 @@ export class DesignStep {
       'ENTITY PALETTE'
     );
     this.entityPaletteContainer.add(palettePanel.container);
+  // Ensure the panel background doesn't eat input events if it was made interactive
+  (palettePanel.container as unknown as { disableInteractive?: () => void }).disableInteractive?.();
 
     // Create a simple geometry mask for content area, then build lists
     this.paletteMaskGraphics = this.scene.add.graphics();
@@ -672,7 +676,17 @@ export class DesignStep {
     const enemiesContainer = this.entityPaletteContainer.getByName('enemies') as
       | Phaser.GameObjects.Container
       | undefined;
-    if (enemiesContainer) enemiesContainer.setMask(paletteMask);
+    const enemiesHitsContainer = this.entityPaletteContainer.getByName('enemiesHits') as
+      | Phaser.GameObjects.Container
+      | undefined;
+    if (enemiesContainer) {
+      enemiesContainer.setMask(paletteMask);
+      enemiesContainer.setDepth(5); // above the panel background
+    }
+    // Do NOT mask the hits container; just ensure it overlays visuals
+    if (enemiesHitsContainer) {
+      enemiesHitsContainer.setDepth(9);
+    }
 
     // Collapse button on the palette edge
     const collapse = this.scene.add.container(-this.paletteWidth / 2, 0);
@@ -708,6 +722,52 @@ export class DesignStep {
     this.setScrollFactorDeep(this.entityPaletteContainer, 0);
   }
 
+  // Lightweight tooltip shown inside the palette for descriptions
+  private showPaletteTooltip(text: string, screenX: number, screenY: number): void {
+    const scene = this.scene as Phaser.Scene;
+    if (!this.paletteTooltip) {
+      const container = scene.add.container(screenX, screenY).setDepth(200).setScrollFactor(0);
+      // Use graphics to emulate rounded rect since Rectangle lacks setRadius in Phaser typings
+  const bg = scene.add.graphics();
+  bg.setScrollFactor(0);
+      bg.fillStyle(0x0b1220, 0.96);
+      bg.lineStyle(1, 0x2b3a4a, 1);
+      // Draw a rounded rect at (0,0); we'll reposition container later
+      // drawing occurs below when size is known
+      const label = scene.add.text(0, 0, text, {
+        fontFamily: theme.fonts.body as string,
+        fontSize: '12px',
+        color: '#ced7e0',
+        wordWrap: { width: this.paletteWidth - 60 },
+      }).setOrigin(0.5);
+      container.add([bg, label]);
+      this.paletteTooltip = container;
+      // Store refs for quick resize
+      this.paletteTooltip.setData('bg', bg);
+      this.paletteTooltip.setData('label', label);
+    }
+  const label = this.paletteTooltip.getData('label') as Phaser.GameObjects.Text;
+  const bg = this.paletteTooltip.getData('bg') as Phaser.GameObjects.Graphics;
+    label.setText(text);
+    // Resize background to content
+    const padX = 12;
+    const padY = 8;
+  const w = Math.min(this.paletteWidth - 40, label.width + padX * 2);
+  const h = label.height + padY * 2;
+  // Redraw rounded background to the new size
+  (bg as any).clear?.();
+  (bg as any).fillStyle?.(0x0b1220, 0.96);
+  (bg as any).lineStyle?.(1, 0x2b3a4a, 1);
+  (bg as any).fillRoundedRect?.(-w / 2, -h / 2, w, h, 6);
+  (bg as any).strokeRoundedRect?.(-w / 2, -h / 2, w, h, 6);
+    this.paletteTooltip.setPosition(screenX, screenY);
+    this.paletteTooltip.setVisible(true);
+  }
+
+  private hidePaletteTooltip(): void {
+    if (this.paletteTooltip) this.paletteTooltip.setVisible(false);
+  }
+
   // Utility to set scrollFactor on a container and all descendants
   private setScrollFactorDeep(container: Phaser.GameObjects.Container, factor: number): void {
     container.setScrollFactor(factor);
@@ -733,19 +793,26 @@ export class DesignStep {
    * Create enemy entity buttons
    */
   private createEnemyButtons(simpleList: boolean = false): void {
-    // Create container for enemy buttons with consistent positioning
-    // If an old list exists (e.g., hot reload), remove it first
+    // Remove previous list if present
     const existing = this.entityPaletteContainer.getByName('enemies') as
       | Phaser.GameObjects.Container
       | undefined;
-    if (existing) {
-      existing.destroy(true);
-    }
+    if (existing) existing.destroy(true);
+    // Remove previous hit container if present
+    const existingHits = this.entityPaletteContainer.getByName('enemiesHits') as
+      | Phaser.GameObjects.Container
+      | undefined;
+    if (existingHits) existingHits.destroy(true);
 
-    // Position list under header within mask (lowered so first row is fully visible)
     const enemiesContainer = this.scene.add.container(0, -40);
     enemiesContainer.setName('enemies');
     this.entityPaletteContainer.add(enemiesContainer);
+    // Create a separate, unmasked container for full-row hit rectangles
+    const enemiesHitsContainer = this.scene.add.container(0, -40);
+    enemiesHitsContainer.setName('enemiesHits');
+    enemiesHitsContainer.setDepth(10);
+    enemiesHitsContainer.setScrollFactor(0);
+    this.entityPaletteContainer.add(enemiesHitsContainer);
 
     if (!simpleList) {
       const subtitle = this.scene.add
@@ -763,96 +830,109 @@ export class DesignStep {
       enemiesContainer.add(separatorLine);
     }
 
-    // Enemy types to display with colors for visual distinction
     const enemies = [
-      {
-        type: EnemySpawnerType.FIGHTER,
-        name: 'Fighter',
-        texture: 'enemy',
-        color: 0xff3333,
-        description: 'Basic fighter with moderate speed and health.',
-      },
-      {
-        type: EnemySpawnerType.SCOUT,
-        name: 'Scout',
-        texture: 'enemy_scout',
-        color: 0x33ddff,
-        description: 'Fast scout with low health but high evasion.',
-      },
-      {
-        type: EnemySpawnerType.CRUISER,
-        name: 'Cruiser',
-        texture: 'enemy_cruiser',
-        color: 0xff9933,
-        description: 'Heavy cruiser with high health but slow speed.',
-      },
-      {
-        type: EnemySpawnerType.SEEKER,
-        name: 'Seeker',
-        texture: 'enemy_seeker',
-        color: 0xff3399,
-        description: 'Seeker drone that tracks the player.',
-      },
-      {
-        type: EnemySpawnerType.GUNSHIP,
-        name: 'Gunship',
-        texture: 'enemy_gunship',
-        color: 0x9933ff,
-        description: 'Elite gunship that fires projectiles.',
-      },
+      { type: EnemySpawnerType.FIGHTER, name: 'Fighter', texture: 'kla_fighter', color: 0xff3333, description: 'Basic fighter with moderate speed and health.' },
+      { type: EnemySpawnerType.SCOUT, name: 'Scout', texture: 'kla_scout', color: 0x33ddff, description: 'Fast scout with low health but high evasion.' },
+      { type: EnemySpawnerType.BOMBER, name: 'Bomber', texture: 'kla_bomber', color: 0x14b8a6, description: 'Heavy bomber that fires big bullets, then retreats.' },
+      { type: EnemySpawnerType.TORPEDO, name: 'Torpedo', texture: 'kla_torpedo_ship', color: 0xf59e0b, description: 'Fires homing torpedoes at the top, then vanishes.' },
+      { type: EnemySpawnerType.FRIGATE, name: 'Frigate', texture: 'kla_frigate', color: 0x3b82f6, description: 'Heavier gunship with aimed bursts; rarer spawn.' },
     ];
 
-    // Create a simple, list-style UI for enemy selection
     enemies.forEach((enemy, index) => {
-      // Spacing tuned to fit all entries under the mask
-      const y = -60 + index * 52;
+      const y = -60 + index * 64; // larger spacing
       const row = this.scene.add.container(0, y);
       enemiesContainer.add(row);
 
-      const rowBg = this.scene.add.rectangle(0, 0, this.paletteWidth - 40, 40, 0x111827, 0.0001);
-      rowBg.setOrigin(0.5);
-      rowBg.setInteractive({ useHandCursor: true });
+      const rowWidth = this.paletteWidth - 40;
+      const rowHeight = 56; // taller row
 
-      // Icon: use the same texture keys enemies use in gameplay, with fallbacks
-      let iconKey = 'enemy';
-      if (enemy.type === EnemySpawnerType.FIGHTER) iconKey = 'enemy';
-      else if (enemy.type === EnemySpawnerType.SCOUT) iconKey = 'enemy_scout';
-      else if (enemy.type === EnemySpawnerType.CRUISER) iconKey = 'enemy_cruiser';
-      else if (enemy.type === EnemySpawnerType.SEEKER) iconKey = 'enemy_seeker';
-      else if (enemy.type === EnemySpawnerType.GUNSHIP) iconKey = 'enemy_gunship';
+      const rowBg = this.scene.add.graphics();
+      rowBg.fillStyle(0x0b1220, 0.85);
+      rowBg.lineStyle(1, 0x2b3a4a, 1);
+      rowBg.fillRoundedRect(-rowWidth / 2, -rowHeight / 2, rowWidth, rowHeight, 8);
+      rowBg.strokeRoundedRect(-rowWidth / 2, -rowHeight / 2, rowWidth, rowHeight, 8);
+  // Background is visual-only; keep non-interactive to avoid intercepting events
+
+      let iconKey = 'kla_fighter';
+      if (enemy.type === EnemySpawnerType.FIGHTER) iconKey = 'kla_fighter';
+      else if (enemy.type === EnemySpawnerType.SCOUT) iconKey = 'kla_scout';
+      else if (enemy.type === EnemySpawnerType.BOMBER) iconKey = 'kla_bomber';
+      else if (enemy.type === EnemySpawnerType.TORPEDO) iconKey = 'kla_torpedo_ship';
+      else if (enemy.type === EnemySpawnerType.FRIGATE) iconKey = 'kla_frigate';
+
+      const ring = this.scene.add.graphics();
+      ring.lineStyle(2, enemy.color, 0.9);
+      const iconCenterX = -this.paletteWidth / 2 + 44;
+      const iconRadius = 20;
+      ring.strokeCircle(iconCenterX, 0, iconRadius);
 
       let iconObj: Phaser.GameObjects.GameObject;
-      const hasTex = this.scene.textures.exists(iconKey);
-      const fallbackTex = this.scene.textures.exists('enemy');
+      const hasTex = this.scene.textures.exists(iconKey) || this.scene.textures.exists(enemy.texture);
+      const fallbackTex = this.scene.textures.exists('enemy_fighter');
       if (hasTex || fallbackTex) {
-        const img = this.scene.add.image(
-          -this.paletteWidth / 2 + 34,
-          0,
-          hasTex ? iconKey : 'enemy'
-        );
-        img.setDisplaySize(22, 22);
+        const tex = this.scene.textures.exists(iconKey) ? iconKey : (this.scene.textures.exists(enemy.texture) ? enemy.texture : 'enemy_fighter');
+        const img = this.scene.add.image(iconCenterX, 0, tex);
+        img.setDisplaySize(36, 36);
         img.setOrigin(0.5);
+        img.setTint(0xffffff);
         iconObj = img;
       } else {
-        // Fallback to a small colored circle if texture(s) missing
-        iconObj = this.scene.add.circle(-this.paletteWidth / 2 + 34, 0, 9, enemy.color, 1);
+        iconObj = this.scene.add.circle(iconCenterX, 0, 14, enemy.color, 1);
       }
 
-      const label = this.scene.add
-        .text(-this.paletteWidth / 2 + 54, 0, enemy.name, {
+      const label = this.scene.add.text(
+        -this.paletteWidth / 2 + 74,
+        0,
+        enemy.name,
+        {
           fontFamily: theme.fonts.body as string,
-          fontSize: '14px',
+          fontSize: '15px',
           color: theme.palette.beige,
-        })
-        .setOrigin(0, 0.5);
+          fontStyle: 'bold',
+        }
+      ).setOrigin(0, 0.5);
 
-      rowBg.on('pointerover', () => {
-        rowBg.setFillStyle(0x374151, 0.25);
+      const chevron = this.scene.add.text(rowWidth / 2 - 16, 0, '›', {
+        fontFamily: theme.fonts.body as string,
+        fontSize: '18px',
+        color: '#93a3b8',
+      }).setOrigin(0.5);
+
+      // Use an invisible rectangle hit target centered on the row for precise input mapping
+      const hitRect = this.scene.add
+        .rectangle(0, 0, rowWidth, rowHeight, 0x000000, 0.0001)
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setInteractive({ useHandCursor: true });
+      // Place the hit rect in the unmasked hits container at the row's position
+      hitRect.x = 0;
+      hitRect.y = y;
+      enemiesHitsContainer.add(hitRect);
+
+  hitRect.on('pointerover', () => {
+        rowBg.clear();
+        rowBg.fillStyle(0x1f2937, 0.95);
+        rowBg.lineStyle(1, 0x2b3a4a, 1);
+        rowBg.fillRoundedRect(-rowWidth / 2, -rowHeight / 2, rowWidth, rowHeight, 8);
+        rowBg.strokeRoundedRect(-rowWidth / 2, -rowHeight / 2, rowWidth, rowHeight, 8);
+        this.scene.tweens.add({ targets: [iconObj], scale: { from: 1, to: 1.06 }, duration: 120, ease: 'Sine.easeOut' });
+        const tx = this.entityPaletteContainer.x - this.paletteWidth / 2 + 80;
+        const ty = this.entityPaletteContainer.y + y + Math.min(22, rowHeight / 2 - 6);
+        this.showPaletteTooltip(enemy.description, tx, ty);
       });
-      rowBg.on('pointerout', () => {
-        rowBg.setFillStyle(0x111827, 0.0001);
+
+  hitRect.on('pointerout', () => {
+        rowBg.clear();
+        rowBg.fillStyle(0x0b1220, 0.85);
+        rowBg.lineStyle(1, 0x2b3a4a, 1);
+        rowBg.fillRoundedRect(-rowWidth / 2, -rowHeight / 2, rowWidth, rowHeight, 8);
+        rowBg.strokeRoundedRect(-rowWidth / 2, -rowHeight / 2, rowWidth, rowHeight, 8);
+        this.scene.tweens.add({ targets: [iconObj], scale: { from: (iconObj as any).scale || 1.06, to: 1 }, duration: 120, ease: 'Sine.easeOut' });
+        this.hidePaletteTooltip();
       });
-      rowBg.on('pointerdown', () => {
+
+      hitRect.on('pointerdown', () => {
+        this.scene.tweens.add({ targets: row, scale: { from: 1, to: 0.98 }, yoyo: true, duration: 90, ease: 'Sine.easeInOut' });
         this.manager.setCurrentEntityType(enemy.type);
         const cam = this.scene.cameras.main;
         const center = cam.getWorldPoint(cam.width / 2, cam.height / 2);
@@ -860,17 +940,14 @@ export class DesignStep {
         const entity = this.placeEntity(enemy.type, snapped.x, snapped.y);
         if (entity) this.selectEntity(entity, false);
         this.updateStatusBarDirty();
-        console.log(`[DesignStep] Spawned ${enemy.type} at camera center`);
-        // Auto-collapse palette after spawn
         this.togglePalette(false);
       });
 
-      row.add([rowBg, iconObj, label]);
+  row.add([rowBg, ring, iconObj, label, chevron]);
     });
 
-    // Set initial selection to first enemy type
     if (enemies.length > 0 && enemies[0]) {
-      this.manager.setCurrentEntityType(enemies[0].type);
+      this.manager.setCurrentEntityType(enemies[0].type as string);
     }
   }
 
@@ -1516,16 +1593,16 @@ export class DesignStep {
         const enemyType = enemySpawner.enemyType || EnemySpawnerType.FIGHTER;
 
         // Determine texture based on enemy type
-        let texture = 'enemy_fighter'; // Default texture
-
+        // Prefer real game sprites (aseprite textures) for the icon in the canvas
+        let texture = 'kla_fighter';
         if (enemyType === EnemySpawnerType.SCOUT) {
-          texture = 'enemy_scout';
-        } else if (enemyType === EnemySpawnerType.CRUISER) {
-          texture = 'enemy_cruiser';
-        } else if (enemyType === EnemySpawnerType.SEEKER) {
-          texture = 'enemy_seeker';
-        } else if (enemyType === EnemySpawnerType.GUNSHIP) {
-          texture = 'enemy_gunship';
+          texture = 'kla_scout';
+        } else if (enemyType === EnemySpawnerType.BOMBER) {
+          texture = 'kla_bomber';
+        } else if (enemyType === EnemySpawnerType.TORPEDO) {
+          texture = 'kla_torpedo_ship';
+        } else if (enemyType === EnemySpawnerType.FRIGATE) {
+          texture = 'kla_frigate';
         }
 
         // Create sprite using the appropriate texture
@@ -1891,6 +1968,9 @@ export class DesignStep {
     switch (entityType) {
       case EnemySpawnerType.FIGHTER:
       case EnemySpawnerType.SCOUT:
+      case EnemySpawnerType.BOMBER:
+      case EnemySpawnerType.TORPEDO:
+      case EnemySpawnerType.FRIGATE:
       case EnemySpawnerType.CRUISER:
       case EnemySpawnerType.SEEKER:
       case EnemySpawnerType.GUNSHIP: {
@@ -2590,6 +2670,16 @@ export class DesignStep {
     const viewportHeight = this.paletteHeight - 80; // match mask height
     const maxY = -70; // top anchor baseline for enemies
     const minY = Math.min(maxY, maxY - Math.max(0, contentHeight - viewportHeight));
-    active.y = Phaser.Math.Clamp(targetY, minY, maxY);
+    const clampedY = Phaser.Math.Clamp(targetY, minY, maxY);
+    // Move the visual container
+    active.y = clampedY;
+    // Mirror scroll for unmasked hits container if present
+    const hitsName = `${active.name}Hits`;
+    const hitsContainer = this.entityPaletteContainer.getByName(hitsName) as
+      | Phaser.GameObjects.Container
+      | undefined;
+    if (hitsContainer) {
+      hitsContainer.y = clampedY;
+    }
   }
 }

@@ -124,7 +124,7 @@ export class MainMenu extends Phaser.Scene {
 
     // Version footer
     this.add
-      .text(this.scale.width - 10, this.scale.height - 10, 'v0.5', {
+      .text(this.scale.width - 10, this.scale.height - 10, 'v1.0', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '14px',
         color: '#666666',

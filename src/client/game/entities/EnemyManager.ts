@@ -22,6 +22,18 @@ export class EnemyManager {
   private spawnTimer?: Phaser.Time.TimerEvent | undefined;
   private speedMultiplier: number;
   private useKlaRevamp = true; // prefer new Kla'ed enemies when assets are present
+  // When true, random/background spawning is fully disabled (used in Build Mode tests)
+  private disableRandomSpawns = false;
+  // DEV: Focus mode to spawn only a specific Kla'ed enemy definition (e.g., 'fighter' or 'torpedo')
+  private focusOnlyDefKey: keyof typeof ENEMIES | undefined = undefined;
+  // Weighted spawn frequencies for Kla'ed enemies (higher = more common)
+  private klaWeights: Partial<Record<keyof typeof ENEMIES, number>> = {
+    scout: 4,
+    fighter: 4,
+    bomber: 2,
+    torpedo: 2,
+    frigate: 1, // rarer
+  };
 
   constructor(scene: Phaser.Scene, enemies: Phaser.Physics.Arcade.Group, difficulty: number = 1) {
     this.scene = scene;
@@ -59,19 +71,31 @@ export class EnemyManager {
    * @param delay - Time between enemy spawns in milliseconds
    */
   startSpawning(delay: number = 1200): void {
+    // Hard guard: do not allow random spawning during Build Mode tests or when explicitly disabled
+    const isBuildModeTest = (this.scene.registry?.get?.('buildModeTest') === true) ||
+      (this.scene.registry?.get?.('isBuildModeTest') === true);
+    if (this.disableRandomSpawns || isBuildModeTest) {
+      if (this.spawnTimer) {
+        this.spawnTimer.remove();
+        this.spawnTimer = undefined;
+      }
+      console.log('[EnemyManager] Random spawning suppressed (build mode test or disabled flag)');
+      return;
+    }
     // Clear any existing timer
     if (this.spawnTimer) {
       this.spawnTimer.remove();
     }
 
     // Set up the spawn timer
+  const effectiveDelay = this.focusOnlyDefKey === 'torpedo' ? Math.max(delay, 2200) : delay;
     this.spawnTimer = this.scene.time.addEvent({
-      delay,
+      delay: effectiveDelay,
       loop: true,
       callback: () => this.spawnEnemy(),
     });
 
-    console.log(`[EnemyManager] Started spawning enemies every ${delay}ms`);
+    console.log(`[EnemyManager] Started spawning enemies every ${effectiveDelay}ms`);
   }
 
   /**
@@ -86,11 +110,48 @@ export class EnemyManager {
   }
 
   /**
+   * Enable/disable background/random spawning entirely
+   */
+  setDisableRandomSpawns(disable: boolean): void {
+    this.disableRandomSpawns = disable;
+    if (disable) this.stopSpawning();
+  }
+
+  /**
    * Spawn a single enemy
    */
   spawnEnemy(): void {
     // Determine position
     const x = Phaser.Math.Between(60, this.scene.scale.width - 60);
+
+    // DEV focus: only spawn a specific Kla'ed unit (fighter, torpedo, etc.) if configured
+    if (this.focusOnlyDefKey) {
+      const def: (typeof ENEMIES)[keyof typeof ENEMIES] | undefined = ENEMIES[this.focusOnlyDefKey];
+      if (def && this.scene.textures.exists(def.key)) {
+        const kla = new EnemyBase(this.scene, x, -60, def).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return;
+      } else {
+        console.warn(`[EnemyManager] Focus '${this.focusOnlyDefKey}' enabled but assets missing; skipping spawn.`);
+        return;
+      }
+    }
+
+    // Prefer Kla'ed random selection (weighted) when available, to mix all types from the start
+    if (this.useKlaRevamp) {
+      const defKey = this.pickRandomKlaDefKey();
+      if (defKey) {
+        const def: (typeof ENEMIES)[keyof typeof ENEMIES] | undefined = ENEMIES[defKey];
+        if (!def) {
+          console.warn('[EnemyManager] pickRandomKlaDefKey returned missing def:', defKey);
+          // fall through to legacy
+        } else {
+        const kla = new EnemyBase(this.scene, x, -60, def).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return;
+        }
+      }
+    }
 
     // Determine enemy type based on difficulty
     const enemyType = EnemyFactory.determineEnemyType(this.difficulty);
@@ -126,6 +187,28 @@ export class EnemyManager {
     this.setupEnemyMovement(enemy);
   }
 
+  // Pick a weighted-random Kla'ed enemy definition key among those whose textures are loaded
+  private pickRandomKlaDefKey(): keyof typeof ENEMIES | undefined {
+    const keys = Object.keys(ENEMIES) as Array<keyof typeof ENEMIES>;
+    const available: Array<keyof typeof ENEMIES> = [];
+    for (const k of keys) {
+      const def = ENEMIES[k];
+      if (def && this.scene.textures.exists(def.key)) available.push(k);
+    }
+    if (available.length === 0) return undefined;
+    // Build weights array
+    const weights: number[] = available.map((k) => Math.max(0, this.klaWeights[k] ?? 1));
+    const total = weights.reduce((a, b) => a + b, 0);
+    if (total <= 0) return available[Phaser.Math.Between(0, available.length - 1)];
+    let r = Math.random() * total;
+    for (let i = 0; i < available.length; i++) {
+      const w = weights[i] ?? 0;
+      r -= w;
+      if (r <= 0) return available[i];
+    }
+    return available[available.length - 1];
+  }
+
   /**
    * Spawn an enemy at a specific position (for custom level design)
    * @param enemyType The type of enemy to spawn
@@ -147,8 +230,38 @@ export class EnemyManager {
     const enemyTypeName = enemyTypeMap[enemyType] || `UNKNOWN(${enemyType})`;
     console.log(`[EnemyManager] Creating enemy of type: ${enemyTypeName}`);
 
+    // Prefer Kla'ed models when available (match mapping used in random spawns)
+    if (this.useKlaRevamp) {
+      const trySpawnKla = (defKey: keyof typeof ENEMIES): Phaser.GameObjects.GameObject | null => {
+        const def = ENEMIES?.[defKey];
+        if (!def) return null;
+        if (!this.scene.textures.exists(def.key)) return null;
+        const kla = new EnemyBase(this.scene, x, y, def).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return kla as unknown as Phaser.GameObjects.GameObject;
+      };
+
+      // Map legacy numeric enum to Kla'ed definition keys
+      if (enemyType === EnemyType.SCOUT) {
+        const g = trySpawnKla('scout');
+        if (g) return g as unknown as Enemy;
+      } else if (enemyType === EnemyType.FIGHTER) {
+        const g = trySpawnKla('fighter');
+        if (g) return g as unknown as Enemy;
+      } else if (enemyType === EnemyType.CRUISER) {
+        const g = trySpawnKla('bomber');
+        if (g) return g as unknown as Enemy;
+      } else if (enemyType === EnemyType.SEEKER) {
+        const g = trySpawnKla('torpedo');
+        if (g) return g as unknown as Enemy;
+      } else if (enemyType === EnemyType.GUNSHIP) {
+        const g = trySpawnKla('frigate');
+        if (g) return g as unknown as Enemy;
+      }
+    }
+
     try {
-      // Create the enemy
+      // Fallback to legacy enemy factory if Kla'ed path unavailable
       const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, y);
       console.log(`[EnemyManager] Enemy created successfully:`, {
         type: enemyTypeName,
@@ -342,6 +455,12 @@ export class EnemyManager {
     }
 
     console.log(`[EnemyManager] Resources cleaned up`);
+  }
+
+  // --- Dev helper to change focus dynamically
+  setFocusEnemy(defKey?: keyof typeof ENEMIES) {
+    this.focusOnlyDefKey = defKey;
+    console.log('[EnemyManager] Focus enemy set to', defKey ?? '(none)');
   }
 
   private resolveProjectileTextureKey(): string {

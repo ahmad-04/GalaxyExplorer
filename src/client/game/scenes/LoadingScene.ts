@@ -79,19 +79,19 @@ export class LoadingScene extends Phaser.Scene {
       loadAse('kla_torpedo_ship', 'kla_torpedo_ship');
       loadAse('kla_bomber', 'kla_bomber');
       loadAse('kla_frigate', 'kla_frigate');
-      loadAse('kla_battlecruise', 'kla_battlecruise');
+  // Removed: battlecruise assets no longer used
       // Engines / Weapons overlays optional
       loadAse('kla_scout_engine', 'kla_scout_engine');
       loadAse('kla_fighter_engine', 'kla_fighter_engine');
       loadAse('kla_torpedo_engine', 'kla_torpedo_engine');
       loadAse('kla_bomber_engine', 'kla_bomber_engine');
       loadAse('kla_frigate_engine', 'kla_frigate_engine');
-      loadAse('kla_battlecruise_engine', 'kla_battlecruise_engine');
+  // Removed: battlecruise engine assets
       loadAse('kla_scout_weapons', 'kla_scout_weapons');
       loadAse('kla_fighter_weapons', 'kla_fighter_weapons');
       loadAse('kla_torpedo_weapons', 'kla_torpedo_weapons');
       loadAse('kla_frigate_weapons', 'kla_frigate_weapons');
-      loadAse('kla_battlecruise_weapons', 'kla_battlecruise_weapons');
+  // Removed: battlecruise weapons assets
       // Projectiles
       loadAse('kla_bullet', 'kla_bullet');
       loadAse('kla_big_bullet', 'kla_big_bullet');
@@ -104,7 +104,7 @@ export class LoadingScene extends Phaser.Scene {
       loadAse('kla_torpedo_death', 'kla_torpedo_death');
       loadAse('kla_bomber_death', 'kla_bomber_death');
       loadAse('kla_frigate_death', 'kla_frigate_death');
-      loadAse('kla_battlecruise_death', 'kla_battlecruise_death');
+  // Removed: battlecruise death assets
     } catch {}
   }
 
@@ -200,11 +200,11 @@ export class LoadingScene extends Phaser.Scene {
 
       // Kla'ed animations
       const klaKeys = [
-        'kla_scout','kla_fighter','kla_torpedo_ship','kla_bomber','kla_frigate','kla_battlecruise',
-        'kla_scout_engine','kla_fighter_engine','kla_torpedo_engine','kla_bomber_engine','kla_frigate_engine','kla_battlecruise_engine',
-        'kla_scout_weapons','kla_fighter_weapons','kla_torpedo_weapons','kla_frigate_weapons','kla_battlecruise_weapons',
+        'kla_scout','kla_fighter','kla_torpedo_ship','kla_bomber','kla_frigate',
+        'kla_scout_engine','kla_fighter_engine','kla_torpedo_engine','kla_bomber_engine','kla_frigate_engine',
+        'kla_scout_weapons','kla_fighter_weapons','kla_torpedo_weapons','kla_frigate_weapons',
         'kla_bullet','kla_big_bullet','kla_torpedo','kla_ray','kla_wave',
-        'kla_scout_death','kla_fighter_death','kla_torpedo_death','kla_bomber_death','kla_frigate_death','kla_battlecruise_death'
+        'kla_scout_death','kla_fighter_death','kla_torpedo_death','kla_bomber_death','kla_frigate_death'
       ];
       for (const k of klaKeys) {
         if (this.textures.exists(k)) {
@@ -242,11 +242,11 @@ export class LoadingScene extends Phaser.Scene {
     ensureFramesAnim('invincibilityShield', 'invincibilityShield_idle', 12);
     // Kla'ed fallback loops
     const klaFallbacks = [
-      'kla_scout','kla_fighter','kla_torpedo_ship','kla_bomber','kla_frigate','kla_battlecruise',
-      'kla_scout_engine','kla_fighter_engine','kla_torpedo_engine','kla_bomber_engine','kla_frigate_engine','kla_battlecruise_engine',
-      'kla_scout_weapons','kla_fighter_weapons','kla_torpedo_weapons','kla_frigate_weapons','kla_battlecruise_weapons',
+      'kla_scout','kla_fighter','kla_torpedo_ship','kla_bomber','kla_frigate',
+      'kla_scout_engine','kla_fighter_engine','kla_torpedo_engine','kla_bomber_engine','kla_frigate_engine',
+      'kla_scout_weapons','kla_fighter_weapons','kla_torpedo_weapons','kla_frigate_weapons',
       'kla_bullet','kla_big_bullet','kla_torpedo','kla_ray','kla_wave',
-      'kla_scout_death','kla_fighter_death','kla_torpedo_death','kla_bomber_death','kla_frigate_death','kla_battlecruise_death'
+      'kla_scout_death','kla_fighter_death','kla_torpedo_death','kla_bomber_death','kla_frigate_death'
     ];
     klaFallbacks.forEach((k) => ensureFramesAnim(k, `${k}_idle`, 10));
     } catch {
