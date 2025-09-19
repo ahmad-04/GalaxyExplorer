@@ -4,6 +4,7 @@ import { Enemy, EnemyType } from '../entities/Enemy';
 import { Weapon } from '../entities/weapons/Weapon';
 import { AUTO_CANNON } from '../entities/weapons/definitions';
 import { BackgroundManager } from '../services/BackgroundManager';
+// MusicManager not used in gameplay now; keep loading music from menu
 
 // Add an enum for power-up types
 enum PowerUpType {
@@ -139,9 +140,13 @@ export class StarshipScene extends Phaser.Scene {
       this.registry.set('enemiesDefeated', 0);
     }
 
+    // Back-compat: normalize any legacy test flag to the new key
+    if (this.registry.get('isBuildModeTest') === true && this.registry.get('buildModeTest') !== true) {
+      this.registry.set('buildModeTest', true);
+    }
     // Log registry state at initialization
     console.log('[StarshipScene] Registry state at init:', {
-      isBuildModeTest: this.registry.get('isBuildModeTest'),
+      buildModeTest: this.registry.get('buildModeTest'),
       hasTestLevelData: !!this.registry.get('testLevelData'),
     });
 
@@ -317,11 +322,12 @@ export class StarshipScene extends Phaser.Scene {
     };
 
     // Sounds (optional)
-    if (this.sound) {
+  if (this.sound) {
       if (this.sound.get('shoot') || this.cache.audio.exists('shoot'))
         this.shootSfx = this.sound.add('shoot', { volume: 0.5 });
       if (this.sound.get('boom') || this.cache.audio.exists('boom'))
         this.boomSfx = this.sound.add('boom', { volume: 0.6 });
+  // No music change during gameplay; retain loading theme from menu
     }
 
     const { width: w, height: h } = this.scale;
@@ -481,7 +487,7 @@ export class StarshipScene extends Phaser.Scene {
         : 'NOT FOUND'
     );
 
-    console.log('[StarshipScene] isBuildModeTest flag:', isBuildModeTest);
+  console.log('[StarshipScene] buildModeTest flag:', isBuildModeTest);
 
     const forceEndless = this.registry.get('forceEndless') === true;
     const usingCustomLevel = !!testLevelData && !forceEndless;
@@ -503,7 +509,7 @@ export class StarshipScene extends Phaser.Scene {
       if (!testLevelData) {
         console.warn('[StarshipScene] No test level data found in registry');
       } else if (!isBuildModeTest) {
-        console.warn('[StarshipScene] isBuildModeTest flag is not set');
+        console.warn('[StarshipScene] buildModeTest flag is not set');
       }
 
       // Clean up post-update listener on shutdown to avoid leaks
@@ -2052,6 +2058,7 @@ export class StarshipScene extends Phaser.Scene {
       this.boomSfx.stop();
       this.boomSfx = null as unknown as Phaser.Sound.BaseSound;
     }
+  // No battle music to stop
 
     // 3. Clean up input
     if (this.input && this.input.keyboard) {
@@ -2118,7 +2125,6 @@ export class StarshipScene extends Phaser.Scene {
     try {
       this.registry.set('testMode', false);
       this.registry.set('buildModeTest', false);
-      this.registry.set('isBuildModeTest', false);
       this.registry.set('forceEndless', false);
       this.registry.set('enemiesDefeated', 0);
       this.registry.set('playerDeaths', 0);
@@ -2212,6 +2218,9 @@ export class StarshipScene extends Phaser.Scene {
     console.log('[StarshipScene] Stopping default enemy spawning');
     this.enemyManager.stopSpawning();
 
+  // Determine if we should use strict sequence mode (Build Mode test or custom playthrough)
+  const isSeqMode = this.isCustomLevelPlaythrough || this.registry.get('buildModeTest') === true;
+
     if (!effectiveLevelData.entities || !Array.isArray(effectiveLevelData.entities)) {
       console.error('[StarshipScene] No entities found in level data, using default spawning');
       this.enemyManager.startSpawning(1000);
@@ -2253,7 +2262,7 @@ export class StarshipScene extends Phaser.Scene {
 
     let enemiesPlaced = 0;
 
-    // Process each entity in the level data
+  // Process each entity in the level data
     effectiveLevelData.entities.forEach((entity, index) => {
       console.log(`[StarshipScene] Processing entity ${index}:`, entity);
 
@@ -2320,37 +2329,34 @@ export class StarshipScene extends Phaser.Scene {
           position: entity.position,
           enemyType: enemyType,
         });
-
-        // Spawn enemy at the entity position
-        try {
-          if (enemyType) {
-            this.spawnEnemyFromEntity({
-              position: entity.position,
-              enemyType: enemyType,
-            });
-            enemiesPlaced++;
-            console.log(
-              `[StarshipScene] Enemy ${index} placed successfully at position:`,
-              entity.position
-            );
-          } else {
-            // If enemyType is still not found, try to use a default based on entity properties
-            console.log(`[StarshipScene] Attempting to use default enemy type for entity:`, entity);
-
-            // Use FIGHTER as a default type if nothing else is specified
-            const defaultEnemyType = 'FIGHTER';
-            this.spawnEnemyFromEntity({
-              position: entity.position,
-              enemyType: defaultEnemyType,
-            });
-            enemiesPlaced++;
-            console.log(
-              `[StarshipScene] Enemy ${index} placed with default type (${defaultEnemyType}) at position:`,
-              entity.position
-            );
+        // In sequence mode, do NOT spawn immediately; they'll be scheduled below
+        if (!isSeqMode) {
+          // Spawn enemy at the entity position (legacy immediate mode)
+          try {
+            if (enemyType) {
+              this.spawnEnemyFromEntity({ position: entity.position, enemyType: enemyType });
+              enemiesPlaced++;
+              console.log(
+                `[StarshipScene] Enemy ${index} placed successfully at position:`,
+                entity.position
+              );
+            } else {
+              // If enemyType is still not found, try to use a default based on entity properties
+              console.log(
+                `[StarshipScene] Attempting to use default enemy type for entity:`,
+                entity
+              );
+              const defaultEnemyType = 'FIGHTER';
+              this.spawnEnemyFromEntity({ position: entity.position, enemyType: defaultEnemyType });
+              enemiesPlaced++;
+              console.log(
+                `[StarshipScene] Enemy ${index} placed with default type (${defaultEnemyType}) at position:`,
+                entity.position
+              );
+            }
+          } catch (error) {
+            console.error(`[StarshipScene] Failed to spawn enemy ${index}:`, error);
           }
-        } catch (error) {
-          console.error(`[StarshipScene] Failed to spawn enemy ${index}:`, error);
         }
       } else {
         console.log(`[StarshipScene] Skipping entity ${index}, not a valid enemy spawner:`, {
@@ -2363,31 +2369,58 @@ export class StarshipScene extends Phaser.Scene {
       // We could also handle other entity types here (obstacles, powerups, etc.)
     });
 
+    // Replace immediate-spawn with sequential spawning for custom/test levels
+    const spawners = effectiveLevelData.entities.filter(
+      (e) => e.type === EntityType.ENEMY_SPAWNER && e.position && e.enemyType
+    ) as Array<{
+      type: string;
+      position: { x: number; y: number };
+      enemyType: string;
+    }>;
+
+    const totalSpawners = spawners.length;
     console.log(
-      `[StarshipScene] Placed ${enemiesPlaced} enemies from custom level. Expected: ${effectiveLevelData.entities.filter((e) => e.type === EntityType.ENEMY_SPAWNER).length}`
+      `[StarshipScene] Found ${totalSpawners} enemy spawners in custom level (was placing immediately: ${enemiesPlaced}).`
     );
 
-    // Track expected kills for completion: only count placed enemies
-    if (this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough) {
-      this.expectedEnemiesToDefeat = enemiesPlaced;
+  if (isSeqMode) {
+      // Track expected kills for completion: count planned spawns (one per spawner)
+      this.expectedEnemiesToDefeat = totalSpawners;
       this.registry.set('enemiesDefeated', 0);
-      console.log(
-        `[StarshipScene] Completion target set to ${this.expectedEnemiesToDefeat} enemies`
-      );
-    }
+      console.log(`[StarshipScene] Sequential spawn enabled. Target kills: ${totalSpawners}`);
 
-    // For custom levels and Build Mode tests, do NOT auto-respawn or revert to default spawns.
-    if (this.isCustomLevelPlaythrough || this.registry.get('buildModeTest') === true) {
-      if (enemiesPlaced === 0) {
-        console.log(
-          '[StarshipScene] No enemy spawners found in custom level; staying idle in build test'
-        );
+      if (totalSpawners === 0) {
+        console.log('[StarshipScene] No enemy spawners found; nothing to spawn in sequence');
       } else {
-        console.log('[StarshipScene] Custom/Build test: skipping auto-respawn timer');
+        // Use a consistent interval; allow override via levelData.settings.spawnIntervalMs
+        const interval = Math.max(
+          300,
+          (effectiveLevelData as any)?.settings?.spawnIntervalMs ?? 1400
+        );
+        let i = 0;
+        // Spawn the first immediately for responsiveness
+        const first = spawners[i++];
+        if (first) {
+          this.spawnEnemyFromEntity({ position: first.position, enemyType: first.enemyType });
+        }
+        // Then schedule the rest
+        this.time.addEvent({
+          delay: interval,
+          repeat: totalSpawners - 2 >= 0 ? totalSpawners - 2 : 0,
+          callback: () => {
+            if (i < totalSpawners) {
+              const s = spawners[i++];
+              if (s) this.spawnEnemyFromEntity({ position: s.position, enemyType: s.enemyType });
+            }
+          },
+        });
       }
+
+      // No auto-respawn in sequence mode
+      console.log('[StarshipScene] Custom/Build test: skipping auto-respawn timer');
     } else {
-      // In normal play, keep screen from being empty
-      if (enemiesPlaced > 0) {
+      // Normal play: keep screen from being empty
+      if (totalSpawners > 0) {
         this.time.addEvent({
           delay: 3000,
           callback: () => this.respawnEnemiesIfNeeded(effectiveLevelData),

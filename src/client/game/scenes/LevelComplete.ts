@@ -51,6 +51,8 @@ export class LevelComplete extends Scene {
       .setScrollFactor(0)
       .setDepth(-10);
 
+  // Music: loading theme already playing; no change needed
+
     // Panel
     const panelWidth = Math.min(600, this.scale.width * 0.9);
     this.panelHeight = 380;
@@ -168,7 +170,7 @@ export class LevelComplete extends Scene {
     // Stop any running game scene, then start appropriate scene
     if (this.scene.get('StarshipScene')) this.scene.stop('StarshipScene');
     const last = this.registry.get('lastRunMode');
-    this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
+  this.scene.start(last === 'custom' ? 'StarshipScene' : 'EndlessScene');
   }
 
   private toMenu() {

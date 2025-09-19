@@ -362,7 +362,6 @@ export class PublishStep {
       verifyText.setText('RE-RUN ▶');
       this.updatePublishButtonState();
       this.cleanupVerifyListeners();
-      if (this.scene.scene.isActive('CustomLevelScene')) this.scene.scene.stop('CustomLevelScene');
       if (this.scene.scene.isActive('StarshipScene')) this.scene.scene.stop('StarshipScene');
       this.hideVerifyOverlay();
       this.publishContainer.setVisible(true);
@@ -376,7 +375,6 @@ export class PublishStep {
       verifyText.setText('RE-RUN ▶');
       this.updatePublishButtonState();
       this.cleanupVerifyListeners();
-      if (this.scene.scene.isActive('CustomLevelScene')) this.scene.scene.stop('CustomLevelScene');
       if (this.scene.scene.isActive('StarshipScene')) this.scene.scene.stop('StarshipScene');
       this.hideVerifyOverlay();
       this.publishContainer.setVisible(true);
@@ -404,7 +402,7 @@ export class PublishStep {
     this.scene.registry.set('playerDeaths', 0);
     this.scene.registry.set('powerupsCollected', 0);
 
-    this.scene.scene.launch('CustomLevelScene', {
+    this.scene.scene.launch('StarshipScene', {
       testMode: true,
       buildModeTest: true,
       levelData,
@@ -854,9 +852,6 @@ export class PublishStep {
 
   private resetVerification(reason?: string): void {
     // Stop running verification if any
-    if (this.scene.scene.isActive('CustomLevelScene')) {
-      this.scene.scene.stop('CustomLevelScene');
-    }
     if (this.scene.scene.isActive('StarshipScene')) {
       const starship = this.scene.scene.get('StarshipScene');
       if (starship) starship.events.emit('test:stop');

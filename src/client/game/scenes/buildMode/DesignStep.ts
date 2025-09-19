@@ -2240,13 +2240,10 @@ export class DesignStep {
     this.scene.registry.set('enemiesDefeated', 0);
     this.scene.registry.set('playerDeaths', 0);
     this.scene.registry.set('powerupsCollected', 0);
-    this.scene.registry.set('isBuildModeTest', true);
 
     // Launch game scene in test mode
     // Ensure no prior test scene is running
-    if (this.scene.scene.isActive('CustomLevelScene')) {
-      this.scene.scene.stop('CustomLevelScene');
-    }
+    // Ensure no gameplay test scene is running
     if (this.scene.scene.isActive('StarshipScene')) {
       const starship = this.scene.scene.get('StarshipScene');
       if (starship) starship.events.emit('test:stop');
@@ -2255,7 +2252,7 @@ export class DesignStep {
     // Wire test events like TestStep
     this.scene.events.once('test:completed', this.onInlineTestCompleted, this);
     this.scene.events.once('test:stats', this.onInlineTestStats, this);
-    this.scene.scene.launch('CustomLevelScene', {
+    this.scene.scene.launch('StarshipScene', {
       testMode: true,
       levelData,
       buildModeTest: true,
@@ -2281,9 +2278,7 @@ export class DesignStep {
     if (!this.inlineTesting) return;
     this.inlineTesting = false;
     // Stop any active gameplay scene started for inline test
-    if (this.scene.scene.isActive('CustomLevelScene')) {
-      this.scene.scene.stop('CustomLevelScene');
-    }
+    // Stop any active StarshipScene test run
     if (this.scene.scene.isActive('StarshipScene')) {
       const starship = this.scene.scene.get('StarshipScene');
       if (starship) starship.events.emit('test:stop');
@@ -2292,7 +2287,6 @@ export class DesignStep {
     // Clear testing flags/state
     this.scene.registry.set('testMode', false);
     this.scene.registry.set('buildModeTest', false);
-    this.scene.registry.set('isBuildModeTest', false);
     // Remove test event listeners
     this.scene.events.off('test:completed', this.onInlineTestCompleted, this);
     this.scene.events.off('test:stats', this.onInlineTestStats, this);

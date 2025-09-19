@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { getLeaderboard, getPublishedLevel, getInit } from '../api';
 import { isFeatureEnabled } from '../../../shared/config';
 import { BackgroundManager } from '../services/BackgroundManager';
+import MusicManager from '../services/MusicManager';
 import {
   titleText as uiTitleText,
   bodyText as uiBodyText,
@@ -31,6 +32,8 @@ export class MainMenu extends Phaser.Scene {
     this.leaderboardVisible = false;
     console.log('MainMenu scene initialized, startEnabled =', this.startEnabled);
     this.logState('init');
+    // Music: ensure loading theme with smooth fade once MainMenu is initialized
+    MusicManager.ensureLoading(this);
   }
 
   create() {
@@ -80,22 +83,16 @@ export class MainMenu extends Phaser.Scene {
     uiBodyText(this, this.scale.width / 2, 170, 'CONQUER THE COSMOS', 24);
 
     // Buttons using UiKit
-    const startBtn = createButton(this, this.scale.width / 2, 250, 'START GAME');
-    const customizeBtn = createButton(this, this.scale.width / 2, 340, 'CUSTOMIZE');
-    const leaderboardBtn = createButton(this, this.scale.width / 2, 430, 'LEADERBOARD');
+    const startBtn = createButton(this, this.scale.width / 2, 260, 'START GAME');
+    const leaderboardBtn = createButton(this, this.scale.width / 2, 350, 'LEADERBOARD');
     let buildModeBtn: ReturnType<typeof createButton> | undefined;
     if (isFeatureEnabled('ENABLE_BUILD_MODE')) {
-      buildModeBtn = createButton(this, this.scale.width / 2, 520, 'BUILD MODE');
+      buildModeBtn = createButton(this, this.scale.width / 2, 440, 'BUILD MODE');
     }
 
     startBtn.container.once('pointerdown', () => {
       this.cameras.main.flash(300, 255, 255, 255, true);
       this.time.delayedCall(300, () => this.startGame());
-    });
-    customizeBtn.container.once('pointerdown', () => {
-      this.resetLeaderboardState();
-      this.cameras.main.flash(300, 100, 100, 255, true);
-      this.time.delayedCall(200, () => this.scene.start('CustomizationScene'));
     });
     leaderboardBtn.container.on('pointerdown', () => {
       this.time.delayedCall(100, () => {
@@ -110,9 +107,9 @@ export class MainMenu extends Phaser.Scene {
       });
     }
 
-    // Instruction hint
-    createPanel(this, this.scale.width / 2 - 200, 570, 400, 40, { fillAlpha: 0.3 });
-    const instructionText = uiBodyText(this, this.scale.width / 2, 590, 'PRESS SPACE TO START', 18);
+  // Instruction hint (moved up for better visibility)
+  createPanel(this, this.scale.width / 2 - 200, 520, 400, 40, { fillAlpha: 0.3 });
+  const instructionText = uiBodyText(this, this.scale.width / 2, 540, 'PRESS SPACE TO START', 18);
     this.tweens.add({
       targets: instructionText,
       alpha: { from: 1, to: 0.6 },
@@ -150,7 +147,7 @@ export class MainMenu extends Phaser.Scene {
 
     // --- 2. Asynchronously load custom config and update if found ---
 
-    // Check for config passed from CustomizationScene first for responsiveness
+  // Check for any config overrides first for responsiveness
     const registryConfig = this.registry.get('backgroundConfig');
     if (registryConfig) {
       console.log('Applying config from registry:', registryConfig);
@@ -340,6 +337,8 @@ export class MainMenu extends Phaser.Scene {
     this.startEnabled = false;
     console.log('Starting game, startEnabled set to false');
 
+  // Keep loading music; no battle theme anymore
+
     // Reset leaderboard state when starting the game
     this.resetLeaderboardState();
 
@@ -375,7 +374,7 @@ export class MainMenu extends Phaser.Scene {
       console.log('[MainMenu] Starting game with custom level payload', {
         entityCount,
       });
-      this.scene.start('CustomLevelScene', payload as unknown as Record<string, unknown>);
+  this.scene.start('StarshipScene', payload as unknown as Record<string, unknown>);
       return;
     }
 

@@ -72,8 +72,7 @@ export class EnemyManager {
    */
   startSpawning(delay: number = 1200): void {
     // Hard guard: do not allow random spawning during Build Mode tests or when explicitly disabled
-    const isBuildModeTest = (this.scene.registry?.get?.('buildModeTest') === true) ||
-      (this.scene.registry?.get?.('isBuildModeTest') === true);
+    const isBuildModeTest = this.scene.registry?.get?.('buildModeTest') === true;
     if (this.disableRandomSpawns || isBuildModeTest) {
       if (this.spawnTimer) {
         this.spawnTimer.remove();

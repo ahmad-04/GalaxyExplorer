@@ -78,6 +78,8 @@ export class GameOver extends Scene {
       .setScrollFactor(0)
       .setDepth(-10);
 
+  // Music: loading theme already playing; no change needed
+
     // Add a panel for the game content - adjusted to be more centered
     console.log(`[${new Date().toISOString()}] [GameOver] Creating game panel`);
     const panelWidth = Math.min(600, this.scale.width * 0.9);
@@ -284,7 +286,7 @@ export class GameOver extends Scene {
         // Start a fresh StarshipScene
         console.log('[GameOver] Creating new StarshipScene');
         const last = this.registry.get('lastRunMode');
-        this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
+  this.scene.start(last === 'custom' ? 'StarshipScene' : 'EndlessScene');
       });
     });
 
@@ -376,7 +378,7 @@ export class GameOver extends Scene {
       // Force full recreation of the game scene
       console.log(`[${new Date().toISOString()}] [GameOver] Starting new StarshipScene`);
       const last = this.registry.get('lastRunMode');
-      this.scene.start(last === 'custom' ? 'CustomLevelScene' : 'EndlessScene');
+  this.scene.start(last === 'custom' ? 'StarshipScene' : 'EndlessScene');
     });
   }
 }

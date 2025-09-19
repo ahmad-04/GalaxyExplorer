@@ -18,6 +18,10 @@ export class LoadingScene extends Phaser.Scene {
     this.load.image('bullet', '/assets/bullet.png');
     this.load.image('enemy', '/assets/enemy.png');
     this.load.audio('boom', '/assets/Boom.wav');
+    // Background music: only loading theme
+    try {
+      this.load.audio('music_loading', '/assets/loading.wav');
+    } catch {}
 
     // Load Aseprite-exported main ship (spritesheet + JSON)
     this.load.aseprite(
@@ -168,6 +172,8 @@ export class LoadingScene extends Phaser.Scene {
       callbackScope: this,
       loop: true,
     });
+
+  // Do not start music here; start when MainMenu is displayed
 
     // Start loading process and update external splash
     this.hookSplashProgress('Initializing...');

@@ -3,7 +3,8 @@ export type AnimKeys = Partial<{ idle: string; move: string; shoot: string; hit:
 export type MovementPattern =
   | { type: 'straight'; speed: number }
   | { type: 'sine'; speed: number; amplitude: number; frequency: number }
-  | { type: 'hover'; speed: number }
+  // Optional topY: y-coordinate where the unit should stop descending and hover
+  | { type: 'hover'; speed: number; topY?: number }
   | { type: 'dive'; speed: number; angleDeg?: number };
 
 export type FirePattern =
@@ -112,10 +113,11 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     angleDeg: 180,
     anim: { move: 'kla_frigate_Move', idle: 'kla_frigate_Idle', shoot: 'kla_frigate_Shoot', death: 'kla_frigate_death_Death' },
     muzzleOffsets: [{ x: -18, y: 20 }, { x: 18, y: 20 }, { x: 0, y: 26 }],
-    movement: { type: 'hover', speed: 50 },
-    // Slightly slower, aimed bursts with a brief pre-shot delay
-    fire: { type: 'interval', intervalMs: 1000, burst: 2, spreadDeg: 12, aimed: true, startDelayMs: 500 },
-  projectile: { key: 'kla_big_bullet', speed: 280, lifetimeMs: 2500, behavior: 'aimed', damage: 2, scale: 1.5 },
+  // Approach from top and stop around y=90 to remain on upper side
+  movement: { type: 'hover', speed: 0, topY: 90 },
+  // Easier pattern: more delay, single shots, and longer wind-up
+  fire: { type: 'interval', intervalMs: 2200, burst: 1, spreadDeg: 12, aimed: true, startDelayMs: 1200 },
+  projectile: { key: 'kla_big_bullet', speed: 240, lifetimeMs: 2500, behavior: 'aimed', damage: 2, scale: 1.5 },
   },
   // battlecruise removed
 };

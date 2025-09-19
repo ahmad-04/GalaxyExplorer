@@ -249,8 +249,8 @@ export class LevelBrowser {
       .setOrigin(0, 0.5);
     playButton.setInteractive({ useHandCursor: true });
     playButton.on('pointerdown', () => {
-      // Start the game with this level
-      this.scene.scene.start('CustomLevelScene', {
+      // Start the game with this level using StarshipScene
+      this.scene.scene.start('StarshipScene', {
         customLevel: level.id,
       });
     });

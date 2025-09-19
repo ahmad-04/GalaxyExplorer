@@ -49,6 +49,12 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const radius = this.def.bodyRadius ?? Math.min(this.displayWidth, this.displayHeight) * 0.35;
     body.setCircle(radius, (this.width - radius * 2) / 2, (this.height - radius * 2) / 2);
 
+    // If hover with a topY ceiling, place them exactly at that Y on spawn
+    if ((this.def.movement as any)?.type === 'hover' && typeof (this.def.movement as any)?.topY === 'number') {
+      const topY = (this.def.movement as any).topY as number;
+      this.y = topY;
+    }
+
     // Anim
     const moveKey = this.def.anim.move || this.def.anim.idle;
     if (moveKey && this.sceneRef.anims.exists(moveKey)) this.play({ key: moveKey, repeat: -1 });
@@ -274,8 +280,15 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
         break;
       }
       case 'hover': {
-        // Slow drift downward
-        body.setVelocity(0, m.speed);
+        // If a topY ceiling is provided, hard-lock to that Y with no vertical velocity
+        const topY = (m as any).topY as number | undefined;
+        if (typeof topY === 'number') {
+          if (Math.abs(this.y - topY) > 0.1) this.y = topY;
+          body.setVelocity(0, 0);
+        } else {
+          // Otherwise, drift down at configured speed
+          body.setVelocity(0, m.speed);
+        }
         break;
       }
       case 'dive': {
