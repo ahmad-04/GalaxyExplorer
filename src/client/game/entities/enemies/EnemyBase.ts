@@ -184,8 +184,43 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     this.syncWeaponsOverlay();
     if (this.handleRetreat(time)) return;
     if (this.updateScript(time, delta)) return;
+    
+    // Always apply the movement pattern first
     this.updateMovement(delta);
-    this.updateFire(time, player);
+    
+    // Check if this enemy has a target Y position (used by Build Mode/Custom levels)
+    const targetY = this.getData('targetY');
+    if (targetY !== undefined && this.y < targetY) {
+      // First approach: log the initial movement
+      if (this.getData('approaching') === undefined) {
+        console.log(`[Enemy] Approaching target position y=${targetY} from y=${this.y}`);
+        this.setData('approaching', true);
+      }
+      
+      // Apply a Y-velocity adjustment to approach the target Y position
+      // Override vertical velocity component to avoid movement patterns interfering with approach
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      const approachSpeed = 180; // pixels per second
+      
+      // Preserve horizontal velocity component from movement pattern
+      const vx = body.velocity.x;
+      body.setVelocity(vx, approachSpeed);
+      
+      if (this.y >= targetY) {
+        this.y = targetY; // Snap to exact position when reached
+        this.setData('reachedTargetY', true);
+        // Resume original movement pattern after reaching target
+        this.updateMovement(delta);
+      }
+      
+      // Return true to skip default movement pattern during approach
+      return;
+    }
+    
+    // Only start firing when on-screen
+    if (this.y > 0) {
+      this.updateFire(time, player);
+    }
   }
 
   private handleRetreat(time: number): boolean {

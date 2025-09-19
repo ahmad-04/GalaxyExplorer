@@ -18,6 +18,7 @@ export class StarshipScene extends Phaser.Scene {
   private ship!: Phaser.Physics.Arcade.Sprite; // Main ship reference for physics
   private engineFx?: Phaser.GameObjects.Sprite;
   private engineModule?: Phaser.GameObjects.Sprite;
+  private pendingSpawns: number = 0; // Track pending enemy spawns for wave completion
   private bullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private powerUps!: Phaser.Physics.Arcade.Group;
@@ -519,9 +520,10 @@ export class StarshipScene extends Phaser.Scene {
           this.syncEnginePos = undefined;
         }
       });
-      // Start enemy spawning - faster initial spawn rate for immediate action
-      console.log('[StarshipScene] Using default enemy spawning');
-      this.enemyManager.startSpawning(900);
+    // Start enemy spawning - faster initial spawn rate for immediate action
+    const stack = new Error().stack?.split('\n').slice(0, 6).join('\n');
+    console.warn('[StarshipScene] Using default enemy spawning', { stack });
+    this.enemyManager.startSpawning(900);
     }
 
     // In Build Mode test with custom level, skip the difficulty timer that re-enables random spawns
@@ -546,14 +548,22 @@ export class StarshipScene extends Phaser.Scene {
           const newDelay = Math.max(300, 1000 - this.difficulty * 80);
 
           // Update spawn rate in enemy manager
-          this.enemyManager.stopSpawning();
-          this.enemyManager.startSpawning(newDelay);
+    console.log('[StarshipScene] Difficulty -> updating random spawn delay to', newDelay);
+    this.enemyManager.stopSpawning();
+    this.enemyManager.startSpawning(newDelay);
         },
       });
     } else {
       console.log('[StarshipScene] Skipping difficulty timer in Build Mode test with custom level');
       // Also ensure no residual spawn timers are running
       this.enemyManager.stopSpawning();
+      // Spawn audit watchdog: ensure no random spawn timer is active during tests
+      const audit = this.enemyManager.getSpawnAuditInfo?.();
+      console.log('[StarshipScene] Spawn audit at init', audit);
+      if (audit?.hasTimer) {
+        console.error('[StarshipScene] Watchdog: Random spawn timer detected in test mode; stopping now', audit);
+        this.enemyManager.stopSpawning();
+      }
     }
   }
 
@@ -2331,6 +2341,7 @@ export class StarshipScene extends Phaser.Scene {
         });
         // In sequence mode, do NOT spawn immediately; they'll be scheduled below
         if (!isSeqMode) {
+          console.log('[StarshipScene] Immediate spawn mode: placing enemy now (not seq mode)');
           // Spawn enemy at the entity position (legacy immediate mode)
           try {
             if (enemyType) {
@@ -2357,6 +2368,8 @@ export class StarshipScene extends Phaser.Scene {
           } catch (error) {
             console.error(`[StarshipScene] Failed to spawn enemy ${index}:`, error);
           }
+        } else {
+          console.log('[StarshipScene] Seq mode active: deferring immediate spawn for scheduling');
         }
       } else {
         console.log(`[StarshipScene] Skipping entity ${index}, not a valid enemy spawner:`, {
@@ -2383,41 +2396,228 @@ export class StarshipScene extends Phaser.Scene {
       `[StarshipScene] Found ${totalSpawners} enemy spawners in custom level (was placing immediately: ${enemiesPlaced}).`
     );
 
-  if (isSeqMode) {
+    if (isSeqMode) {
       // Track expected kills for completion: count planned spawns (one per spawner)
       this.expectedEnemiesToDefeat = totalSpawners;
       this.registry.set('enemiesDefeated', 0);
-      console.log(`[StarshipScene] Sequential spawn enabled. Target kills: ${totalSpawners}`);
+  console.log(`[StarshipScene] Sequential spawn (defeat-gated) enabled. Target kills: ${totalSpawners}`);
 
       if (totalSpawners === 0) {
         console.log('[StarshipScene] No enemy spawners found; nothing to spawn in sequence');
       } else {
-        // Use a consistent interval; allow override via levelData.settings.spawnIntervalMs
-        const interval = Math.max(
-          300,
-          (effectiveLevelData as any)?.settings?.spawnIntervalMs ?? 1400
-        );
-        let i = 0;
-        // Spawn the first immediately for responsiveness
-        const first = spawners[i++];
-        if (first) {
-          this.spawnEnemyFromEntity({ position: first.position, enemyType: first.enemyType });
-        }
-        // Then schedule the rest
-        this.time.addEvent({
-          delay: interval,
-          repeat: totalSpawners - 2 >= 0 ? totalSpawners - 2 : 0,
-          callback: () => {
-            if (i < totalSpawners) {
-              const s = spawners[i++];
-              if (s) this.spawnEnemyFromEntity({ position: s.position, enemyType: s.enemyType });
+        // In Build Mode test, use the original grid positions with extreme debugging
+        if (this.registry.get('buildModeTest') === true) {
+          console.log('[StarshipScene] BUILD MODE TEST DEBUGGING START =====================');
+          
+          // Get ALL data from registry to inspect what's happening
+          console.log('[StarshipScene] Registry keys:', Object.keys(this.registry.getAll()));
+          
+          // Log raw test level data
+          const testLevelData = this.registry.get('testLevelData') as any;
+          console.log('[StarshipScene] Raw testLevelData:', JSON.stringify(testLevelData, null, 2));
+          
+          // Check if we're using translated positions
+          const translate = this.registry.get('testTranslate') as { dx: number; dy: number } | undefined;
+          console.log('[StarshipScene] Test translate:', translate);
+          
+          // Check if the effective level data differs from original
+          console.log('[StarshipScene] Effective level data:', JSON.stringify(effectiveLevelData, null, 2));
+          
+          // Deep inspect all entities and their positions
+          console.log('[StarshipScene] Deep entity inspection:');
+          effectiveLevelData.entities.forEach((entity, idx) => {
+            if (entity.type === EntityType.ENEMY_SPAWNER) {
+              console.log(`Entity ${idx}: ${JSON.stringify(entity)}`);
             }
-          },
-        });
+          });
+          
+          // Compare original positions with effective positions
+          if (testLevelData && testLevelData.entities) {
+            const originalEntities = testLevelData.entities.filter(
+              (e: any) => e.type === EntityType.ENEMY_SPAWNER && e.position
+            );
+            
+            const effectiveEntities = effectiveLevelData.entities.filter(
+              (e: any) => e.type === EntityType.ENEMY_SPAWNER && e.position
+            );
+            
+            console.log('[StarshipScene] Position comparison (original vs effective):');
+            for (let i = 0; i < Math.min(originalEntities.length, effectiveEntities.length); i++) {
+              const originalPos = originalEntities[i]?.position;
+              const effectivePos = effectiveEntities[i]?.position;
+              if (originalPos && effectivePos) {
+                console.log(`Enemy ${i}: Original(${originalPos.x}, ${originalPos.y}) -> Effective(${effectivePos.x}, ${effectivePos.y})`);
+              } else {
+                console.log(`Enemy ${i}: Position data missing`);
+              }
+            }
+          }
+          
+          // Get grid settings from original data
+          const gridSettings = testLevelData?.settings || {};
+          console.log('[StarshipScene] Grid settings from level data:', gridSettings);
+          
+          // Check camera settings
+          console.log('[StarshipScene] Camera position:', {
+            x: this.cameras.main.scrollX,
+            y: this.cameras.main.scrollY
+          });
+          
+          // Filter for valid enemy spawners
+          const spawners = effectiveLevelData.entities.filter(
+            (e) => e.type === EntityType.ENEMY_SPAWNER && e.position && e.enemyType
+          ) as Array<{
+            type: string;
+            position: { x: number; y: number };
+            enemyType: string;
+          }>;
+          
+          // Group enemies by similar Y positions to create waves
+          const groupedByY: Record<string, Array<{
+            index: number;
+            x: number;
+            y: number;
+            enemyType: string;
+          }>> = {};
+          
+          const yThreshold = 100; // Enemies within 100px Y are considered the same wave
+          
+          spawners.forEach((spawner, idx) => {
+            if (!spawner || !spawner.position) return;
+            
+            const y = spawner.position.y;
+            // Round Y position to nearest threshold to create groups
+            const groupKey = String(Math.floor(y / yThreshold) * yThreshold);
+            
+            if (!groupedByY[groupKey]) {
+              groupedByY[groupKey] = [];
+            }
+            
+            groupedByY[groupKey].push({
+              index: idx,
+              x: spawner.position.x,
+              y: spawner.position.y, // Keep original Y position
+              enemyType: spawner.enemyType
+            });
+          });
+          
+          console.log(`[StarshipScene] Grouped enemies into ${Object.keys(groupedByY).length} waves by Y position`);
+          Object.entries(groupedByY).forEach(([key, group]) => {
+            console.log(`[StarshipScene] Wave at Y~${key}: ${group.length} enemies`);
+          });
+          
+          // Convert to flat array sorted by Y position (top to bottom)
+          const waveGroups = Object.entries(groupedByY)
+            .sort((a, b) => Number(a[0]) - Number(b[0]));
+          
+          // Flatten to an array that preserves wave grouping
+          const fixedPositions: Array<{
+            index: number;
+            x: number;
+            y: number;
+            enemyType: string;
+          }> = [];
+          
+          waveGroups.forEach(([_, group]) => {
+            group.forEach(enemy => {
+              fixedPositions.push(enemy);
+            });
+          });
+          
+          console.log('[StarshipScene] Using FIXED positions to ensure clear spacing:');
+          fixedPositions.forEach((pos, idx) => {
+            console.log(`Enemy ${idx}: Using fixed position (${pos.x}, ${pos.y}), type: ${pos.enemyType}`);
+          });
+          
+          // Calculate total expected enemies for test completion
+          this.expectedEnemiesToDefeat = fixedPositions.length;
+          console.log(`[StarshipScene] Total enemies to defeat: ${this.expectedEnemiesToDefeat}`);
+          
+          // Sort positions by Y (descending order, so bottom enemies spawn first)
+          console.log('[StarshipScene] Before sorting:', fixedPositions.map(e => `(${e.x}, ${e.y})`));
+          fixedPositions.sort((a, b) => b.y - a.y);
+          console.log('[StarshipScene] After sorting by Y (descending):', fixedPositions.map(e => `(${e.x}, ${e.y})`));
+          
+          // Schedule enemies with waves grouped together
+          let currentWaveY: number | null = null;
+          let currentWaveIndex = 0;
+          let currentEnemyInWaveIdx = 0;
+          
+          fixedPositions.forEach((entity, idx) => {
+            // Check if this is a new wave (first entity or significantly different Y)
+            const entityGroupY = Math.floor(entity.y / 100) * 100;
+            const isNewWave = currentWaveY === null || entityGroupY !== currentWaveY;
+            
+            if (isNewWave) {
+              currentWaveY = entityGroupY;
+              currentWaveIndex++;
+              currentEnemyInWaveIdx = 0;
+            } else {
+              currentEnemyInWaveIdx++;
+            }
+            
+            // No delay for Build Mode test to show all enemies at once
+            const delayMs = 0;
+            
+            console.log(`[StarshipScene] Scheduling enemy ${idx + 1} immediately`);
+            
+            // Store spawn data for test completion tracking
+            this.pendingSpawns = (this.pendingSpawns || 0) + 1;
+            
+            this.time.delayedCall(delayMs, () => {
+              console.log(`[StarshipScene] *** SPAWNING ENEMY ${idx + 1} at (${entity.x}, ${entity.y}) ***`);
+              
+              this.spawnEnemyFromEntity({ 
+                position: {x: entity.x, y: entity.y}, 
+                enemyType: entity.enemyType 
+              });
+              
+              this.pendingSpawns--;
+              console.log(`[StarshipScene] Remaining spawns: ${this.pendingSpawns}`);
+            });
+          });
+          
+          console.log('[StarshipScene] BUILD MODE TEST DEBUGGING END =====================');
+        } else {
+          // For regular custom level playthrough, use the same immediate spawn behavior as test mode
+          console.log('[StarshipScene] CUSTOM LEVEL PLAYTHROUGH: using immediate spawn like test mode');
+          
+          // Filter for valid enemy spawners and sort by Y (descending - bottom enemies first)
+          const fixedPositions = spawners
+            .map((spawner, idx) => ({
+              index: idx,
+              x: spawner.position.x,
+              y: spawner.position.y,
+              enemyType: spawner.enemyType
+            }))
+            .sort((a, b) => b.y - a.y);
+          
+          console.log(`[StarshipScene] Spawning ${fixedPositions.length} enemies immediately`);
+          
+          // Calculate total expected enemies for completion
+          this.expectedEnemiesToDefeat = fixedPositions.length;
+          console.log(`[StarshipScene] Total enemies to defeat: ${this.expectedEnemiesToDefeat}`);
+          
+          // Spawn all enemies at once, like in test mode
+          fixedPositions.forEach((entity, idx) => {
+            // No delay - spawn all immediately to match test mode
+            console.log(`[StarshipScene] Spawning enemy ${idx + 1} at (${entity.x}, ${entity.y})`);
+            this.spawnEnemyFromEntity({ 
+              position: {x: entity.x, y: entity.y}, 
+              enemyType: entity.enemyType 
+            });
+          });
+          
+          console.log('[StarshipScene] All enemies spawned for custom level playthrough');
+        }
+        // No need to clean up timer here since we spawned all at once for Build Mode
       }
 
       // No auto-respawn in sequence mode
       console.log('[StarshipScene] Custom/Build test: skipping auto-respawn timer');
+    } else if (this.isCustomLevelPlaythrough) {
+      // If it's a custom level playthrough but not a test, don't start random spawning
+      console.log('[StarshipScene] Custom level playthrough: disabling random enemy spawning.');
     } else {
       // Normal play: keep screen from being empty
       if (totalSpawners > 0) {
@@ -2451,7 +2651,8 @@ export class StarshipScene extends Phaser.Scene {
 
     // Get position from the entity
     // Clamp spawn within designed playfield width if test data provides it
-  let { x, y } = entity.position;
+    let { x, y } = entity.position;
+    
     try {
       const levelData = this.registry.get('testLevelData') as
         | { settings?: { playfieldWidth?: number; playfieldSafeMargin?: number } }
@@ -2462,8 +2663,8 @@ export class StarshipScene extends Phaser.Scene {
       const minX = 0 + safe;
       const maxX = w - safe;
       x = Phaser.Math.Clamp(x, minX, maxX);
-  // Clamp to visible vertical range so enemies spawn on-screen in tests
-  y = Phaser.Math.Clamp(y, 0, this.scale.height - 40);
+      
+      // Don't clamp Y - we'll spawn enemies offscreen and have them fly in
     } catch {
       // ignore clamping issues
     }
@@ -2516,13 +2717,39 @@ export class StarshipScene extends Phaser.Scene {
       );
     }
 
+    // For Build Mode tests, spawn at exact grid coordinates. For custom level playthroughs,
+    // spawn off-screen so they fly in.
+    let spawnX = x;
+    let spawnY = y;
+    
+    const isBuildModeTest = this.registry.get('buildModeTest');
+    const isCustomLevel = this.isCustomLevelPlaythrough;
+    
+    if (isBuildModeTest) {
+      // In Build Mode test, spawn directly at the specified grid coordinates
+      console.log(
+        `[StarshipScene] Build Mode Test: Spawning directly at grid position x=${spawnX}, y=${spawnY}`
+      );
+    } else if (isCustomLevel) {
+      // In custom level playthrough, spawn off-screen and fly in
+      spawnY = -100;
+      console.log(
+        `[StarshipScene] Custom Level: Spawning off-screen at y=${spawnY} for destination y=${y}`
+      );
+    }
+    
     // Create the enemy
     console.log(
-      `[StarshipScene] Calling enemyManager.spawnEnemyAtPosition with: type=${enemyType}, x=${x}, y=${y}`
+      `[StarshipScene] Calling enemyManager.spawnEnemyAtPosition with: type=${enemyType}, x=${spawnX}, y=${spawnY}`
     );
-    this.enemyManager.spawnEnemyAtPosition(enemyType, x, y);
+    const enemy = this.enemyManager.spawnEnemyAtPosition(enemyType, spawnX, spawnY);
+    
+    if ((isBuildModeTest || isCustomLevel) && enemy) {
+      // Store the target Y position as a custom property on the enemy
+      enemy.setData('targetY', y);
+    }
 
-    console.log(`[StarshipScene] Spawned enemy of type ${enemyType} at position (${x}, ${y})`);
+    console.log(`[StarshipScene] Spawned enemy of type ${enemyType} at position (${spawnX}, ${spawnY})`);
   }
 
   /**
@@ -2632,6 +2859,7 @@ export class StarshipScene extends Phaser.Scene {
   }): void {
     // Skip in Build Mode custom-level tests
     if (this.registry.get('buildModeTest') === true) {
+      console.log('[StarshipScene] respawnEnemiesIfNeeded: skipping (buildModeTest active)');
       return;
     }
 
@@ -2679,14 +2907,15 @@ export class StarshipScene extends Phaser.Scene {
   }
 
   private checkForTestCompletion(): void {
-    const inCompletionMode =
-      this.registry.get('buildModeTest') === true || this.isCustomLevelPlaythrough;
+    const isBuildModeTest = this.registry.get('buildModeTest') === true;
+    const inCompletionMode = isBuildModeTest || this.isCustomLevelPlaythrough;
     if (inCompletionMode && !this.testCompleted) {
       // For build tests, fail if player died; for custom playthrough ignore deaths (GameOver handles that)
-      if (this.registry.get('buildModeTest') === true) {
+      if (isBuildModeTest) {
         const deaths = this.registry.get('playerDeaths') || 0;
         if (deaths > 0) return;
       }
+      
       const expected = this.expectedEnemiesToDefeat || 0;
       if (expected <= 0) {
         // For custom playthroughs with zero expected (e.g., no spawners), only complete when no enemies remain
@@ -2699,18 +2928,37 @@ export class StarshipScene extends Phaser.Scene {
         }
         return;
       }
+      
       const defeated = this.registry.get('enemiesDefeated') || 0;
       if (defeated >= expected) {
+        // In Build Mode, only complete when all enemies are defeated AND all enemies are spawned
+        if (isBuildModeTest) {
+          const pendingSpawns = this.pendingSpawns || 0;
+          if (pendingSpawns > 0) {
+            console.log(`[StarshipScene] All enemies defeated but still waiting for ${pendingSpawns} spawns`);
+            return;
+          }
+        }
+        
         console.log('[StarshipScene] All placed enemies defeated; completing level');
         this.completeBuildTest('all-defeated');
         return;
       }
-
-      // Secondary completion: if no enemies remain active at all
+      
+      // Secondary completion: if no enemies remain active at all and all spawns are done
       const activeCount = this.enemies ? this.enemies.countActive() : 0;
       if (activeCount === 0) {
-        console.log('[StarshipScene] No active enemies remain; completing level');
-        this.completeBuildTest('no-active');
+        // For build mode tests, only complete when there are no pending spawns
+        if (isBuildModeTest) {
+          const pendingSpawns = this.pendingSpawns || 0;
+          if (pendingSpawns === 0) {
+            console.log('[StarshipScene] All enemies defeated and all spawns complete; completing level');
+            this.completeBuildTest('no-active-no-pending');
+          }
+        } else {
+          console.log('[StarshipScene] No active enemies remain; completing level');
+          this.completeBuildTest('no-active');
+        }
       }
     }
   }

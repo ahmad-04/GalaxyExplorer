@@ -20,6 +20,8 @@ export class EnemyManager {
   private projectilePool: EnemyProjectiles;
   private difficulty: number;
   private spawnTimer?: Phaser.Time.TimerEvent | undefined;
+  // Audit: track a pseudo id for the current spawn timer to correlate logs
+  private spawnTimerAuditId: number | undefined;
   private speedMultiplier: number;
   private useKlaRevamp = true; // prefer new Kla'ed enemies when assets are present
   // When true, random/background spawning is fully disabled (used in Build Mode tests)
@@ -77,8 +79,16 @@ export class EnemyManager {
       if (this.spawnTimer) {
         this.spawnTimer.remove();
         this.spawnTimer = undefined;
+        console.warn('[EnemyManager] startSpawning: existing timer removed during suppression');
       }
-      console.log('[EnemyManager] Random spawning suppressed (build mode test or disabled flag)');
+      // Include a short stack for audit
+      const stack = new Error().stack?.split('\n').slice(0, 6).join('\n');
+      console.warn('[EnemyManager] startSpawning: SUPPRESSED', {
+        reason: this.disableRandomSpawns ? 'disableRandomSpawns' : 'buildModeTest',
+        buildModeTest: isBuildModeTest,
+        disableRandomSpawns: this.disableRandomSpawns,
+        stack,
+      });
       return;
     }
     // Clear any existing timer
@@ -88,13 +98,22 @@ export class EnemyManager {
 
     // Set up the spawn timer
   const effectiveDelay = this.focusOnlyDefKey === 'torpedo' ? Math.max(delay, 2200) : delay;
+    this.spawnTimerAuditId = Math.floor(Math.random() * 1_000_000);
     this.spawnTimer = this.scene.time.addEvent({
       delay: effectiveDelay,
       loop: true,
-      callback: () => this.spawnEnemy(),
+      callback: () => {
+        console.log('[EnemyManager] Timer firing -> spawnEnemy()', {
+          auditId: this.spawnTimerAuditId,
+          disableRandomSpawns: this.disableRandomSpawns,
+          buildModeTest: this.scene.registry?.get?.('buildModeTest') === true,
+        });
+        this.spawnEnemy();
+      },
     });
-
-    console.log(`[EnemyManager] Started spawning enemies every ${effectiveDelay}ms`);
+    console.log(`[EnemyManager] Started spawning enemies every ${effectiveDelay}ms`, {
+      auditId: this.spawnTimerAuditId,
+    });
   }
 
   /**
@@ -105,7 +124,12 @@ export class EnemyManager {
       this.spawnTimer.remove();
       this.spawnTimer = undefined;
     }
-    console.log(`[EnemyManager] Stopped spawning enemies`);
+    if (this.spawnTimerAuditId !== undefined) {
+      console.log(`[EnemyManager] Stopped spawning enemies`, { auditId: this.spawnTimerAuditId });
+      this.spawnTimerAuditId = undefined;
+    } else {
+      console.log(`[EnemyManager] Stopped spawning enemies`);
+    }
   }
 
   /**
@@ -113,6 +137,7 @@ export class EnemyManager {
    */
   setDisableRandomSpawns(disable: boolean): void {
     this.disableRandomSpawns = disable;
+    console.log('[EnemyManager] setDisableRandomSpawns:', disable);
     if (disable) this.stopSpawning();
   }
 
@@ -120,6 +145,22 @@ export class EnemyManager {
    * Spawn a single enemy
    */
   spawnEnemy(): void {
+    // Extra hard guard: never perform random spawn when disabled or in Build Mode test
+    const isBuildModeTest = this.scene.registry?.get?.('buildModeTest') === true;
+    if (this.disableRandomSpawns || isBuildModeTest) {
+      const stack = new Error().stack?.split('\n').slice(0, 8).join('\n');
+      console.error('[EnemyManager] RANDOM spawn BLOCKED', {
+        reason: this.disableRandomSpawns ? 'disableRandomSpawns' : 'buildModeTest',
+        disableRandomSpawns: this.disableRandomSpawns,
+        buildModeTest: isBuildModeTest,
+        auditId: this.spawnTimerAuditId,
+        stack,
+      });
+      return;
+    }
+    console.log('[EnemyManager] RANDOM spawn requested', {
+      auditId: this.spawnTimerAuditId,
+    });
     // Determine position
     const x = Phaser.Math.Between(60, this.scene.scale.width - 60);
 
@@ -145,6 +186,7 @@ export class EnemyManager {
           console.warn('[EnemyManager] pickRandomKlaDefKey returned missing def:', defKey);
           // fall through to legacy
         } else {
+        console.log('[EnemyManager] RANDOM -> Kla def', defKey);
         const kla = new EnemyBase(this.scene, x, -60, def).spawn();
         this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
         return;
@@ -177,7 +219,8 @@ export class EnemyManager {
     }
 
     // Create legacy enemy
-    const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, -60);
+  console.log('[EnemyManager] RANDOM -> legacy enemy', enemyType);
+  const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, -60);
 
     // Add enemy to the group (cast to Phaser.GameObjects.GameObject for type compatibility)
     this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
@@ -216,7 +259,12 @@ export class EnemyManager {
    * @returns The created enemy
    */
   spawnEnemyAtPosition(enemyType: number, x: number, y: number): Enemy {
-    console.log(`[EnemyManager] Spawning enemy of type ${enemyType} at position (${x}, ${y})`);
+    console.log(`[EnemyManager] EXPLICIT spawn: type=${enemyType} at (${x}, ${y})`);
+    console.log('[EnemyManager] EXPLICIT spawn mode flags', {
+      buildModeTest: this.scene.registry?.get?.('buildModeTest') === true,
+      customLevelPlaythrough: this.scene.registry?.get?.('customLevelPlaythrough') === true,
+      disableRandomSpawns: this.disableRandomSpawns,
+    });
 
     // Map enemy type enum to string for better logging
     const enemyTypeMap: Record<number, string> = {
@@ -460,6 +508,27 @@ export class EnemyManager {
   setFocusEnemy(defKey?: keyof typeof ENEMIES) {
     this.focusOnlyDefKey = defKey;
     console.log('[EnemyManager] Focus enemy set to', defKey ?? '(none)');
+  }
+
+  // --- Audit helpers
+  hasActiveSpawnTimer(): boolean {
+    return !!this.spawnTimer;
+  }
+
+  getSpawnAuditInfo(): {
+    hasTimer: boolean;
+    auditId: number | undefined;
+    disableRandomSpawns: boolean;
+    buildModeTest: boolean;
+    difficulty: number;
+  } {
+    return {
+      hasTimer: !!this.spawnTimer,
+      auditId: this.spawnTimerAuditId,
+      disableRandomSpawns: this.disableRandomSpawns,
+      buildModeTest: this.scene.registry?.get?.('buildModeTest') === true,
+      difficulty: this.difficulty,
+    };
   }
 
   private resolveProjectileTextureKey(): string {
