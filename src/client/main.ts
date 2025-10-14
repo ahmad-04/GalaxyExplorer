@@ -1,4 +1,5 @@
 import StartGame from './game/main';
+import { ThemeManager, applyThemeToDocument, themes } from './theme';
 import './style.css';
 import './buildmode-ui.css';
 
@@ -11,6 +12,13 @@ declare const Devvit: DevvitClient;
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DOM loaded. Initializing Devvit context...');
+  // Initialize theme from storage and apply CSS variables early
+  ThemeManager.initFromStorage();
+  try {
+    applyThemeToDocument(themes[ThemeManager.getName()]);
+  } catch (e) {
+    // non-fatal if document not ready in certain embeds
+  }
   // Failsafe: hide splash after 7s in case boot hangs
   const splashTimeout = window.setTimeout(() => {
     const el = document.getElementById('splash');
@@ -35,7 +43,14 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     // Fallback for local development outside of Reddit
     console.log('Devvit object not found. Running in fallback mode.');
-    StartGame('game-container');
+    const game = StartGame('game-container');
+    // Hide splash once the first scene creates (LoadingScene updates splash too)
+    if (game) {
+      game.events.once('ready', () => {
+        const el = document.getElementById('splash');
+        if (el) el.classList.add('hidden');
+      });
+    }
     window.clearTimeout(splashTimeout);
   }
 });

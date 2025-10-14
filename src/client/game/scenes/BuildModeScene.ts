@@ -1,4 +1,6 @@
 import * as Phaser from 'phaser';
+import { ThemeManager } from '../../theme';
+import { showToast } from '../ui/UiKit';
 import { BuildModeManager } from '../entities/BuildModeManager';
 import BuildModeService from '../services/BuildModeService';
 import { DesignStep } from './buildMode/DesignStep';
@@ -61,6 +63,15 @@ export class BuildModeScene extends Phaser.Scene {
     // Register key bindings (guard for strict null checks)
     if (this.input && this.input.keyboard) {
       this.input.keyboard.on('keydown-ESC', this.handleEscapeKey, this);
+      // Quick theme toggle shortcut
+      this.input.keyboard.on('keydown-T', () => {
+        ThemeManager.cycle();
+        try {
+          showToast(this, `Theme: ${ThemeManager.getName()}`, 'info');
+        } catch (e) {
+          // toast not critical in some contexts
+        }
+      });
     }
 
     // Set up event handlers for step transitions
@@ -212,6 +223,18 @@ export class BuildModeScene extends Phaser.Scene {
   private createCommonUI() {
     // Header with title - using gradient for visual enhancement
     const expandedHeaderHeight = 12;
+    // Persist header collapsed state (default expanded on first run)
+    try {
+      const raw = localStorage.getItem('gx_headerCollapsed');
+      if (raw === null) {
+        // First run: show header so Theme button is discoverable
+        this.headerCollapsed = false;
+      } else {
+        this.headerCollapsed = raw === 'true';
+      }
+    } catch (e) {
+      // ignore storage read issues
+    }
     const initialHeaderHeight = this.headerCollapsed ? 0 : expandedHeaderHeight;
     const header = this.add.rectangle(0, 0, this.scale.width, initialHeaderHeight, 0x333333);
     header.setOrigin(0, 0);
@@ -239,8 +262,22 @@ export class BuildModeScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
+    // Theme toggle button (cycles presets)
+    const themeBtn = this.add.text(this.scale.width - 120, 1, 'Theme', {
+      fontSize: '10px',
+      color: '#ffffff',
+      backgroundColor: '#445566',
+      padding: { x: 10, y: 5 },
+    });
+    themeBtn.setInteractive({ useHandCursor: true });
+    themeBtn.on('pointerdown', () => {
+      ThemeManager.cycle();
+      // Provide subtle feedback
+      this.tweens.add({ targets: themeBtn, scale: 0.96, yoyo: true, duration: 80 });
+    });
+
     // Help button
-    const helpButton = this.add.text(this.scale.width - 48, 1, 'Help', {
+    const helpButton = this.add.text(this.scale.width - 60, 1, 'Help', {
       fontSize: '10px',
       color: '#ffffff',
       backgroundColor: '#666666',
@@ -260,6 +297,7 @@ export class BuildModeScene extends Phaser.Scene {
     headerGradient.setVisible(visible);
     title.setVisible(visible);
     helpButton.setVisible(visible);
+    themeBtn.setVisible(visible);
 
     // Collapse/expand toggle
     const toggle = this.add.text(this.scale.width - 20, 1, this.headerCollapsed ? '▼' : '▲', {
@@ -280,6 +318,12 @@ export class BuildModeScene extends Phaser.Scene {
       helpButton.setVisible(!this.headerCollapsed);
       toggle.setText(this.headerCollapsed ? '▼' : '▲');
 
+      // Save preference
+      try {
+        localStorage.setItem('gx_headerCollapsed', String(this.headerCollapsed));
+      } catch (e) {
+        // ignore storage write issues
+      }
       // Publish new height for steps
       this.data.set('headerHeight', newHeight);
       this.events.emit('ui:header:heightChanged', newHeight);
