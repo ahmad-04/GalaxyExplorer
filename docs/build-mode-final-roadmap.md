@@ -21,6 +21,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 **Goal**: Create the foundation for Build Mode with a structured, step-based workflow.
 
 #### Step 1.1: Basic Build Mode Scene (1-2 days)
+
 - Create `src/client/game/scenes/BuildModeScene.ts` as a container scene
 - Add BuildMode feature flag in `src/shared/config.ts`
 - Add temporary debug option in main menu to access BuildMode
@@ -28,6 +29,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Scene loads and contains basic UI elements
 
 #### Step 1.2: Service Layer Implementation (2-3 days)
+
 - Create `src/client/game/services/BuildModeService.ts`
 - Implement state management for the editor
 - Create workflow manager to handle step transitions
@@ -35,6 +37,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Service properly manages state transitions
 
 #### Step 1.3: Grid System (2-3 days)
+
 - Implement grid visualization with configurable size
 - Create snap-to-grid functionality
 - Add grid toggle and size adjustment
@@ -42,6 +45,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Grid renders correctly and adjusts to different sizes
 
 #### Step 1.4: Step-Based Editor Framework (3-4 days)
+
 - Implement workflow manager for step progression
 - Create navigation between setup, design, test, and publish steps
 - Add progress indicators and step validation
@@ -49,10 +53,10 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: User can navigate through all steps of the workflow
 
 #### Step 1.5: Basic UI Components (2-3 days)
-- Create toolbar component for common actions
-- Implement panel system for properties and tools
-- Add common button styles and UI elements
-- Create modal dialog system for confirmations
+
+- Common UI implemented via `UiKit` (pills, header panels, overlay bars)
+- Sticky status bar with coordinates/selection/save and Test/Publish actions
+- Header with collapse/expand to maximize canvas area
 - Test: UI components display correctly and are interactive
 
 ### Phase 2: Entity Placement & Properties
@@ -60,20 +64,20 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 **Goal**: Enable users to place, configure and manipulate level entities.
 
 #### Step 2.1: Entity Factory (2-3 days)
-- Create `src/client/game/factories/BuildModeEntityFactory.ts`
-- Implement preview/ghost visualization for placement
-- Add entity creation methods for all entity types
-- Ensure proper layering and depth sorting
-- Test: All entity types can be created with correct visual representation
+
+- Core entity creation lives in `DesignStep` (images/rects) and placeholder textures created in `BuildModeScene`
+- Enemy palette implemented (Fighter/Scout/Bomber/Torpedo/Frigate) with icons and tooltips
+- Test: Entities render with correct visuals and selection affordances
 
 #### Step 2.2: Entity Placement Tool (3-4 days)
-- Add entity palette with categorized entities
-- Implement drag-and-drop placement
-- Create selection indicator for active entity type
-- Add tooltips and information panels
-- Test: Entities can be selected and placed on the grid
+
+- Right-side palette with hover states and tooltips
+- Snap-to-grid placement and drag with safe playfield clamps
+- Keyboard shortcuts: H (toggle UI), T (toggle palette), F (center)
+- Test: Place and move entities, verify grid alignment and clamps
 
 #### Step 2.3: Property Editor (3-4 days)
+
 - Create dynamic property editor based on entity type
 - Implement form controls for different property types
 - Add real-time preview of property changes
@@ -81,6 +85,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Entity properties can be modified with immediate visual feedback
 
 #### Step 2.4: Entity Manipulation (3-4 days)
+
 - Implement selection tool with multi-select capability
 - Add move, rotate, scale, and delete operations
 - Create selection outline and transformation handles
@@ -88,6 +93,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Entities can be selected, moved, rotated, and deleted
 
 #### Step 2.5: Undo/Redo System (2-3 days)
+
 - Implement command pattern for operation history
 - Add undo/redo stack management
 - Create commands for all editor operations
@@ -99,6 +105,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 **Goal**: Enable saving, loading, and testing custom levels with real-time preview.
 
 #### Step 3.1: Local Storage Implementation (2-3 days)
+
 - Create `src/client/game/utils/LevelStorage.ts`
 - Implement save and load functionality using LocalStorage
 - Add automatic backup/recovery system
@@ -106,6 +113,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Levels can be saved and loaded from LocalStorage
 
 #### Step 3.2: Level Browser (3-4 days)
+
 - Create level browser UI with thumbnails
 - Implement level sorting and filtering
 - Add rename, duplicate, and delete operations
@@ -113,6 +121,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Users can browse, select, and manage saved levels
 
 #### Step 3.3: Real-Time Preview (3-4 days)
+
 - Create minimap view of the level
 - Implement camera controls for pan and zoom
 - Add enemy path visualization
@@ -120,13 +129,14 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Preview accurately represents how the level will play
 
 #### Step 3.4: Test Play Mode (3-4 days)
-- Implement "Test Level" functionality
-- Create transition to game scene with custom level
-- Add testing toolbar with debug options
-- Implement return to editor functionality
-- Test: Custom levels can be played and tested immediately
+
+- Verification flow implemented in Publish step (launches `StarshipScene` with `buildModeTest` registry flags)
+- Emits `test:completed`/`test:failed`/`test:stats` events back to `BuildModeScene`
+- Return to editor handled and overlay provides Stop control
+- Test: Levels can be verified end-to-end
 
 #### Step 3.5: Import/Export System (2-3 days)
+
 - Create JSON file export/import functionality
 - Add validation for imported files
 - Implement level sharing via JSON files
@@ -138,6 +148,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 **Goal**: Add advanced features and polish the Build Mode experience.
 
 #### Step 4.1: Tutorial System (3-4 days)
+
 - Create step-by-step tutorial for Build Mode
 - Implement tooltip system for tools and features
 - Add contextual help for common operations
@@ -145,6 +156,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: New users can follow tutorial to create levels
 
 #### Step 4.2: Level Validation (2-3 days)
+
 - Implement validation system for level integrity
 - Create error and warning visualization
 - Add auto-fix suggestions for common issues
@@ -152,6 +164,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: System identifies common level design issues
 
 #### Step 4.3: Advanced Camera Controls (2-3 days)
+
 - Add smooth zoom and pan animations
 - Implement camera bookmarks for quick navigation
 - Create focus-on-selection functionality
@@ -159,6 +172,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Camera controls feel smooth and intuitive
 
 #### Step 4.4: Visual Themes (3-4 days)
+
 - Add background options for different environments
 - Implement lighting and particle effect controls
 - Create atmospheric settings (nebulas, stars, etc.)
@@ -166,6 +180,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Themes can be applied and previewed correctly
 
 #### Step 4.5: Template System (2-3 days)
+
 - Create pre-designed level templates
 - Implement template customization
 - Add section templates for common patterns
@@ -177,6 +192,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 **Goal**: Integrate with the main game and add community features for level sharing.
 
 #### Step 5.1: Main Menu Integration (2-3 days)
+
 - Add Build Mode button to main menu
 - Create transition animations between modes
 - Implement user authentication checks
@@ -184,13 +200,13 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Build Mode can be accessed properly from main menu
 
 #### Step 5.2: Server-Side Storage (3-4 days)
-- Implement Redis storage for published levels
-- Create APIs for level publishing and retrieval
-- Add user association with published levels
-- Implement version control for levels
-- Test: Levels can be published to and retrieved from server
+
+- Devvit-backed post creation via `publishLevelToReddit` on the client
+- Local metadata updated with `publishId` and `permalink`
+- Future: Redis-backed listing/retrieval for community browser
 
 #### Step 5.3: Level Sharing (3-4 days)
+
 - Create level browser for community levels
 - Implement search and filter functionality
 - Add featured and trending sections
@@ -198,6 +214,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Users can browse and play community levels
 
 #### Step 5.4: Rating & Feedback System (2-3 days)
+
 - Implement level rating mechanism
 - Add favorite/bookmark functionality
 - Create comment/feedback system
@@ -205,6 +222,7 @@ This roadmap outlines the implementation plan for adding a Build Mode feature to
 - Test: Users can rate and provide feedback on levels
 
 #### Step 5.5: Leaderboards & Challenges (3-4 days)
+
 - Create leaderboards specific to custom levels
 - Implement challenge system with objectives
 - Add badges and achievements for level creators
@@ -282,18 +300,19 @@ After initial release:
 
 Total estimated timeline: 10-15 weeks
 
-## Feature Flag Implementation
+## Feature Flags
 
-All Build Mode functionality will be behind feature flags to allow for controlled rollout:
+Build Mode is controlled via `src/shared/config.ts`:
 
-```typescript
-// In src/shared/config.ts
+```ts
 export const FeatureFlags = {
   ENABLE_BUILD_MODE: true,
   ENABLE_BUILD_MODE_SHARING: false,
   ENABLE_BUILD_MODE_COMMUNITY: false,
 };
 ```
+
+Toggle sharing/community as backend capabilities become available.
 
 ## Conclusion
 

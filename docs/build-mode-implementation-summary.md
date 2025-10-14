@@ -1,4 +1,4 @@
-# Galaxy Explorer: Build Mode Implementation Plan
+# Galaxy Explorer: Build Mode Implementation Summary
 
 ## Overview
 
@@ -18,24 +18,21 @@ Based on our analysis of the Galaxy Explorer codebase and the Pixelary example a
 
 ## Implementation Approach
 
-Our Build Mode feature will follow a similar step-based approach:
+Our Build Mode feature follows a step-based approach. Currently implemented steps are Design and Publish, with verification integrated into Publish. Future iterations may add a dedicated Setup/Test UX.
 
-1. **Setup Step**: Configure basic level properties and select templates
-2. **Design Step**: Place and configure entities in the level
-3. **Test Step**: Play and test the level in real-time
-4. **Publish Step**: Review and publish the level
-
-We'll implement a service layer pattern for data management, with local storage for initial phases and optional server integration in later phases.
+We use a service layer (`BuildModeService`) for data management with LocalStorage, with optional server integration planned via Devvit-backed endpoints.
 
 ## Key Components
 
-1. **BuildModeScene**: Main container scene that manages the workflow
-2. **BuildModeService**: Centralized service for data operations and state management
-3. **Step Components**: Individual components for each step in the workflow
-4. **Entity Factory**: Creates and configures game entities
-5. **UI Components**: Reusable UI elements for the editor
+1. **BuildModeScene**: Main container scene that manages the workflow and common UI
+2. **BuildModeService**: Centralized service for data operations (save/load, autosave, import/export, validation)
+3. **DesignStep**: Entity placement, palette, grid, selection, and status bar
+4. **PublishStep**: Verification run (launch gameplay, capture results) and publish to Reddit post
+5. **LevelBrowser**: Local level list UI; browse, select, and manage saved levels
+6. **BuildModeManager**: Editor state (selection, tools, grid)
+7. **UiKit**: Reusable UI primitives (pill buttons, panels, overlays, toasts)
 
-## File Structure
+## File Structure (current)
 
 ```
 src/
@@ -44,21 +41,15 @@ src/
       scenes/
         BuildModeScene.ts                # Main scene
         buildMode/                       # Step-based components
-          SetupStep.ts
           DesignStep.ts
-          TestStep.ts
           PublishStep.ts
       services/
         BuildModeService.ts              # Data operations and state management
       entities/
         BuildModeManager.ts              # Editor state management
-        buildMode/                       # Build mode specific entities
-      factories/
-        BuildModeEntityFactory.ts        # Entity creation
       ui/
         LevelBrowser.ts                  # Level selection interface
-        PropertyEditor.ts                # Entity property editing
-        BuildModeToolbar.ts              # Editor toolbar
+        UiKit.ts                         # Reusable UI primitives
   shared/
     types/
       buildMode.ts                       # Type definitions and schemas
@@ -74,15 +65,17 @@ Our final roadmap includes five phases with bite-sized steps:
 4. **Advanced Features & Polish** (2-3 weeks)
 5. **Integration & Community Features** (2-3 weeks)
 
-For detailed steps in each phase, refer to [build-mode-final-roadmap.md](../docs/build-mode-final-roadmap.md).
+For detailed steps in each phase, refer to [build-mode-final-roadmap.md](./build-mode-final-roadmap.md) and [build-mode-roadmap.md](./build-mode-roadmap.md).
 
 ## Sample Implementation Files
 
-We've created several sample implementation files to demonstrate our approach:
+Selected implementation entry points:
 
-1. **[BuildModeService.ts](../src/client/game/services/BuildModeService.ts)**: Service layer for data management and state
-2. **[BuildModeScene.ts](../src/client/game/scenes/BuildModeScene.ts)**: Main scene for the Build Mode feature
-3. **[SetupStep.ts](../src/client/game/scenes/buildMode/SetupStep.ts)**: Implementation of the first step in the workflow
+1. **[BuildModeService.ts](../src/client/game/services/BuildModeService.ts)**: Persistence, autosave, import/export, validation
+2. **[BuildModeScene.ts](../src/client/game/scenes/BuildModeScene.ts)**: Step orchestration and common UI header
+3. **[DesignStep.ts](../src/client/game/scenes/buildMode/DesignStep.ts)**: Grid, palette, placement, selection, status bar
+4. **[PublishStep.ts](../src/client/game/scenes/buildMode/PublishStep.ts)**: Verification flow and publish-to-Reddit
+5. **[LevelBrowser.ts](../src/client/game/ui/LevelBrowser.ts)**: Local level browsing and actions
 
 ## Development Workflow
 
@@ -93,13 +86,13 @@ For each component or feature:
 3. **Polish UI**: Enhance the user interface and experience
 4. **Test & Refine**: Ensure the feature works as expected
 
-## Next Steps
+## Current Gaps / Next Steps
 
-1. Create the remaining missing files in the structure
-2. Implement the BuildModeManager class
-3. Complete the step components for the workflow
-4. Create the entity factory and UI components
-5. Test the basic workflow end-to-end
+1. Property editing UI for entities (lightweight panel or inline controls)
+2. Optional dedicated Setup/Test UX (Design embeds many flows today; Publish handles verification)
+3. Community features behind flags (sharing browser, ratings, leaderboards) once backend is ready
+4. Additional templates and validation rules
+5. Polishing tutorials and help overlays
 
 ## Conclusion
 

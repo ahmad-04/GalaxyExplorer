@@ -1,6 +1,6 @@
 # Aseprite Animations in Galaxy Explorer
 
-This guide explains how to use Aseprite with Phaser 3.88 in this project to achieve full, high‑fidelity animations (frame tags, per‑frame duration, ping‑pong, packed sheets, trimming).
+This guide explains how to export from Aseprite and load animations in Phaser 3.88.2. The repo already includes Aseprite sources and export tools so you can iterate quickly.
 
 ## TL;DR
 
@@ -12,13 +12,11 @@ This guide explains how to use Aseprite with Phaser 3.88 in this project to achi
 ## What’s already in the repo
 
 - Engine: Phaser `3.88.2` (see `package.json`).
-- Existing Aseprite sources:
-  - `src/client/public/assets/Void_MainShip/Main Ship/Main Ship - Fighter Design.aseprite`
-  - `src/client/public/assets/Void_MainShip/Main ship weapons/Aseprite/Main ship weapon - Projectile - Auto cannon bullet.aseprite`
-  - `src/client/public/assets/Void_MainShip/Main ship weapons/Aseprite/Main ship weapon - Projectile - Big Space Gun.aseprite`
-  - `src/client/public/assets/Void_MainShip/Main ship weapons/Aseprite/Main ship weapon - Projectile - Rocket.aseprite`
-  - `src/client/public/assets/Void_MainShip/Main ship weapons/Aseprite/Main ship weapon - Projectile - Zapper.aseprite`
-- Vite serves assets from `src/client/public/**` to `/` at runtime, so exported assets placed there are accessible.
+- Aseprite sources under `src/client/public/assets/**` (Void_MainShip and weapons)
+- Vite serves everything under `src/client/public/**` at `/` during runtime
+- Export helpers in `tools/`:
+  - `export-aseprite-cli.mjs`, `export-aseprite-from-png.mjs` for generating spritesheets + JSON
+  - `export-kla-cli.mjs` for Kla’ed packs
 
 ## Exporting from Aseprite
 
@@ -62,6 +60,7 @@ aseprite -b "src/client/public/assets/Void_MainShip/Main ship weapons/Aseprite/M
 ```
 
 Tips:
+
 - Use quotes for paths with spaces.
 - `--format json-array` or `json-hash` both work. `json-array` is common.
 - To export only specific layers, add `--layer "<Layer Name>"` (repeatable), or toggle layer visibility in the GUI first.
@@ -69,6 +68,7 @@ Tips:
 ## Loading and playing animations in Phaser
 
 Use these APIs (Phaser 3.88+):
+
 - `this.load.aseprite(key, textureURL, atlasURL)`
 - `this.anims.createFromAseprite(key)`
 
@@ -126,27 +126,21 @@ ship.play('Thrust');
 - Damage (hit feedback)
 - Explode (death)
 
-## Build pipeline (optional)
+## Build pipeline
 
-You can automate export with an npm script (documentation only; not applied yet):
+Use the included Node scripts:
 
-```jsonc
-// package.json (scripts)
-{
-  "scripts": {
-    "sprites:export": "bash ./tools/export-sprites.sh"
-  }
-}
-```
+- Export all known Aseprite assets: `npm run export:aseprite:all`
+- Export Kla’ed asset packs: `npm run export:kla:all`
 
-Where `tools/export-sprites.sh` runs the `aseprite` commands above. On Windows, you can also use a `.cmd` or Node script if preferred.
+See `package.json` for additional targeted export tasks.
 
 ## Troubleshooting
 
-- 404s for PNG/JSON: Confirm export files are under `src/client/public/**`. At runtime they should be reachable via `/assets/...` URLs.
-- "Animation not found": Ensure you called `this.anims.createFromAseprite('<textureKey>')` before `sprite.play('<TagName>')`. Verify tag names match exactly (case sensitive).
-- Sprite shows as a white box: Path issues or the asset didn’t copy to `dist/client`. Rebuild the client and verify the file exists in `dist/client/assets/...`.
-- Physics feels off: Trimming changes visual bounds. Explicitly set body size to desired dimensions after creating the physics body.
+- 404s for PNG/JSON: Exports must reside under `src/client/public/**`; URLs resolve from `/`.
+- "Animation not found": Call `this.anims.createFromAseprite('<key>')` before `sprite.play('<TagName>')` and match tag names exactly.
+- White box sprite: Check that the PNG/JSON paths are correct and present in the built `dist/client/assets/...`.
+- Physics bounds: Trimming changes visual bounds; set physics body size explicitly after sprite creation.
 
 ## References
 
