@@ -1,5 +1,7 @@
 import StartGame from './game/main';
 import { ThemeManager, applyThemeToDocument, themes } from './theme';
+import { WebviewContextClient } from './services/WebviewContextClient';
+import { BlockReturnHandler } from './services/BlockReturnHandler';
 import './style.css';
 import './buildmode-ui.css';
 
@@ -10,8 +12,9 @@ interface DevvitClient {
 }
 declare const Devvit: DevvitClient;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log('DOM loaded. Initializing Devvit context...');
+
   // Initialize theme from storage and apply CSS variables early
   ThemeManager.initFromStorage();
   try {
@@ -19,6 +22,17 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch (e) {
     // non-fatal if document not ready in certain embeds
   }
+
+  // Initialize webview context first
+  const webviewContext = await WebviewContextClient.initialize();
+  console.log('Webview context initialized:', webviewContext);
+
+  // Initialize return handler for block navigation
+  BlockReturnHandler.initialize();
+
+  // Show return button if we came from a block
+  BlockReturnHandler.showReturnButtonIfNeeded();
+
   // Failsafe: hide splash after 7s in case boot hangs
   const splashTimeout = window.setTimeout(() => {
     const el = document.getElementById('splash');
@@ -29,21 +43,49 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof Devvit !== 'undefined') {
     Devvit.init(async (context: unknown) => {
       console.log('Devvit context initialized:', context);
-      if (context) {
+
+      try {
         const props = await Devvit.getProps<Record<string, unknown>>();
         console.log('Props received from Devvit:', props);
-        StartGame('game-container', props);
+
+        // Merge webview context with Devvit props
+        const gameConfig = {
+          ...props,
+          ...WebviewContextClient.getGameConfig(),
+          webviewContext,
+        };
+
+        console.log('Starting game with merged config:', gameConfig);
+        StartGame('game-container', gameConfig);
+
+        // Retry any pending state synchronizations
+        await WebviewContextClient.retryPendingSyncs();
+
         window.clearTimeout(splashTimeout);
-      } else {
-        console.log('No Devvit context, starting game without props.');
-        StartGame('game-container');
+      } catch (error) {
+        console.error('Error initializing with Devvit props:', error);
+        // Fallback to context-only initialization
+        const gameConfig = {
+          ...WebviewContextClient.getGameConfig(),
+          webviewContext,
+        };
+        StartGame('game-container', gameConfig);
         window.clearTimeout(splashTimeout);
       }
     });
   } else {
     // Fallback for local development outside of Reddit
     console.log('Devvit object not found. Running in fallback mode.');
-    const game = StartGame('game-container');
+
+    const gameConfig = {
+      ...WebviewContextClient.getGameConfig(),
+      webviewContext,
+      developmentMode: true,
+    };
+
+    console.log('Starting game in development mode with config:', gameConfig);
+    const game = StartGame('game-container', gameConfig);
+
     // Hide splash once the first scene creates (LoadingScene updates splash too)
     if (game) {
       game.events.once('ready', () => {

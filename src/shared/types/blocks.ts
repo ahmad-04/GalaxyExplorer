@@ -164,10 +164,10 @@ export const BLOCK_CACHE_KEYS = {
 // Block action handler context
 export interface BlockActionContext {
   postId: string;
-  userId?: string;
+  userId?: string | undefined;
   blockType: BlockConfig['type'];
   actionId: string;
-  actionData?: Record<string, unknown>;
+  actionData?: Record<string, unknown> | undefined;
 }
 
 // Block render context for devvit components
@@ -176,4 +176,92 @@ export interface BlockRenderContext {
   state: BlockState;
   onAction: (actionId: string, data?: Record<string, unknown>) => Promise<void>;
   onError: (error: BlockError) => void;
+}
+
+// Webview context preservation interfaces
+export interface WebviewContext {
+  postId: string;
+  blockType: BlockConfig['type'];
+  action: string;
+  timestamp: number;
+  data?: Record<string, unknown> | undefined;
+}
+
+// Level-specific webview context
+export interface LevelWebviewContext extends WebviewContext {
+  levelId: string;
+  mode?: 'play' | 'edit' | 'preview' | undefined;
+  difficulty?: number | undefined;
+  creator?: string | undefined;
+}
+
+// Challenge-specific webview context
+export interface ChallengeWebviewContext extends WebviewContext {
+  weekId: string;
+  challengeId: string;
+  seedLevelId: string;
+  challengeMode: boolean;
+  userProgress?: {
+    bestScore?: number;
+    attempts?: number;
+    lastPlayedAt?: number;
+  };
+}
+
+// Landing/tutorial webview context
+export interface LandingWebviewContext extends WebviewContext {
+  mode: 'tutorial' | 'getting-started' | 'feature-tour';
+  step?: number | undefined;
+  completedSteps?: string[] | undefined;
+}
+
+// Community webview context
+export interface CommunityWebviewContext extends WebviewContext {
+  filter?: 'popular' | 'trending' | 'new' | 'creator' | undefined;
+  creator?: string | undefined;
+  tags?: string[] | undefined;
+  sortBy?: 'plays' | 'rating' | 'date' | undefined;
+}
+
+// Union type for all webview contexts
+export type WebviewContextData =
+  | LevelWebviewContext
+  | ChallengeWebviewContext
+  | LandingWebviewContext
+  | CommunityWebviewContext;
+
+// Webview launch configuration
+export interface WebviewLaunchConfig {
+  url: string;
+  context: WebviewContextData;
+  loading?: {
+    message: string;
+    timeout: number;
+  };
+  fallback?: {
+    type: 'error' | 'retry';
+    message: string;
+    actions?: BlockAction[];
+  };
+}
+
+// Context validation result
+export interface ContextValidationResult {
+  valid: boolean;
+  errors?: string[] | undefined;
+  sanitizedContext?: WebviewContextData | undefined;
+}
+
+// State synchronization interface
+export interface StateSyncData {
+  postId: string;
+  blockType: BlockConfig['type'];
+  updatedAt: number;
+  changes: {
+    playCount?: number;
+    rating?: number;
+    userProgress?: Record<string, unknown>;
+    leaderboard?: unknown[];
+    statistics?: Record<string, unknown>;
+  };
 }

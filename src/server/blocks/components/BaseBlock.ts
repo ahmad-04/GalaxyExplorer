@@ -1,36 +1,84 @@
-import { BlockConfig } from '../../../shared/types/blocks.js';
+import {
+  BlockConfig,
+  LevelBlockData,
+  ChallengeBlockData,
+  LandingBlockData,
+} from '../../../shared/types/blocks.js';
+import { BlockPerformanceService } from '../services/BlockPerformanceService.js';
+import { BlockErrorService } from '../services/BlockErrorService.js';
 
 /**
- * Block component utilities for devvit block rendering
- * These are helper functions for creating block configurations, not JSX components
+ * Base block component utilities for devvit block rendering
+ * These functions create block configurations that can be rendered by devvit
  */
 
 /**
- * Create base block configuration with common styling
+ * Create base block configuration with common styling following Pixelary patterns
  */
 export const createBaseBlockConfig = (config: BlockConfig) => {
   return {
     ...config,
-    // Add common styling properties that will be used by devvit renderer
     style: {
       padding: 'medium',
       cornerRadius: 'medium',
       backgroundColor: 'neutral-background-weak',
       gap: 'small',
       width: '100%',
+      border: 'thin',
+      borderColor: 'neutral-border',
     },
   };
 };
 
 /**
- * Create block header configuration
+ * Create block header configuration with title and metadata
  */
-export const createBlockHeader = (props: { title: string; subtitle?: string; badge?: string }) => {
+export const createBlockHeader = (config: BlockConfig) => {
+  const getHeaderContent = () => {
+    switch (config.type) {
+      case 'level-preview':
+        const levelData = config.data as LevelBlockData;
+        return {
+          title: levelData.title,
+          subtitle: `by u/${levelData.creator}`,
+          badge: undefined,
+        };
+      case 'weekly-challenge':
+        const challengeData = config.data as ChallengeBlockData;
+        return {
+          title: challengeData.title,
+          subtitle: `${challengeData.participantCount} participants`,
+          badge: 'CHALLENGE',
+        };
+      case 'landing':
+        const landingData = config.data as LandingBlockData;
+        return {
+          title: landingData.appTitle,
+          subtitle: landingData.description,
+          badge: undefined,
+        };
+      case 'community-showcase':
+        return {
+          title: 'Community Showcase',
+          subtitle: 'Discover amazing community content',
+          badge: 'FEATURED',
+        };
+      default:
+        return {
+          title: 'Galaxy Explorer',
+          subtitle: 'Interactive content',
+          badge: undefined,
+        };
+    }
+  };
+
+  const { title, subtitle, badge } = getHeaderContent();
+
   return {
     type: 'header',
-    title: props.title,
-    subtitle: props.subtitle,
-    badge: props.badge,
+    title,
+    subtitle,
+    badge,
     style: {
       titleSize: 'large',
       titleWeight: 'bold',
@@ -42,40 +90,246 @@ export const createBlockHeader = (props: { title: string; subtitle?: string; bad
 };
 
 /**
- * Create difficulty indicator data
+ * Create difficulty indicator configuration with visual star rating
  */
 export const createDifficultyIndicator = (level: number) => {
-  const stars = '★'.repeat(Math.min(level, 5));
-  const emptyStars = '☆'.repeat(Math.max(0, 5 - level));
+  const clampedLevel = Math.max(1, Math.min(5, level));
+  const stars = '★'.repeat(clampedLevel);
+  const emptyStars = '☆'.repeat(5 - clampedLevel);
 
   return {
     type: 'difficulty',
-    level,
+    level: clampedLevel,
     display: `${stars}${emptyStars}`,
-    text: `Difficulty: ${level}/5`,
+    text: `Difficulty: ${clampedLevel}/5`,
+    style: {
+      starColor: 'warning',
+      emptyStarColor: 'neutral-content-weak',
+    },
   };
 };
 
 /**
- * Create block actions configuration
+ * Create thumbnail configuration with fallback handling and lazy loading
  */
-export const createBlockActions = (
-  actions: Array<{
-    id: string;
-    label: string;
-    type: 'primary' | 'secondary';
-    handler: string;
-    data?: Record<string, unknown>;
-  }>
+export const createThumbnailConfig = (args: {
+  url?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  lazy?: boolean;
+}) => {
+  const { url, width = 80, height = 60, alt = 'Level thumbnail', lazy = true } = args;
+
+  return BlockPerformanceService.createOptimizedImageConfig({
+    url,
+    width,
+    height,
+    alt,
+    lazy,
+    placeholder: '🎮',
+  });
+};
+
+/**
+ * Create statistics display configuration
+ */
+export const createStatsDisplay = (
+  stats: Array<{ label: string; value: string | number; icon?: string }>
 ) => {
   return {
-    type: 'actions',
-    actions: actions.map((action) => ({
-      ...action,
-      style: {
-        buttonType: action.type,
-        size: 'medium',
-      },
+    type: 'stats',
+    items: stats.map((stat) => ({
+      label: stat.label,
+      value: stat.value.toString(),
+      icon: stat.icon,
     })),
+    style: {
+      layout: 'horizontal',
+      gap: 'medium',
+      labelSize: 'small',
+      labelColor: 'secondary',
+      valueSize: 'medium',
+      valueWeight: 'bold',
+      valueColor: 'primary',
+    },
   };
+};
+
+/**
+ * Create block actions configuration with consistent button styling
+ */
+export const createBlockActions = (config: BlockConfig) => {
+  if (!config.actions || config.actions.length === 0) {
+    return null;
+  }
+
+  return {
+    type: 'actions',
+    actions: config.actions.map((action) => ({
+      id: action.id,
+      label: action.label,
+      appearance: action.type === 'primary' ? 'primary' : 'secondary',
+      size: 'medium',
+      handler: action.handler,
+      data: action.data,
+    })),
+    style: {
+      layout: 'horizontal',
+      gap: 'small',
+      alignment: 'start',
+    },
+  };
+};
+
+/**
+ * Create loading state configuration
+ */
+export const createLoadingState = () => {
+  return {
+    type: 'loading',
+    message: 'Loading...',
+    style: {
+      alignment: 'center',
+      padding: 'medium',
+      textSize: 'medium',
+      textColor: 'secondary',
+    },
+  };
+};
+
+/**
+ * Create error state configuration
+ */
+export const createErrorState = (error: string) => {
+  return {
+    type: 'error',
+    message: error,
+    style: {
+      alignment: 'center',
+      padding: 'medium',
+      textSize: 'medium',
+      textColor: 'critical',
+    },
+  };
+};
+/**
+ * Create optimized block configuration with performance enhancements
+ */
+export const createOptimizedBlockConfig = async (
+  config: BlockConfig,
+  options?: {
+    enableLazyLoading?: boolean;
+    enableSkeleton?: boolean;
+    cacheKey?: string;
+  }
+) => {
+  const { enableLazyLoading = true, enableSkeleton = true, cacheKey } = options || {};
+
+  // Create base configuration
+  const baseConfig = createBaseBlockConfig(config);
+
+  // Add performance optimizations
+  const optimizedConfig = {
+    ...baseConfig,
+    performance: {
+      lazyLoading: enableLazyLoading,
+      skeleton: enableSkeleton,
+      cacheKey,
+    },
+  };
+
+  // Add skeleton state if enabled
+  if (enableSkeleton) {
+    optimizedConfig.skeletonState = BlockPerformanceService.createSkeletonState(config.type);
+  }
+
+  return optimizedConfig;
+};
+
+/**
+ * Create loading state configuration with progress tracking
+ */
+export const createLoadingStateConfig = (
+  stage: 'fetching' | 'processing' | 'rendering' | 'complete',
+  progress: number
+) => {
+  return BlockPerformanceService.createProgressiveLoadingState(stage, progress);
+};
+
+/**
+ * Create performance-optimized block with lazy loading
+ */
+export const createLazyBlock = async (
+  blockId: string,
+  blockType: string,
+  contentLoader: () => Promise<any>
+) => {
+  return await BlockPerformanceService.implementLazyLoading(blockId, contentLoader);
+};
+/**
+ * Create error-safe block wrapper with error boundary
+ */
+export const createErrorSafeBlock = (blockId: string, blockType: string, blockContent: any) => {
+  const errorBoundary = BlockErrorService.createErrorBoundary(blockId, blockType);
+
+  return {
+    type: 'error-safe-block',
+    blockId,
+    blockType,
+    errorBoundary,
+    content: blockContent,
+    fallback: BlockErrorService.createFallbackContent(blockType),
+  };
+};
+
+/**
+ * Create block with comprehensive error handling
+ */
+export const createRobustBlock = async (
+  config: BlockConfig,
+  options?: {
+    enableErrorBoundary?: boolean;
+    enableRetry?: boolean;
+    customFallback?: any;
+  }
+) => {
+  const { enableErrorBoundary = true, enableRetry = true, customFallback } = options || {};
+
+  try {
+    // Create base block configuration
+    const baseConfig = await createOptimizedBlockConfig(config);
+
+    // Add error handling if enabled
+    if (enableErrorBoundary) {
+      const errorBoundary = BlockErrorService.createErrorBoundary(config.postId, config.type);
+      baseConfig.errorBoundary = errorBoundary;
+    }
+
+    // Add retry configuration if enabled
+    if (enableRetry) {
+      baseConfig.retryConfig = {
+        enabled: true,
+        maxAttempts: 3,
+        showRetryButton: true,
+      };
+    }
+
+    // Add custom fallback if provided
+    if (customFallback) {
+      baseConfig.customFallback = customFallback;
+    }
+
+    return baseConfig;
+  } catch (error) {
+    console.error(`[BaseBlock] Error creating robust block:`, error);
+
+    // Return minimal fallback configuration
+    return {
+      type: 'fallback-block',
+      postId: config.postId,
+      blockType: config.type,
+      content: customFallback || BlockErrorService.createFallbackContent(config.type),
+    };
+  }
 };

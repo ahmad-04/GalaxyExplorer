@@ -136,6 +136,90 @@ export class BlockService {
   }
 
   /**
+   * Update block configuration
+   */
+  static async updateBlockConfig(postId: string, config: BlockConfig): Promise<void> {
+    await this.storeBlockConfig(postId, config);
+  }
+
+  /**
+   * Update block metadata
+   */
+  static async updateBlockMetadata(postId: string, updates: Partial<BlockMetadata>): Promise<void> {
+    const key = `block:metadata:${postId}`;
+    const existingStr = await redis.get(key);
+
+    let metadata: BlockMetadata;
+    if (existingStr) {
+      metadata = { ...JSON.parse(existingStr), ...updates };
+    } else {
+      metadata = {
+        postId,
+        blockType: 'level-preview', // Default, should be overridden
+        createdAt: Date.now(),
+        lastUpdated: Date.now(),
+        viewCount: 0,
+        interactionCount: 0,
+        ...updates,
+      };
+    }
+
+    await redis.set(key, JSON.stringify(metadata));
+
+    // Set TTL for 90 days
+    const TTL_SECONDS = 90 * 24 * 60 * 60;
+    await redis.expire(key, TTL_SECONDS);
+  }
+
+  /**
+   * Update user progress for a specific post/block
+   */
+  static async updateUserProgress(
+    postId: string,
+    progress: Record<string, unknown>
+  ): Promise<void> {
+    // This would typically store user-specific progress
+    // For now, we'll store it as a simple key-value pair
+    const key = `block:progress:${postId}`;
+    const existingStr = await redis.get(key);
+
+    let existingProgress = {};
+    if (existingStr) {
+      try {
+        existingProgress = JSON.parse(existingStr);
+      } catch (error) {
+        console.error('Error parsing existing progress:', error);
+      }
+    }
+
+    const updatedProgress = { ...existingProgress, ...progress, updatedAt: Date.now() };
+    await redis.set(key, JSON.stringify(updatedProgress));
+
+    // Set TTL for 30 days
+    const TTL_SECONDS = 30 * 24 * 60 * 60;
+    await redis.expire(key, TTL_SECONDS);
+  }
+
+  /**
+   * Get user progress for a specific post/block
+   */
+  static async getUserProgress(postId: string): Promise<Record<string, unknown> | null> {
+    const key = `block:progress:${postId}`;
+    const progressStr = await redis.get(key);
+
+    if (!progressStr) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(progressStr);
+    } catch (error) {
+      console.error('Error parsing user progress:', error);
+      return null;
+    }
+  }
+
+  /**
    * Calculate time remaining for a weekly challenge
    */
   private static getTimeRemainingForWeek(weekId: string): number {
