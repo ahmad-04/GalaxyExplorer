@@ -25,7 +25,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize webview context first
   const webviewContext = await WebviewContextClient.initialize();
-  console.log('Webview context initialized:', webviewContext);
+  console.log('[Main] Webview context initialized:', webviewContext);
+  console.log('[Main] Current URL:', window.location.href);
+  console.log('[Main] URL search params:', window.location.search);
 
   // Initialize return handler for block navigation
   BlockReturnHandler.initialize();
@@ -33,11 +35,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Show return button if we came from a block
   BlockReturnHandler.showReturnButtonIfNeeded();
 
-  // Failsafe: hide splash after 7s in case boot hangs
-  const splashTimeout = window.setTimeout(() => {
+  // Check if we're launched from blocks for faster splash hiding
+  const isFromBlocks =
+    webviewContext &&
+    (webviewContext.blockType === 'play-mode' || webviewContext.blockType === 'build-mode');
+  const splashTimeout = isFromBlocks ? 2000 : 7000; // Faster for block launches
+
+  console.log('[Main] Launch detection:', {
+    isFromBlocks,
+    blockType: webviewContext?.blockType,
+    splashTimeout,
+  });
+
+  // Failsafe: hide splash after timeout in case boot hangs
+  const splashTimeoutId = window.setTimeout(() => {
+    console.log('[Main] Splash timeout reached, hiding splash');
     const el = document.getElementById('splash');
     if (el) el.classList.add('hidden');
-  }, 7000);
+  }, splashTimeout);
 
   // Check if the Devvit object is available
   if (typeof Devvit !== 'undefined') {
@@ -55,13 +70,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           webviewContext,
         };
 
-        console.log('Starting game with merged config:', gameConfig);
+        console.log('[Main] Starting game with merged config:', gameConfig);
+        console.log(
+          '[Main] WebviewContextClient.getGameConfig():',
+          WebviewContextClient.getGameConfig()
+        );
         StartGame('game-container', gameConfig);
 
         // Retry any pending state synchronizations
         await WebviewContextClient.retryPendingSyncs();
 
-        window.clearTimeout(splashTimeout);
+        window.clearTimeout(splashTimeoutId);
       } catch (error) {
         console.error('Error initializing with Devvit props:', error);
         // Fallback to context-only initialization
@@ -70,7 +89,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           webviewContext,
         };
         StartGame('game-container', gameConfig);
-        window.clearTimeout(splashTimeout);
+        window.clearTimeout(splashTimeoutId);
       }
     });
   } else {
@@ -93,6 +112,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (el) el.classList.add('hidden');
       });
     }
-    window.clearTimeout(splashTimeout);
+    window.clearTimeout(splashTimeoutId);
   }
 });

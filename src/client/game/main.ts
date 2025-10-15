@@ -31,8 +31,8 @@ const config: Phaser.Types.Core.GameConfig = {
     MainMenu,
     StarshipScene,
     EndlessScene,
-  LevelComplete,
-  GameOver,
+    LevelComplete,
+    GameOver,
     ...(isFeatureEnabled('ENABLE_BUILD_MODE') ? [BuildModeScene] : []),
   ],
 };
@@ -63,8 +63,56 @@ const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {
 
   // Override with custom config if provided (e.g. from URL parameters)
   if (customConfig && Object.keys(customConfig).length > 0) {
-    console.log('[StartGame] Setting backgroundConfig from URL params:', customConfig);
+    console.log('[StartGame] Setting config from webview context:', customConfig);
     game.registry.set('backgroundConfig', customConfig);
+    game.registry.set('webviewContext', customConfig);
+
+    // Handle different launch modes based on webview context
+    const mode = customConfig.mode as string;
+    const blockType = customConfig.blockType as string;
+
+    console.log('[StartGame] Detected mode:', mode, 'blockType:', blockType);
+    console.log('[StartGame] Full custom config:', customConfig);
+
+    // Store mode information for scenes to use
+    game.registry.set('launchMode', mode);
+    game.registry.set('launchBlockType', blockType);
+
+    // Set up auto-start behavior based on mode
+    if (mode === 'play') {
+      console.log('[StartGame] Setting up play mode');
+      game.registry.set('autoStartGame', true);
+
+      // Handle different play types
+      const gameType = customConfig.gameType as string;
+      console.log('[StartGame] Game type:', gameType);
+
+      if (gameType === 'campaign') {
+        game.registry.set('gameType', 'campaign');
+      } else if (gameType === 'community') {
+        game.registry.set('gameType', 'community');
+        game.registry.set('showLevelBrowser', true);
+      } else if (gameType === 'challenge') {
+        game.registry.set('gameType', 'challenge');
+        game.registry.set('challengeMode', true);
+      }
+    } else if (mode === 'build') {
+      console.log('[StartGame] Setting up build mode');
+      game.registry.set('autoStartBuild', true);
+
+      // Handle different build actions
+      const action = customConfig.action as string;
+      console.log('[StartGame] Build action:', action);
+      game.registry.set('buildAction', action);
+
+      if (action === 'tutorial') {
+        game.registry.set('showBuildTutorial', true);
+      }
+    } else {
+      console.log('[StartGame] No specific mode detected, using default behavior');
+    }
+  } else {
+    console.log('[StartGame] No custom config provided, using defaults');
   }
 
   return game;

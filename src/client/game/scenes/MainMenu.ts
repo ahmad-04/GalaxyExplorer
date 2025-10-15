@@ -32,6 +32,41 @@ export class MainMenu extends Phaser.Scene {
     this.leaderboardVisible = false;
     console.log('MainMenu scene initialized, startEnabled =', this.startEnabled);
     this.logState('init');
+
+    // Check for auto-start modes from webview context
+    const autoStartGame = this.registry.get('autoStartGame');
+    const autoStartBuild = this.registry.get('autoStartBuild');
+    const launchMode = this.registry.get('launchMode');
+    const webviewContext = this.registry.get('webviewContext');
+
+    console.log('[MainMenu] Launch context:', { autoStartGame, autoStartBuild, launchMode });
+    console.log('[MainMenu] Full webview context:', webviewContext);
+    console.log('[MainMenu] All registry values:', {
+      autoStartGame,
+      autoStartBuild,
+      launchMode,
+      gameType: this.registry.get('gameType'),
+      challengeMode: this.registry.get('challengeMode'),
+      showLevelBrowser: this.registry.get('showLevelBrowser'),
+      buildAction: this.registry.get('buildAction'),
+      showBuildTutorial: this.registry.get('showBuildTutorial'),
+    });
+
+    // If we have auto-start instructions, handle them after a brief delay
+    if (autoStartGame || autoStartBuild) {
+      console.log('[MainMenu] Scheduling auto-start in 500ms');
+      this.time.delayedCall(500, () => {
+        console.log('[MainMenu] Executing auto-start');
+        if (autoStartGame) {
+          this.handleAutoStartGame();
+        } else if (autoStartBuild) {
+          this.handleAutoStartBuild();
+        }
+      });
+    } else {
+      console.log('[MainMenu] No auto-start flags detected, showing normal menu');
+    }
+
     // Music: ensure loading theme with smooth fade once MainMenu is initialized
     MusicManager.ensureLoading(this);
   }
@@ -78,46 +113,79 @@ export class MainMenu extends Phaser.Scene {
       }
     });
 
+    // Check if we're in a webview context (launched from blocks)
+    const webviewContext = this.registry.get('webviewContext');
+    const isFromBlocks = !!webviewContext;
+
     // Title and subtitle using UiKit
     uiTitleText(this, this.scale.width / 2, 100, 'GALAXY EXPLORER');
-    uiBodyText(this, this.scale.width / 2, 170, 'CONQUER THE COSMOS', 24);
 
-    // Buttons using UiKit
-    const startBtn = createButton(this, this.scale.width / 2, 260, 'START GAME');
-    const leaderboardBtn = createButton(this, this.scale.width / 2, 350, 'LEADERBOARD');
-    let buildModeBtn: ReturnType<typeof createButton> | undefined;
-    if (isFeatureEnabled('ENABLE_BUILD_MODE')) {
-      buildModeBtn = createButton(this, this.scale.width / 2, 440, 'BUILD MODE');
-    }
+    if (isFromBlocks) {
+      // Show a simplified interface when launched from blocks
+      const launchMode = this.registry.get('launchMode');
+      const modeText =
+        launchMode === 'play' ? 'PLAY MODE' : launchMode === 'build' ? 'BUILD MODE' : 'LOADING...';
+      uiBodyText(this, this.scale.width / 2, 170, modeText, 24);
 
-    startBtn.container.once('pointerdown', () => {
-      this.cameras.main.flash(300, 255, 255, 255, true);
-      this.time.delayedCall(300, () => this.startGame());
-    });
-    leaderboardBtn.container.on('pointerdown', () => {
-      this.time.delayedCall(100, () => {
-        void this.showLeaderboard();
+      // Show loading indicator for block-launched games
+      const loadingText = uiBodyText(this, this.scale.width / 2, 220, 'Initializing...', 18);
+      this.tweens.add({
+        targets: loadingText,
+        alpha: { from: 1, to: 0.5 },
+        duration: 800,
+        ease: 'Sine.InOut',
+        yoyo: true,
+        repeat: -1,
       });
-    });
-    if (buildModeBtn) {
-      buildModeBtn.container.once('pointerdown', () => {
-        this.resetLeaderboardState();
-        this.cameras.main.flash(300, 100, 200, 255, true);
-        this.time.delayedCall(200, () => this.scene.start('BuildModeScene', { action: 'design' }));
+    } else {
+      // Show full menu for direct access
+      uiBodyText(this, this.scale.width / 2, 170, 'CONQUER THE COSMOS', 24);
+
+      // Buttons using UiKit
+      const startBtn = createButton(this, this.scale.width / 2, 260, 'START GAME');
+      const leaderboardBtn = createButton(this, this.scale.width / 2, 350, 'LEADERBOARD');
+      let buildModeBtn: ReturnType<typeof createButton> | undefined;
+      if (isFeatureEnabled('ENABLE_BUILD_MODE')) {
+        buildModeBtn = createButton(this, this.scale.width / 2, 440, 'BUILD MODE');
+      }
+
+      startBtn.container.once('pointerdown', () => {
+        this.cameras.main.flash(300, 255, 255, 255, true);
+        this.time.delayedCall(300, () => this.startGame());
+      });
+      leaderboardBtn.container.on('pointerdown', () => {
+        this.time.delayedCall(100, () => {
+          void this.showLeaderboard();
+        });
+      });
+      if (buildModeBtn) {
+        buildModeBtn.container.once('pointerdown', () => {
+          this.resetLeaderboardState();
+          this.cameras.main.flash(300, 100, 200, 255, true);
+          this.time.delayedCall(200, () =>
+            this.scene.start('BuildModeScene', { action: 'design' })
+          );
+        });
+      }
+
+      // Instruction hint (only show for direct access)
+      createPanel(this, this.scale.width / 2 - 200, 520, 400, 40, { fillAlpha: 0.3 });
+      const instructionText = uiBodyText(
+        this,
+        this.scale.width / 2,
+        540,
+        'PRESS SPACE TO START',
+        18
+      );
+      this.tweens.add({
+        targets: instructionText,
+        alpha: { from: 1, to: 0.6 },
+        duration: 1500,
+        ease: 'Sine.InOut',
+        yoyo: true,
+        repeat: -1,
       });
     }
-
-  // Instruction hint (moved up for better visibility)
-  createPanel(this, this.scale.width / 2 - 200, 520, 400, 40, { fillAlpha: 0.3 });
-  const instructionText = uiBodyText(this, this.scale.width / 2, 540, 'PRESS SPACE TO START', 18);
-    this.tweens.add({
-      targets: instructionText,
-      alpha: { from: 1, to: 0.6 },
-      duration: 1500,
-      ease: 'Sine.InOut',
-      yoyo: true,
-      repeat: -1,
-    });
 
     // Version footer
     this.add
@@ -147,7 +215,7 @@ export class MainMenu extends Phaser.Scene {
 
     // --- 2. Asynchronously load custom config and update if found ---
 
-  // Check for any config overrides first for responsiveness
+    // Check for any config overrides first for responsiveness
     const registryConfig = this.registry.get('backgroundConfig');
     if (registryConfig) {
       console.log('Applying config from registry:', registryConfig);
@@ -298,6 +366,78 @@ export class MainMenu extends Phaser.Scene {
   }
 
   /**
+   * Handle auto-start game mode from webview context
+   */
+  private handleAutoStartGame(): void {
+    console.log('[MainMenu] Auto-starting game from webview context');
+
+    const challengeMode = this.registry.get('challengeMode');
+    const showLevelBrowser = this.registry.get('showLevelBrowser');
+    const gameType = this.registry.get('gameType');
+    const launchMode = this.registry.get('launchMode');
+    const webviewContext = this.registry.get('webviewContext');
+
+    console.log('[MainMenu] Auto-start context:', {
+      challengeMode,
+      showLevelBrowser,
+      gameType,
+      launchMode,
+      webviewContext,
+    });
+
+    // Clear auto-start flags to prevent repeated execution
+    this.registry.set('autoStartGame', false);
+
+    if (challengeMode) {
+      console.log('[MainMenu] Starting challenge mode');
+      // For challenge mode, we might want to load specific challenge data
+      this.startGame();
+    } else if (showLevelBrowser) {
+      console.log('[MainMenu] Starting community level browser');
+      // For community levels, we might want to show a level selection first
+      // For now, just start the normal game
+      this.startGame();
+    } else {
+      console.log('[MainMenu] Starting campaign mode');
+      this.startGame();
+    }
+  }
+
+  /**
+   * Handle auto-start build mode from webview context
+   */
+  private handleAutoStartBuild(): void {
+    console.log('[MainMenu] Auto-starting build mode from webview context');
+
+    const buildAction = this.registry.get('buildAction');
+    const showBuildTutorial = this.registry.get('showBuildTutorial');
+
+    // Clear auto-start flags to prevent repeated execution
+    this.registry.set('autoStartBuild', false);
+
+    if (!isFeatureEnabled('ENABLE_BUILD_MODE')) {
+      console.warn('[MainMenu] Build mode requested but not enabled');
+      return;
+    }
+
+    this.resetLeaderboardState();
+    this.cameras.main.flash(300, 100, 200, 255, true);
+
+    this.time.delayedCall(200, () => {
+      if (showBuildTutorial) {
+        console.log('[MainMenu] Starting build mode tutorial');
+        this.scene.start('BuildModeScene', { action: 'tutorial' });
+      } else if (buildAction === 'edit') {
+        console.log('[MainMenu] Starting build mode for editing');
+        this.scene.start('BuildModeScene', { action: 'edit' });
+      } else {
+        console.log('[MainMenu] Starting build mode for creation');
+        this.scene.start('BuildModeScene', { action: 'design' });
+      }
+    });
+  }
+
+  /**
    * Clean up when the scene is shut down (switching to another scene)
    */
   shutdown() {
@@ -337,7 +477,7 @@ export class MainMenu extends Phaser.Scene {
     this.startEnabled = false;
     console.log('Starting game, startEnabled set to false');
 
-  // Keep loading music; no battle theme anymore
+    // Keep loading music; no battle theme anymore
 
     // Reset leaderboard state when starting the game
     this.resetLeaderboardState();
@@ -374,7 +514,7 @@ export class MainMenu extends Phaser.Scene {
       console.log('[MainMenu] Starting game with custom level payload', {
         entityCount,
       });
-  this.scene.start('StarshipScene', payload as unknown as Record<string, unknown>);
+      this.scene.start('StarshipScene', payload as unknown as Record<string, unknown>);
       return;
     }
 

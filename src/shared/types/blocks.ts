@@ -4,14 +4,26 @@
 
 // Core block configuration interface
 export interface BlockConfig {
-  type: 'level-preview' | 'weekly-challenge' | 'landing' | 'community-showcase';
+  type:
+    | 'level-preview'
+    | 'weekly-challenge'
+    | 'landing'
+    | 'community-showcase'
+    | 'play-mode'
+    | 'build-mode';
   postId: string;
   data: BlockData;
   actions: BlockAction[];
 }
 
 // Block data union type
-export type BlockData = LevelBlockData | ChallengeBlockData | LandingBlockData | CommunityBlockData;
+export type BlockData =
+  | LevelBlockData
+  | ChallengeBlockData
+  | LandingBlockData
+  | CommunityBlockData
+  | PlayModeBlockData
+  | BuildModeBlockData;
 
 // Level block specific data
 export interface LevelBlockData {
@@ -91,6 +103,39 @@ export interface CommunityBlockData {
     startDate: number;
     endDate: number;
   }[];
+}
+
+// Play mode block data
+export interface PlayModeBlockData {
+  gameType: 'campaign' | 'community' | 'challenge';
+  availableLevels?: {
+    levelId: string;
+    title: string;
+    creator: string;
+    difficulty: number;
+    thumbnailUrl?: string;
+  }[];
+  userProgress?: {
+    campaignProgress: number;
+    unlockedLevels: string[];
+    achievements: string[];
+  };
+}
+
+// Build mode block data
+export interface BuildModeBlockData {
+  action: 'create' | 'edit' | 'tutorial';
+  userLevels?: {
+    levelId: string;
+    title: string;
+    lastModified: number;
+    published: boolean;
+    playCount: number;
+  }[];
+  tutorialProgress?: {
+    completedSteps: string[];
+    currentStep: number;
+  };
 }
 
 // Block action interface
@@ -223,12 +268,30 @@ export interface CommunityWebviewContext extends WebviewContext {
   sortBy?: 'plays' | 'rating' | 'date' | undefined;
 }
 
+// Play mode webview context
+export interface PlayModeWebviewContext extends WebviewContext {
+  gameType: 'campaign' | 'community' | 'challenge';
+  levelId?: string | undefined;
+  difficulty?: number | undefined;
+  autoStart?: boolean | undefined;
+}
+
+// Build mode webview context
+export interface BuildModeWebviewContext extends WebviewContext {
+  action: 'create' | 'edit' | 'tutorial';
+  levelId?: string | undefined;
+  templateId?: string | undefined;
+  tutorialStep?: number | undefined;
+}
+
 // Union type for all webview contexts
 export type WebviewContextData =
   | LevelWebviewContext
   | ChallengeWebviewContext
   | LandingWebviewContext
-  | CommunityWebviewContext;
+  | CommunityWebviewContext
+  | PlayModeWebviewContext
+  | BuildModeWebviewContext;
 
 // Webview launch configuration
 export interface WebviewLaunchConfig {

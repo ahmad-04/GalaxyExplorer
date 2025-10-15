@@ -5,6 +5,16 @@ import {
   WebviewContextData,
 } from '../../../shared/types/blocks.js';
 import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
+// import { BlockActionHandlers } from '../components/BlockActionHandlers.js'; // Removed for now
 import { WebviewContextService } from './WebviewContextService.js';
 
 /**
