@@ -24,8 +24,32 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Create Landing Post",
+        "description": "Galaxy Explorer landing splash",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/create-landing"
+      },
+      {
+        "label": "Create Weekly Challenge",
+        "description": "This week's seeded challenge post",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/create-weekly"
+      },
+      {
+        "label": "Create Level Card",
+        "description": "Custom Level Card post with splash",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/create-level-card"
       }
     ]
+  },
+  "forms": {
+    "createLevelCard": "/internal/form/create-level-card"
   },
   "triggers": {
     "onAppInstall": "/internal/on-app-install"

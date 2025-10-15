@@ -9,7 +9,13 @@ import {
   GetLevelResponse,
 } from '../shared/types/api';
 import { redis, createServer, context, reddit } from '@devvit/web/server';
-import { createPost, createLevelPost } from './core/post';
+import {
+  createPost,
+  createLevelPost,
+  createLandingPost,
+  createWeeklyChallengePost,
+  createCommunityShowcasePost,
+} from './core/post';
 
 const app = express();
 
@@ -153,6 +159,13 @@ router.post<
         buttonLabel: 'Start Game',
       },
       postData: { type: 'published-level' },
+      useBlocks: true, // Enable devvit blocks for published levels
+      levelData: {
+        levelId,
+        creator: author,
+        difficulty: 1, // Default difficulty, could be extracted from levelData
+        description: description || `Play ${name} by u/${author}`,
+      },
     });
 
     // Persist level JSON keyed by postId; also store helpers
@@ -240,6 +253,32 @@ router.get<Record<string, never>, GetLevelResponse | { status: string; message: 
   }
 );
 
+// Fetch block configuration for a given post
+router.get('/api/block-config', async (req, res): Promise<void> => {
+  try {
+    const query = req.query as { postId?: string };
+    const effectivePostId = query.postId || context.postId;
+
+    if (!effectivePostId) {
+      res.status(400).json({ status: 'error', message: 'postId is required' });
+      return;
+    }
+
+    const blockConfig = await BlockService.getBlockConfig(effectivePostId);
+
+    if (!blockConfig) {
+      res.status(404).json({ status: 'error', message: 'Block configuration not found' });
+      return;
+    }
+
+    console.log('[API] /api/block-config: returning block config for postId', effectivePostId);
+    res.json({ postId: effectivePostId, blockConfig });
+  } catch (error) {
+    console.error('[API] Error in /api/block-config:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load block configuration' });
+  }
+});
+
 router.post<{ postId: string }, IncrementResponse | { status: string; message: string }, unknown>(
   '/api/increment',
   async (_req, res): Promise<void> => {
@@ -312,7 +351,100 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
     });
   }
 });
+
+// Menu action: open Create Level Card form
+router.post('/internal/menu/create-level-card', async (_req, res): Promise<void> => {
+  // Return UiResponse.showForm to open our configured form
+  res.json({
+    showForm: {
+      name: 'createLevelCard',
+      form: {
+        title: 'Create Level Card',
+        fields: [
+          { type: 'string', name: 'title', label: 'Post Title', required: true },
+          { type: 'string', name: 'heading', label: 'Splash Heading', required: true },
+          { type: 'string', name: 'description', label: 'Description', required: false },
+          {
+            type: 'string',
+            name: 'buttonLabel',
+            label: 'Button Label',
+            required: false,
+            defaultValue: 'Play',
+          },
+        ],
+        acceptLabel: 'Create Post',
+      },
+    },
+  });
+});
+
+// Form handler: submit Create Level Card
+router.post('/internal/form/create-level-card', async (req, res): Promise<void> => {
+  try {
+    const { title, heading, description, buttonLabel } = req.body as Record<string, string>;
+    if (!title || !heading) {
+      res
+        .status(400)
+        .json({ showToast: { text: 'Title and Heading are required', appearance: 'neutral' } });
+      return;
+    }
+    const splash: { heading: string; description?: string; buttonLabel?: string } = { heading };
+    if (description) splash.description = description;
+    if (buttonLabel) splash.buttonLabel = buttonLabel;
+    else splash.buttonLabel = 'Play';
+    const post = await createLevelPost({
+      title,
+      splash,
+      postData: { type: 'level-card', version: 1 },
+    });
+    res.json({
+      navigateTo: `https://reddit.com${post.permalink}`,
+    });
+  } catch (error) {
+    console.error('[API] Error in /internal/form/create-level-card:', error);
+    res
+      .status(500)
+      .json({ showToast: { text: 'Failed to create Level Card', appearance: 'neutral' } });
+  }
+});
+
+// Admin/mod convenience: create a Landing post
+router.post('/internal/create-landing', async (_req, res): Promise<void> => {
+  try {
+    const post = await createLandingPost(true); // Enable devvit blocks
+    // Menu UI only accepts: showToast, navigateTo, showForm
+    res.json({ navigateTo: `https://reddit.com${post.permalink}` });
+  } catch (error) {
+    console.error('[API] Error creating landing post:', error);
+    res.status(400).json({ status: 'error', message: 'Failed to create landing post' });
+  }
+});
+
+// Admin/mod convenience: create a Weekly Challenge post
+router.post('/internal/create-weekly', async (_req, res): Promise<void> => {
+  try {
+    const post = await createWeeklyChallengePost(true); // Enable devvit blocks
+    // Menu UI only accepts: showToast, navigateTo, showForm
+    res.json({ navigateTo: `https://reddit.com${post.permalink}` });
+  } catch (error) {
+    console.error('[API] Error creating weekly challenge post:', error);
+    res.status(400).json({ status: 'error', message: 'Failed to create weekly post' });
+  }
+});
+
+// Admin/mod convenience: create a Community Showcase post
+router.post('/internal/create-community-showcase', async (_req, res): Promise<void> => {
+  try {
+    const post = await createCommunityShowcasePost(true); // Enable devvit blocks
+    // Menu UI only accepts: showToast, navigateTo, showForm
+    res.json({ navigateTo: `https://reddit.com${post.permalink}` });
+  } catch (error) {
+    console.error('[API] Error creating community showcase post:', error);
+    res.status(400).json({ status: 'error', message: 'Failed to create community showcase post' });
+  }
+});
 import { LeaderboardResponse, Score } from '../shared/types/api';
+import { BlockService } from './blocks/services/BlockService.js';
 
 // ... existing code ...
 
