@@ -123,6 +123,18 @@
 			"command": "npm run type-check",
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "Type-check workspace",
+			"type": "shell",
+			"command": "npm run type-check",
+			"group": "build"
+		},
+		{
+			"label": "Type-check workspace",
+			"type": "shell",
+			"command": "npm run type-check",
+			"group": "build"
 		}
 	]
 }
