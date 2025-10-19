@@ -1,5 +1,5 @@
 import { Devvit } from '@devvit/public-api';
-import { MainMenuPost } from './components/MainMenuPost.js';
+import { MainMenuPost } from './components/MainMenuPost.tsx';
 
 // Configure the app
 Devvit.configure({

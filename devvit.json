@@ -1,9 +1,10 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
   "name": "galaxytester0982",
-  "main": "dist/main.cjs",
-  "blocks": {},
-  "webview": {
+  "media": {
+    "dir": "assets"
+  },
+  "post": {
     "dir": "dist/client",
     "entrypoints": {
       "default": {
@@ -11,10 +12,9 @@
       }
     }
   },
-  "media": {
-    "dir": "assets"
+  "blocks": {
+    "entry": "src/main.jsx"
   },
-
   "dev": {
     "subreddit": "galaxytester0982_dev"
   }
