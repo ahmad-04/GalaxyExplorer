@@ -11,7 +11,7 @@ Devvit.configure({
 // Main app component - Galaxy Explorer Main Menu
 Devvit.addCustomPostType({
   name: 'Galaxy Explorer',
-  height: 'regular',
+  height: 'tall',
   render: (context) => {
     return <MainMenuPost context={context} />;
   },

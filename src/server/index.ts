@@ -16,7 +16,7 @@ import {
   createWeeklyChallengePost,
   createCommunityShowcasePost,
   createMainMenuPost,
-} from './core/post.ts';
+} from './core/post.js';
 
 const app = express();
 
