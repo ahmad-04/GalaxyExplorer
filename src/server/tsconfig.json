@@ -1,19 +1,8 @@
-// TypeScript config for all Devvit server code.
 {
-  "extends": "../../tools/tsconfig-base.json",
+  "extends": "@devvit/public-api/devvit.tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2023"],
-
-    "types": ["node"],
-
-    "rootDir": ".",
-
-    "outDir": "../../dist/types/server",
-
-    "tsBuildInfoFile": "../../dist/tsconfig.tsbuildinfo"
+    "rootDir": ".."
   },
-  // https://github.com/Microsoft/TypeScript/issues/25636
-  "include": ["**/*", "**/*.json", "../../package.json"],
-  "exclude": ["**/*.test.ts"],
+  "include": ["../*.tsx", "../components/**/*.tsx", "./**/*"],
   "references": [{ "path": "../shared" }]
 }

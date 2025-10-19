@@ -1,0 +1,42 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",  "name": "drawwit-bot",
+  "media": {
+    "dir": "assets/"
+  },
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "entry": "index.html"
+      }
+    }
+  },
+  "blocks": {
+    "entry": "blocks/main.jsx"
+  },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Create a new post",
+        "description": "drawwit-bot",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-create"
+      }
+    ]
+  },
+  "triggers": {
+    "onAppInstall": "/internal/on-app-install"
+  },
+  "dev": {
+    "subreddit": "drawwitTests"
+  },
+  "permissions": {
+    "redis": true,
+    "media": true
+  }
+}

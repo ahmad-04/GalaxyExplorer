@@ -19,8 +19,10 @@
     "dev:fast": "concurrently -k -p \"[{name}]\" -n \"CLIENT,SERVER\" -c \"blue,green\" \"npm run dev:client\" \"npm run dev:server\"",
     "preview:client": "cd src/client && vite preview --port 5173 --strictPort",
     "dev:client": "cd src/client && vite build --watch --mode development",
-    "dev:devvit": "wait-on \"dist/main.cjs\" \"dist/client/index.html\" \"dist/server/index.cjs\" && dotenv -e .env -- devvit playtest",
-    "dev:server": "cd src/server && vite build --watch",
+    "dev:devvit": "wait-on \"dist/main.cjs\" \"dist/client/index.html\" \"dist/server/index.cjs\" tcp:127.0.0.1:3000 && dotenv -e .env -- devvit playtest",
+    "dev:server": "concurrently -k -p \"[{name}]\" -n \"BUILD,RUN\" -c \"yellow,green\" \"npm:watch:server\" \"npm:start:server\"",
+    "watch:server": "cd src/server && vite build --watch",
+    "start:server": "nodemon --delay 500ms dist/server/index.cjs --watch dist/server",
     "lint": "eslint ./src",
     "lint:fix": "eslint --fix ./src",
     "login": "devvit login --copy-paste",
@@ -46,6 +48,8 @@
     "dotenv-cli": "8.0.0",
     "eslint": "9.23.0",
     "globals": "15.15.0",
+    "imagemagick": "^0.1.3",
+    "nodemon": "^3.1.10",
     "prettier": "3.5.3",
     "prettier-package-json": "2.8.0",
     "terser": "5.39.0",
@@ -53,7 +57,6 @@
     "typescript-eslint": "8.29.0",
     "vite": "6.2.4",
     "vitest": "3.1.1",
-    "wait-on": "7.2.0",
-    "imagemagick": "^0.1.3"
+    "wait-on": "7.2.0"
   }
 }

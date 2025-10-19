@@ -7,7 +7,7 @@ import {
   PublishLevelRequest,
   PublishLevelResponse,
   GetLevelResponse,
-} from '../shared/types/api';
+} from '../shared/types/api.js';
 import { redis, createServer, context, reddit } from '@devvit/web/server';
 import {
   createPost,
@@ -15,7 +15,8 @@ import {
   createLandingPost,
   createWeeklyChallengePost,
   createCommunityShowcasePost,
-} from './core/post';
+  createMainMenuPost,
+} from './core/post.ts';
 
 const app = express();
 
@@ -30,7 +31,7 @@ const router = express.Router();
 
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
   '/api/init',
-  async (_req, res): Promise<void> => {
+  async (_req, res) => {
     const { postId } = context;
 
     if (!postId) {
@@ -83,7 +84,7 @@ router.post<
   Record<string, never>,
   PublishLevelResponse | { status: string; message: string; code?: string },
   PublishLevelRequest
->('/api/publish-level', async (req, res): Promise<void> => {
+>('/api/publish-level', async (req, res) => {
   try {
     const { subredditName, userId } = context;
     if (!subredditName) {
@@ -213,7 +214,7 @@ router.post<
 // Fetch stored level JSON for a given post
 router.get<Record<string, never>, GetLevelResponse | { status: string; message: string }, unknown>(
   '/api/level',
-  async (req, res): Promise<void> => {
+  async (req, res) => {
     try {
       const query = req.query as { postId?: string };
       const effectivePostId = query.postId || context.postId;
@@ -254,7 +255,7 @@ router.get<Record<string, never>, GetLevelResponse | { status: string; message: 
 );
 
 // Fetch block configuration for a given post
-router.get('/api/block-config', async (req, res): Promise<void> => {
+router.get('/api/block-config', async (req, res) => {
   try {
     const query = req.query as { postId?: string };
     const effectivePostId = query.postId || context.postId;
@@ -281,7 +282,7 @@ router.get('/api/block-config', async (req, res): Promise<void> => {
 
 router.post<{ postId: string }, IncrementResponse | { status: string; message: string }, unknown>(
   '/api/increment',
-  async (_req, res): Promise<void> => {
+  async (_req, res) => {
     const { postId } = context;
     if (!postId) {
       res.status(400).json({
@@ -301,7 +302,7 @@ router.post<{ postId: string }, IncrementResponse | { status: string; message: s
 
 router.post<{ postId: string }, DecrementResponse | { status: string; message: string }, unknown>(
   '/api/decrement',
-  async (_req, res): Promise<void> => {
+  async (_req, res) => {
     const { postId } = context;
     if (!postId) {
       res.status(400).json({
@@ -319,7 +320,7 @@ router.post<{ postId: string }, DecrementResponse | { status: string; message: s
   }
 );
 
-router.post('/internal/on-app-install', async (_req, res): Promise<void> => {
+router.post('/internal/on-app-install', async (_req, res) => {
   try {
     const post = await createPost('Welcome to the Starfield App!');
 
@@ -336,7 +337,7 @@ router.post('/internal/on-app-install', async (_req, res): Promise<void> => {
   }
 });
 
-router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
+router.post('/internal/menu/post-create', async (_req, res) => {
   try {
     const post = await createPost('Create a new Starfield');
 
@@ -353,7 +354,7 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
 });
 
 // Menu action: open Create Level Card form
-router.post('/internal/menu/create-level-card', async (_req, res): Promise<void> => {
+router.post('/internal/menu/create-level-card', async (_req, res) => {
   // Return UiResponse.showForm to open our configured form
   res.json({
     showForm: {
@@ -379,7 +380,7 @@ router.post('/internal/menu/create-level-card', async (_req, res): Promise<void>
 });
 
 // Form handler: submit Create Level Card
-router.post('/internal/form/create-level-card', async (req, res): Promise<void> => {
+router.post('/internal/form/create-level-card', async (req, res) => {
   try {
     const { title, heading, description, buttonLabel } = req.body as Record<string, string>;
     if (!title || !heading) {
@@ -409,7 +410,7 @@ router.post('/internal/form/create-level-card', async (req, res): Promise<void> 
 });
 
 // Admin/mod convenience: create a Landing post
-router.post('/internal/create-landing', async (_req, res): Promise<void> => {
+router.post('/internal/create-landing', async (_req, res) => {
   try {
     const post = await createLandingPost(true); // Enable devvit blocks
     // Menu UI only accepts: showToast, navigateTo, showForm
@@ -421,7 +422,7 @@ router.post('/internal/create-landing', async (_req, res): Promise<void> => {
 });
 
 // Admin/mod convenience: create a Weekly Challenge post
-router.post('/internal/create-weekly', async (_req, res): Promise<void> => {
+router.post('/internal/create-weekly', async (_req, res) => {
   try {
     const post = await createWeeklyChallengePost(true); // Enable devvit blocks
     // Menu UI only accepts: showToast, navigateTo, showForm
@@ -433,7 +434,7 @@ router.post('/internal/create-weekly', async (_req, res): Promise<void> => {
 });
 
 // Admin/mod convenience: create a Community Showcase post
-router.post('/internal/create-community-showcase', async (_req, res): Promise<void> => {
+router.post('/internal/create-community-showcase', async (_req, res) => {
   try {
     const post = await createCommunityShowcasePost(true); // Enable devvit blocks
     // Menu UI only accepts: showToast, navigateTo, showForm
@@ -443,16 +444,27 @@ router.post('/internal/create-community-showcase', async (_req, res): Promise<vo
     res.status(400).json({ status: 'error', message: 'Failed to create community showcase post' });
   }
 });
-import { LeaderboardResponse, Score } from '../shared/types/api';
+
+// Admin/mod convenience: create the main menu post
+router.post('/internal/menu/create-main-menu', async (_req, res) => {
+  console.log('[API] Received request for /internal/menu/create-main-menu');
+  try {
+    console.log('[API] Calling createMainMenuPost...');
+    const post = await createMainMenuPost();
+    console.log('[API] Successfully created main menu post:', post.id);
+    res.json({ navigateTo: `https://reddit.com${post.permalink}` });
+  } catch (error) {
+    console.error('[API] Error creating main menu post:', error);
+    res.status(400).json({ status: 'error', message: 'Failed to create main menu post' });
+  }
+});
+
+import { LeaderboardResponse, Score } from '../shared/types/api.js';
 import { BlockService } from './blocks/services/BlockService.js';
 
-// ... existing code ...
-
-import { Request, Response } from 'express';
-
-router.post('/api/submit-score', async (req: Request, res: Response): Promise<void> => {
+router.post('/api/submit-score', async (req, res) => {
   try {
-    const { score } = req.body;
+    const { score } = req.body as { score: number };
     console.log('Received score submission with score:', score);
     const { postId } = context;
 
@@ -477,13 +489,10 @@ router.post('/api/submit-score', async (req: Request, res: Response): Promise<vo
       console.log('Full context:', JSON.stringify(context, null, 2));
 
       // Try to get actual Reddit username if available
-      const extendedContext = context as { username?: string; user?: { username?: string } };
-      if (extendedContext.username) {
-        username = extendedContext.username;
+      const user = await reddit.getCurrentUser();
+      if (user?.username) {
+        username = user.username;
         console.log('Using Reddit username:', username);
-      } else if (extendedContext.user?.username) {
-        username = extendedContext.user.username;
-        console.log('Using Reddit user.username:', username);
       } else if (context.userId) {
         // Fallback: Clean up the userId format for better display
         // Convert "user_t2_8e82mu8g" to "Player_8e82mu8g" for better readability
@@ -557,59 +566,56 @@ router.post('/api/submit-score', async (req: Request, res: Response): Promise<vo
   }
 });
 
-router.get<Record<string, never>, LeaderboardResponse>(
-  '/api/leaderboard',
-  async (req, res): Promise<void> => {
-    try {
-      const { postId } = context; // Get the current post ID from context
+router.get<Record<string, never>, LeaderboardResponse>('/api/leaderboard', async (req, res) => {
+  try {
+    const { postId } = context; // Get the current post ID from context
 
-      if (!postId) {
-        console.error('Missing postId in context');
-        res.status(400).json({ scores: [], error: 'Missing postId' });
+    if (!postId) {
+      console.error('Missing postId in context');
+      res.status(400).json({ scores: [], error: 'Missing postId' });
+      return;
+    }
+
+    console.log(`Fetching leaderboard for post ${postId}...`);
+
+    // Use the post-specific leaderboard key
+    const leaderboardKey = `leaderboard_json:${postId}`;
+    let leaderboardStr = await redis.get(leaderboardKey);
+
+    // If no post-specific leaderboard exists, try the global one as fallback
+    if (!leaderboardStr) {
+      console.log(
+        `No post-specific leaderboard found for ${postId}, checking global leaderboard...`
+      );
+      leaderboardStr = await redis.get('leaderboard_json');
+
+      if (!leaderboardStr) {
+        console.log('No leaderboard found at all.');
+        res.json({ scores: [] });
         return;
       }
-
-      console.log(`Fetching leaderboard for post ${postId}...`);
-
-      // Use the post-specific leaderboard key
-      const leaderboardKey = `leaderboard_json:${postId}`;
-      let leaderboardStr = await redis.get(leaderboardKey);
-
-      // If no post-specific leaderboard exists, try the global one as fallback
-      if (!leaderboardStr) {
-        console.log(
-          `No post-specific leaderboard found for ${postId}, checking global leaderboard...`
-        );
-        leaderboardStr = await redis.get('leaderboard_json');
-
-        if (!leaderboardStr) {
-          console.log('No leaderboard found at all.');
-          res.json({ scores: [] });
-          return;
-        }
-      }
-
-      const leaderboard: Score[] = JSON.parse(leaderboardStr);
-
-      // Parse query parameters for limit (default to 10)
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
-
-      // Get the top scores based on limit - we're already sorting by score in the submit endpoints
-      const topScores = leaderboard.slice(0, limit);
-
-      console.log(`Returning top ${limit} score(s) for post ${postId}:`, topScores);
-      res.json({ scores: topScores });
-    } catch (error) {
-      console.error('Error in /api/leaderboard:', error);
-      res.status(500).json({ scores: [] });
     }
+
+    const leaderboard: Score[] = JSON.parse(leaderboardStr);
+
+    // Parse query parameters for limit (default to 10)
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    // Get the top scores based on limit - we're already sorting by score in the submit endpoints
+    const topScores = leaderboard.slice(0, limit);
+
+    console.log(`Returning top ${limit} score(s) for post ${postId}:`, topScores);
+    res.json({ scores: topScores });
+  } catch (error) {
+    console.error('Error in /api/leaderboard:', error);
+    res.status(500).json({ scores: [] });
   }
-);
+});
 
 // Development-only endpoint for adding test scores to the leaderboard
-router.post('/api/submit-test-score', async (req: Request, res: Response): Promise<void> => {
+router.post('/api/submit-test-score', async (req, res) => {
   try {
-    const { username, score } = req.body;
+    const { username, score } = req.body as { username: string; score: number };
     console.log('[DEV] Received test score submission:', { username, score });
 
     if (!username || typeof username !== 'string' || typeof score !== 'number') {
@@ -683,10 +689,14 @@ router.post('/api/submit-test-score', async (req: Request, res: Response): Promi
   }
 });
 
-router.post('/api/share-background', async (req: Request, res: Response): Promise<void> => {
+router.post('/api/share-background', async (req, res) => {
   console.log('[API] Received /api/share-background request');
   try {
-    const { density, speed, color } = req.body;
+    const { density, speed, color } = req.body as {
+      density: number;
+      speed: number;
+      color: string;
+    };
     console.log('[API] Request body:', req.body);
 
     if (typeof density !== 'number' || typeof speed !== 'number' || typeof color !== 'string') {
@@ -728,7 +738,7 @@ router.post('/api/share-background', async (req: Request, res: Response): Promis
   }
 });
 
-router.post('/api/save-user-config', async (req: Request, res: Response): Promise<void> => {
+router.post('/api/save-user-config', async (req, res) => {
   console.log('[API] Received /api/save-user-config request');
   try {
     const { userId } = context;
@@ -739,7 +749,7 @@ router.post('/api/save-user-config', async (req: Request, res: Response): Promis
       return;
     }
 
-    const config = req.body;
+    const config = req.body as { density: number };
     console.log(`[API] Saving config for userId: ${userId}`, config);
 
     // Validate config object
@@ -757,7 +767,7 @@ router.post('/api/save-user-config', async (req: Request, res: Response): Promis
   }
 });
 
-router.get('/api/load-user-config', async (_req: Request, res: Response): Promise<void> => {
+router.get('/api/load-user-config', async (req, res) => {
   console.log('[API] Received /api/load-user-config request');
   try {
     const { userId } = context;
@@ -782,8 +792,6 @@ router.get('/api/load-user-config', async (_req: Request, res: Response): Promis
     res.status(500).json({ message: 'Failed to load configuration.' });
   }
 });
-
-// ... existing code ...
 
 // Use router middleware
 app.use(router);

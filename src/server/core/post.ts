@@ -313,3 +313,30 @@ export const createCommunityShowcasePost = async (useBlocks?: boolean) => {
   console.log('[createCommunityShowcasePost] Community showcase post created:', post.id);
   return post;
 };
+
+/**
+ * Create a Main Menu post with a branded splash screen.
+ */
+export const createMainMenuPost = async () => {
+  const { subredditName } = context;
+  if (!subredditName) throw new Error('subredditName is required to create a main menu post');
+
+  const post = await reddit.submitCustomPost({
+    subredditName,
+    title: 'Galaxy Explorer - Main Menu',
+    splash: {
+      appDisplayName: 'Galaxy Explorer',
+      backgroundUri: SPLASH_BACKGROUND_URI,
+      heading: '🌌 Galaxy Explorer',
+      description: 'Build epic space levels and share them with the community',
+      buttonLabel: 'Open App',
+    },
+    postData: {
+      type: 'main-menu',
+      version: 1,
+    },
+  });
+
+  console.log('[createMainMenuPost] Main menu post created:', post.id);
+  return post;
+};

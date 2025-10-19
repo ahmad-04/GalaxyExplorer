@@ -241,7 +241,9 @@ export const createOptimizedBlockConfig = async (
 
   // Add skeleton state if enabled
   if (enableSkeleton) {
-    optimizedConfig.skeletonState = BlockPerformanceService.createSkeletonState(config.type);
+    (optimizedConfig as any).skeletonState = BlockPerformanceService.createSkeletonState(
+      config.type
+    );
   }
 
   return optimizedConfig;
@@ -303,12 +305,12 @@ export const createRobustBlock = async (
     // Add error handling if enabled
     if (enableErrorBoundary) {
       const errorBoundary = BlockErrorService.createErrorBoundary(config.postId, config.type);
-      baseConfig.errorBoundary = errorBoundary;
+      (baseConfig as any).errorBoundary = errorBoundary;
     }
 
     // Add retry configuration if enabled
     if (enableRetry) {
-      baseConfig.retryConfig = {
+      (baseConfig as any).retryConfig = {
         enabled: true,
         maxAttempts: 3,
         showRetryButton: true,
@@ -317,7 +319,7 @@ export const createRobustBlock = async (
 
     // Add custom fallback if provided
     if (customFallback) {
-      baseConfig.customFallback = customFallback;
+      (baseConfig as any).customFallback = customFallback;
     }
 
     return baseConfig;

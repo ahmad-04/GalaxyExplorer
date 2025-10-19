@@ -4,16 +4,6 @@ import {
   WebviewLaunchConfig,
   WebviewContextData,
 } from '../../../shared/types/blocks.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
-import { BlockActionHandlers } from '../components/BlockActionHandlers.js';
 // import { BlockActionHandlers } from '../components/BlockActionHandlers.js'; // Removed for now
 import { WebviewContextService } from './WebviewContextService.js';
 
@@ -32,46 +22,46 @@ export class BlockNavigationService {
       console.log(`Handling block action: ${actionId}`, actionContext);
 
       // Route to appropriate action handler
-      let result;
+      let result: any = { type: 'error', message: 'Not implemented' };
       switch (actionId) {
         case 'play_now':
-          result = await BlockActionHandlers.handlePlayNow(actionContext);
+          // result = await BlockActionHandlers.handlePlayNow(actionContext);
           break;
 
         case 'view_details':
-          result = await BlockActionHandlers.handleViewDetails(actionContext);
+          // result = await BlockActionHandlers.handleViewDetails(actionContext);
           break;
 
         case 'join_challenge':
-          result = await BlockActionHandlers.handleJoinChallenge(actionContext);
+          // result = await BlockActionHandlers.handleJoinChallenge(actionContext);
           break;
 
         case 'view_leaderboard':
-          result = await BlockActionHandlers.handleViewLeaderboard(actionContext);
+          // result = await BlockActionHandlers.handleViewLeaderboard(actionContext);
           break;
 
         case 'get_started':
-          result = await BlockActionHandlers.handleGetStarted(actionContext);
+          // result = await BlockActionHandlers.handleGetStarted(actionContext);
           break;
 
         case 'browse_levels':
-          result = await BlockActionHandlers.handleBrowseLevels(actionContext);
+          // result = await BlockActionHandlers.handleBrowseLevels(actionContext);
           break;
 
         case 'view_creator_profile':
-          result = await BlockActionHandlers.handleViewCreatorProfile(actionContext);
+          // result = await BlockActionHandlers.handleViewCreatorProfile(actionContext);
           break;
 
         case 'view_community_stats':
-          result = await BlockActionHandlers.handleViewCommunityStats(actionContext);
+          // result = await BlockActionHandlers.handleViewCommunityStats(actionContext);
           break;
 
         case 'create_level':
-          result = await BlockActionHandlers.handleCreateLevel(actionContext);
+          // result = await BlockActionHandlers.handleCreateLevel(actionContext);
           break;
 
         case 'share_challenge':
-          result = await BlockActionHandlers.handleShareChallenge(actionContext);
+          // result = await BlockActionHandlers.handleShareChallenge(actionContext);
           break;
 
         default:

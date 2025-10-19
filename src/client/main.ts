@@ -5,7 +5,7 @@ import { BlockReturnHandler } from './services/BlockReturnHandler';
 import './style.css';
 import './buildmode-ui.css';
 
-// It's important to declare the Devvit type for TypeScript
+// The Devvit object is injected globally by the Reddit platform
 interface DevvitClient {
   init: (callback: (context?: unknown) => void | Promise<void>) => void;
   getProps: <T = unknown>() => Promise<T>;
@@ -56,12 +56,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Check if the Devvit object is available
   if (typeof Devvit !== 'undefined') {
+    console.log('[Main] Devvit object found, initializing...');
     Devvit.init(async (context: unknown) => {
-      console.log('Devvit context initialized:', context);
+      console.log('[Main] Devvit context initialized:', context);
 
       try {
         const props = await Devvit.getProps<Record<string, unknown>>();
-        console.log('Props received from Devvit:', props);
+        console.log('[Main] Props received from Devvit:', props);
 
         // Merge webview context with Devvit props
         const gameConfig = {
