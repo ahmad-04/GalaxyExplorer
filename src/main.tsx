@@ -32,8 +32,12 @@ Devvit.addMenuItem({
         title: 'Galaxy Explorer - Main Menu',
         preview: (
           <vstack height="100%" width="100%" alignment="middle center" backgroundColor="navy">
-            <text size="large" weight="bold" color="white">🚀 Galaxy Explorer</text>
-            <text size="small" color="lightblue">Loading...</text>
+            <text size="large" weight="bold" color="white">
+              🚀 Galaxy Explorer
+            </text>
+            <text size="small" color="lightblue">
+              Loading...
+            </text>
           </vstack>
         ),
       });
