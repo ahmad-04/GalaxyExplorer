@@ -32,13 +32,13 @@ Devvit.addMenuItem({
         title: 'Galaxy Explorer - Main Menu',
         preview: Devvit.createElement(
           'vstack',
-          { height: '100%', width: '100%', alignment: 'middle center', backgroundColor: 'navy' },
+          { height: '100%', width: '100%', alignment: 'middle center', backgroundColor: '#0a0e1a' },
           Devvit.createElement(
             'text',
-            { size: 'large', weight: 'bold', color: 'white' },
+            { size: 'xlarge', weight: 'bold', color: '#e5f0ff' },
             '🚀 Galaxy Explorer'
           ),
-          Devvit.createElement('text', { size: 'small', color: 'lightblue' }, 'Loading...')
+          Devvit.createElement('text', { size: 'medium', color: '#9bb3c8' }, 'Loading...')
         ),
       });
 
