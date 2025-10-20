@@ -52,17 +52,19 @@ export class MainMenu extends Phaser.Scene {
       showBuildTutorial: this.registry.get('showBuildTutorial'),
     });
 
-    // If we have auto-start instructions, handle them after a brief delay
+    // Note: Auto-start is now handled directly in LoadingScene for faster launches
+    // This code path should rarely be hit, but kept as fallback
     if (autoStartGame || autoStartBuild) {
-      console.log('[MainMenu] Scheduling auto-start in 500ms');
-      this.time.delayedCall(500, () => {
-        console.log('[MainMenu] Executing auto-start');
-        if (autoStartGame) {
-          this.handleAutoStartGame();
-        } else if (autoStartBuild) {
-          this.handleAutoStartBuild();
-        }
-      });
+      console.warn(
+        '[MainMenu] Auto-start detected in MainMenu - this should have been handled by LoadingScene'
+      );
+      console.log('[MainMenu] Executing fallback auto-start immediately');
+      // Execute immediately, no delay
+      if (autoStartGame) {
+        this.handleAutoStartGame();
+      } else if (autoStartBuild) {
+        this.handleAutoStartBuild();
+      }
     } else {
       console.log('[MainMenu] No auto-start flags detected, showing normal menu');
     }
@@ -74,6 +76,10 @@ export class MainMenu extends Phaser.Scene {
   create() {
     console.log('[MainMenu] create() starting');
     this.logState('create:before-load');
+    // Smooth fade-in for a polished entry (respects reduced motion)
+    if (!this.getReducedMotion()) {
+      this.cameras.main.fadeIn(250, 0, 0, 0);
+    }
     // If we have a published-level context, attempt to auto-load it silently
     void this.ensurePublishedLevelLoaded();
     console.log('[MainMenu] ensurePublishedLevelLoaded() invoked from create()');
@@ -230,6 +236,25 @@ export class MainMenu extends Phaser.Scene {
     // Add parallax elements to the background
     this.addParallaxElements();
     this.logState('create:end');
+  }
+
+  // Accessibility: detect reduced motion preference from registry, URL, or system
+  private getReducedMotion(): boolean {
+    try {
+      const reg = this.registry.get('reducedMotion');
+      if (reg === true) return true;
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reducedMotion') === '1' || params.get('reducedMotion') === 'true') {
+        this.registry.set('reducedMotion', true);
+        return true;
+      }
+      if (typeof window !== 'undefined' && 'matchMedia' in window) {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      }
+    } catch {
+      /* ignore reduced motion probe errors */
+    }
+    return false;
   }
 
   // Removed modal prompt; published levels are preloaded silently

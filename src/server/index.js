@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { redis, createServer, context, reddit } from '@devvit/web/server';
-import { createPost, createLevelPost, createLandingPost, createWeeklyChallengePost, createCommunityShowcasePost, createMainMenuPost, } from './core/post.ts';
+import { createPost, createLevelPost, createLandingPost, createWeeklyChallengePost, createCommunityShowcasePost, createMainMenuPost, } from './core/post.js';
 const app = express();
 // Middleware for JSON body parsing
 app.use(express.json());
@@ -310,6 +310,7 @@ router.post('/internal/menu/create-level-card', async (_req, res) => {
                     { type: 'string', name: 'title', label: 'Post Title', required: true },
                     { type: 'string', name: 'heading', label: 'Splash Heading', required: true },
                     { type: 'string', name: 'description', label: 'Description', required: false },
+                    { type: 'string', name: 'backgroundUri', label: 'Background Image URL (optional)', required: false },
                     {
                         type: 'string',
                         name: 'buttonLabel',
@@ -326,7 +327,7 @@ router.post('/internal/menu/create-level-card', async (_req, res) => {
 // Form handler: submit Create Level Card
 router.post('/internal/form/create-level-card', async (req, res) => {
     try {
-        const { title, heading, description, buttonLabel } = req.body;
+        const { title, heading, description, buttonLabel, backgroundUri } = req.body;
         if (!title || !heading) {
             res
                 .status(400)
@@ -340,6 +341,8 @@ router.post('/internal/form/create-level-card', async (req, res) => {
             splash.buttonLabel = buttonLabel;
         else
             splash.buttonLabel = 'Play';
+        if (backgroundUri && /^https?:\/\//i.test(backgroundUri))
+            splash.backgroundUri = backgroundUri;
         const post = await createLevelPost({
             title,
             splash,
@@ -354,6 +357,23 @@ router.post('/internal/form/create-level-card', async (req, res) => {
         res
             .status(500)
             .json({ showToast: { text: 'Failed to create Level Card', appearance: 'neutral' } });
+    }
+});
+// Admin: set global splash background image (used for all new posts)
+router.post('/internal/admin/set-splash-background', async (req, res) => {
+    try {
+        const { backgroundUri } = req.body;
+        if (!backgroundUri || !/^https?:\/\//i.test(backgroundUri)) {
+            res.status(400).json({ status: 'error', message: 'A valid http(s) URL is required.' });
+            return;
+        }
+        await redis.set('splash:backgroundUri', backgroundUri);
+        await redis.expire('splash:backgroundUri', 90 * 24 * 60 * 60);
+        res.json({ status: 'ok', backgroundUri });
+    }
+    catch (error) {
+        console.error('[API] Error setting splash background:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to set splash background' });
     }
 });
 // Admin/mod convenience: create a Landing post

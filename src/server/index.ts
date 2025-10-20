@@ -367,6 +367,12 @@ router.post('/internal/menu/create-level-card', async (_req, res) => {
           { type: 'string', name: 'description', label: 'Description', required: false },
           {
             type: 'string',
+            name: 'backgroundUri',
+            label: 'Background Image URL (optional)',
+            required: false,
+          },
+          {
+            type: 'string',
             name: 'buttonLabel',
             label: 'Button Label',
             required: false,
@@ -382,17 +388,26 @@ router.post('/internal/menu/create-level-card', async (_req, res) => {
 // Form handler: submit Create Level Card
 router.post('/internal/form/create-level-card', async (req, res) => {
   try {
-    const { title, heading, description, buttonLabel } = req.body as Record<string, string>;
+    const { title, heading, description, buttonLabel, backgroundUri } = req.body as Record<
+      string,
+      string
+    >;
     if (!title || !heading) {
       res
         .status(400)
         .json({ showToast: { text: 'Title and Heading are required', appearance: 'neutral' } });
       return;
     }
-    const splash: { heading: string; description?: string; buttonLabel?: string } = { heading };
+    const splash: {
+      heading: string;
+      description?: string;
+      buttonLabel?: string;
+      backgroundUri?: string;
+    } = { heading };
     if (description) splash.description = description;
     if (buttonLabel) splash.buttonLabel = buttonLabel;
     else splash.buttonLabel = 'Play';
+    if (backgroundUri && /^https?:\/\//i.test(backgroundUri)) splash.backgroundUri = backgroundUri;
     const post = await createLevelPost({
       title,
       splash,
@@ -406,6 +421,23 @@ router.post('/internal/form/create-level-card', async (req, res) => {
     res
       .status(500)
       .json({ showToast: { text: 'Failed to create Level Card', appearance: 'neutral' } });
+  }
+});
+
+// Admin: set global splash background image (used for all new posts)
+router.post('/internal/admin/set-splash-background', async (req, res) => {
+  try {
+    const { backgroundUri } = req.body as { backgroundUri?: string };
+    if (!backgroundUri || !/^https?:\/\//i.test(backgroundUri)) {
+      res.status(400).json({ status: 'error', message: 'A valid http(s) URL is required.' });
+      return;
+    }
+    await redis.set('splash:backgroundUri', backgroundUri);
+    await redis.expire('splash:backgroundUri', 90 * 24 * 60 * 60);
+    res.json({ status: 'ok', backgroundUri });
+  } catch (error) {
+    console.error('[API] Error setting splash background:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to set splash background' });
   }
 });
 
@@ -473,7 +505,6 @@ router.post('/api/submit-score', async (req, res) => {
       res.status(400).json({ error: 'Missing postId' });
       return;
     }
-
     if (typeof score !== 'number') {
       console.error('Invalid score:', { score });
       res.status(400).json({ error: 'Invalid score' });

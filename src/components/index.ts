@@ -7,5 +7,8 @@ export { MenuScreen, type MenuScreenProps } from './MenuScreen';
 export { PlayModeScreen, type PlayModeScreenProps } from './PlayModeScreen';
 export { BuildModeScreen, type BuildModeScreenProps } from './BuildModeScreen';
 
+// Re-export loading states
+export { LoadingState, CompactLoadingState } from './LoadingState';
+
 // Re-export webview types from utils
 export { type WebviewLaunchParams } from '../utils';

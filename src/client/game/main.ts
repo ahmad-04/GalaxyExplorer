@@ -66,10 +66,43 @@ const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {
     console.log('[StartGame] Setting config from webview context:', customConfig);
     game.registry.set('backgroundConfig', customConfig);
     game.registry.set('webviewContext', customConfig);
+    if (customConfig.developmentMode === true) {
+      game.registry.set('developmentMode', true);
+    }
 
     // Handle different launch modes based on webview context
-    const mode = customConfig.mode as string;
-    const blockType = customConfig.blockType as string;
+    const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
+    const getStringProp = (o: unknown, k: string): string | undefined => {
+      if (!isRecord(o)) return undefined;
+      const v = o[k];
+      return typeof v === 'string' ? v : undefined;
+    };
+
+    const nestedWc =
+      isRecord(customConfig) && isRecord(customConfig['webviewContext'])
+        ? (customConfig['webviewContext'] as Record<string, unknown>)
+        : undefined;
+
+    const blockType =
+      getStringProp(customConfig, 'blockType') || getStringProp(nestedWc, 'blockType');
+    // Prefer an explicit mode, else infer from blockType
+    const explicitMode = getStringProp(customConfig, 'mode');
+    const inferredMode = !explicitMode
+      ? blockType === 'play-mode'
+        ? 'play'
+        : blockType === 'build-mode'
+          ? 'build'
+          : undefined
+      : undefined;
+    let mode = explicitMode || inferredMode;
+    // Last resort: infer from URL params if still missing
+    if (!mode && typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const m = params.get('mode');
+        if (m === 'play' || m === 'build') mode = m;
+      } catch {}
+    }
 
     console.log('[StartGame] Detected mode:', mode, 'blockType:', blockType);
     console.log('[StartGame] Full custom config:', customConfig);
@@ -84,7 +117,8 @@ const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {
       game.registry.set('autoStartGame', true);
 
       // Handle different play types
-      const gameType = customConfig.gameType as string;
+      const gameType =
+        getStringProp(customConfig, 'gameType') || getStringProp(nestedWc, 'gameType');
       console.log('[StartGame] Game type:', gameType);
 
       if (gameType === 'campaign') {
@@ -101,7 +135,8 @@ const StartGame = (parent: string, customConfig?: Record<string, unknown>) => {
       game.registry.set('autoStartBuild', true);
 
       // Handle different build actions
-      const action = customConfig.action as string;
+      const action =
+        getStringProp(customConfig, 'action') || getStringProp(nestedWc, 'action') || 'create';
       console.log('[StartGame] Build action:', action);
       game.registry.set('buildAction', action);
 

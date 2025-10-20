@@ -1,49 +1,33 @@
-import { Devvit, useWebView, useState } from '@devvit/public-api';
-// Helper to build a webview asset URL with context query parameters
+import { Devvit, useWebView } from '@devvit/public-api';
 const buildWebviewUrl = (params) => {
     const search = new URLSearchParams(params);
-    return `index.html?${search.toString()}`; // useWebView will resolve this asset URL
+    return `index.html?${search.toString()}`;
 };
 export const MainMenuPost = ({ context }) => {
-    const [selectedMode, setSelectedMode] = useState('menu');
-    const [loading, setLoading] = useState(false);
     const postId = context.postId || 'main-menu';
     const timestamp = Date.now().toString();
-    // Precreate webviews for common actions so we can mount fullscreen webview reliably
-    const playCampaignWV = useWebView({
+    // Create webview hooks for main menu actions
+    const { mount: mountStartGame } = useWebView({
         url: buildWebviewUrl({
             postId,
-            blockType: 'play-mode',
+            blockType: 'game',
             action: 'start_game',
             mode: 'play',
-            gameType: 'campaign',
             timestamp,
         }),
-        onMessage: async () => { },
+        onMessage: () => { },
     });
-    const playCommunityWV = useWebView({
+    const { mount: mountLeaderboard } = useWebView({
         url: buildWebviewUrl({
             postId,
-            blockType: 'play-mode',
-            action: 'browse_levels',
-            mode: 'play',
-            gameType: 'community',
+            blockType: 'leaderboard',
+            action: 'view_leaderboard',
+            mode: 'view',
             timestamp,
         }),
-        onMessage: async () => { },
+        onMessage: () => { },
     });
-    const playChallengeWV = useWebView({
-        url: buildWebviewUrl({
-            postId,
-            blockType: 'play-mode',
-            action: 'weekly_challenge',
-            mode: 'play',
-            gameType: 'challenge',
-            timestamp,
-        }),
-        onMessage: async () => { },
-    });
-    const buildCreateWV = useWebView({
+    const { mount: mountBuildMode } = useWebView({
         url: buildWebviewUrl({
             postId,
             blockType: 'build-mode',
@@ -51,128 +35,64 @@ export const MainMenuPost = ({ context }) => {
             mode: 'build',
             timestamp,
         }),
-        onMessage: async () => { },
+        onMessage: () => { },
     });
-    const buildEditWV = useWebView({
-        url: buildWebviewUrl({
-            postId,
-            blockType: 'build-mode',
-            action: 'edit',
-            mode: 'build',
-            timestamp,
-        }),
-        onMessage: async () => { },
-    });
-    const buildTutorialWV = useWebView({
-        url: buildWebviewUrl({
-            postId,
-            blockType: 'build-mode',
-            action: 'tutorial',
-            mode: 'build',
-            timestamp,
-        }),
-        onMessage: async () => { },
-    });
-    // Main menu screen
-    if (selectedMode === 'menu') {
-        return (Devvit.createElement("vstack", { height: "100%", width: "100%", alignment: "middle center", backgroundColor: "navy" },
-            Devvit.createElement("text", { size: "xxlarge", weight: "bold", color: "white" }, "Galaxy Explorer"),
-            Devvit.createElement("text", { size: "medium", color: "lightblue" }, "Build epic space levels and share them with the community"),
+    return (Devvit.createElement("zstack", { height: "100%", width: "100%", alignment: "top start" },
+        Devvit.createElement("vstack", { height: "100%", width: "100%", backgroundColor: "#000814" }),
+        Devvit.createElement("hstack", { width: "100%", alignment: "top start" },
+            Devvit.createElement("spacer", { size: "small" }),
+            Devvit.createElement("text", { size: "small", color: "#ffffff88" }, "\u2726"),
+            Devvit.createElement("spacer", { grow: true }),
+            Devvit.createElement("text", { size: "medium", color: "#ffffff66" }, "\u2727"),
             Devvit.createElement("spacer", { size: "large" }),
-            Devvit.createElement("vstack", { gap: "small", alignment: "center" },
-                Devvit.createElement("text", { size: "small", color: "white" }, "\u2728 Create custom space missions"),
-                Devvit.createElement("text", { size: "small", color: "white" }, "\uD83D\uDE80 Share with the community"),
-                Devvit.createElement("text", { size: "small", color: "white" }, "\uD83C\uDFAE Play levels by other creators"),
-                Devvit.createElement("text", { size: "small", color: "white" }, "\uD83C\uDFC6 Compete in weekly challenges")),
+            Devvit.createElement("text", { size: "small", color: "#ffffff44" }, "\u2726"),
+            Devvit.createElement("spacer", { size: "medium" })),
+        Devvit.createElement("vstack", { height: "100%", width: "100%", alignment: "middle center" },
             Devvit.createElement("spacer", { size: "large" }),
-            Devvit.createElement("vstack", { gap: "medium", alignment: "center" },
-                Devvit.createElement("button", { appearance: "primary", size: "large", onPress: () => setSelectedMode('play'), disabled: loading }, "\uD83C\uDFAE Play"),
-                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: () => setSelectedMode('build'), disabled: loading }, "\uD83D\uDD27 Build")),
             Devvit.createElement("spacer", { size: "medium" }),
-            Devvit.createElement("text", { size: "small", color: "lightgray", alignment: "center" }, "Choose your adventure in the galaxy")));
-    }
-    // Play mode selection screen
-    if (selectedMode === 'play') {
-        return (Devvit.createElement("vstack", { height: "100%", width: "100%", alignment: "middle center", backgroundColor: "darkblue" },
-            Devvit.createElement("button", { appearance: "plain", onPress: () => setSelectedMode('menu') }, '← Back to Menu'),
+            Devvit.createElement("hstack", { gap: "medium", alignment: "center" },
+                Devvit.createElement("text", { size: "small", color: "#4a90e2" }, "\u2726"),
+                Devvit.createElement("text", { size: "medium", color: "#ffffff" }, "\u2727"),
+                Devvit.createElement("text", { size: "small", color: "#4a90e2" }, "\u2726")),
+            Devvit.createElement("spacer", { size: "small" }),
+            Devvit.createElement("text", { size: "xxlarge", weight: "bold", color: "#ffffff" }, "GALAXY EXPLORER"),
+            Devvit.createElement("spacer", { size: "small" }),
+            Devvit.createElement("text", { size: "large", weight: "bold", color: "#4a90e2" }, "CONQUER THE COSMOS"),
             Devvit.createElement("spacer", { size: "medium" }),
-            Devvit.createElement("text", { size: "xxlarge", weight: "bold", color: "white" }, "Play Mode"),
-            Devvit.createElement("text", { size: "medium", color: "lightblue" }, "Choose how you want to play"),
+            Devvit.createElement("hstack", { gap: "small", alignment: "center" },
+                Devvit.createElement("text", { size: "small", color: "#4a90e244" }, "\u2501\u2501\u2501"),
+                Devvit.createElement("text", { size: "small", color: "#4a90e2" }, "\u2726"),
+                Devvit.createElement("text", { size: "small", color: "#4a90e244" }, "\u2501\u2501\u2501")),
             Devvit.createElement("spacer", { size: "large" }),
-            Devvit.createElement("vstack", { gap: "medium", alignment: "center" },
-                Devvit.createElement("button", { appearance: "primary", size: "large", onPress: async () => {
-                        setLoading(true);
-                        try {
-                            context.ui.showToast({ text: 'Launching…' });
-                            playCampaignWV.mount();
-                        }
-                        finally {
-                            setLoading(false);
-                        }
-                    }, disabled: loading }, loading ? 'Loading...' : '🚀 Start Campaign'),
-                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: async () => {
-                        setLoading(true);
-                        try {
-                            context.ui.showToast({ text: 'Opening Community…' });
-                            playCommunityWV.mount();
-                        }
-                        finally {
-                            setLoading(false);
-                        }
-                    }, disabled: loading }, loading ? 'Loading...' : '🌟 Community Levels'),
-                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: async () => {
-                        setLoading(true);
-                        try {
-                            context.ui.showToast({ text: 'Joining Challenge…' });
-                            playChallengeWV.mount();
-                        }
-                        finally {
-                            setLoading(false);
-                        }
-                    }, disabled: loading }, loading ? 'Loading...' : '🏆 Weekly Challenge'))));
-    }
-    // Build mode selection screen
-    if (selectedMode === 'build') {
-        return (Devvit.createElement("vstack", { height: "100%", width: "100%", alignment: "middle center", backgroundColor: "darkgreen" },
-            Devvit.createElement("button", { appearance: "plain", onPress: () => setSelectedMode('menu') }, '← Back to Menu'),
             Devvit.createElement("spacer", { size: "medium" }),
-            Devvit.createElement("text", { size: "xxlarge", weight: "bold", color: "white" }, "Build Mode"),
-            Devvit.createElement("text", { size: "medium", color: "lightgreen" }, "Create and share your own levels"),
+            Devvit.createElement("vstack", { gap: "medium", alignment: "center middle" },
+                Devvit.createElement("button", { appearance: "primary", size: "large", onPress: () => {
+                        context.ui.showToast({ text: '🚀 Starting Game…' });
+                        mountStartGame();
+                    } }, "START GAME"),
+                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: () => {
+                        context.ui.showToast({ text: '🏆 Loading Leaderboard…' });
+                        mountLeaderboard();
+                    } }, "LEADERBOARD"),
+                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: () => {
+                        context.ui.showToast({ text: '🛠️ Opening Build Mode…' });
+                        mountBuildMode();
+                    } }, "BUILD MODE")),
             Devvit.createElement("spacer", { size: "large" }),
-            Devvit.createElement("vstack", { gap: "medium", alignment: "center" },
-                Devvit.createElement("button", { appearance: "primary", size: "large", onPress: async () => {
-                        setLoading(true);
-                        try {
-                            context.ui.showToast({ text: 'Opening Builder…' });
-                            buildCreateWV.mount();
-                        }
-                        finally {
-                            setLoading(false);
-                        }
-                    }, disabled: loading }, loading ? 'Loading...' : '✨ Create New Level'),
-                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: async () => {
-                        setLoading(true);
-                        try {
-                            context.ui.showToast({ text: 'Loading Your Levels…' });
-                            buildEditWV.mount();
-                        }
-                        finally {
-                            setLoading(false);
-                        }
-                    }, disabled: loading }, loading ? 'Loading...' : '📝 Edit My Levels'),
-                Devvit.createElement("button", { appearance: "secondary", size: "large", onPress: async () => {
-                        setLoading(true);
-                        try {
-                            context.ui.showToast({ text: 'Opening Tutorial…' });
-                            buildTutorialWV.mount();
-                        }
-                        finally {
-                            setLoading(false);
-                        }
-                    }, disabled: loading }, loading ? 'Loading...' : '🎓 Building Tutorial'))));
-    }
-    // Fallback (shouldn't reach here)
-    return (Devvit.createElement("vstack", { height: "100%", width: "100%", alignment: "middle center", backgroundColor: "red" },
-        Devvit.createElement("text", { size: "large", weight: "bold", color: "white" }, "Error: Unknown state"),
-        Devvit.createElement("button", { onPress: () => setSelectedMode('menu') }, "Return to Menu")));
+            Devvit.createElement("spacer", { size: "large" }),
+            Devvit.createElement("hstack", { gap: "medium", alignment: "center" },
+                Devvit.createElement("text", { size: "small", color: "#ffffff44" }, "\u2727"),
+                Devvit.createElement("text", { size: "small", color: "#4a90e266" }, "\u2726"),
+                Devvit.createElement("text", { size: "small", color: "#ffffff44" }, "\u2727")),
+            Devvit.createElement("spacer", { size: "small" }),
+            Devvit.createElement("text", { size: "small", color: "#555555" }, "v1.0"),
+            Devvit.createElement("spacer", { size: "medium" })),
+        Devvit.createElement("vstack", { height: "100%", width: "100%", alignment: "bottom end" },
+            Devvit.createElement("spacer", { grow: true }),
+            Devvit.createElement("hstack", { width: "100%", alignment: "bottom end" },
+                Devvit.createElement("spacer", { grow: true }),
+                Devvit.createElement("text", { size: "small", color: "#ffffff33" }, "\u2726"),
+                Devvit.createElement("spacer", { size: "medium" }),
+                Devvit.createElement("text", { size: "medium", color: "#ffffff55" }, "\u2727"),
+                Devvit.createElement("spacer", { size: "small" })))));
 };

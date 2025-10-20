@@ -1,7 +1,8 @@
 {
   "extends": "@devvit/public-api/devvit.tsconfig.json",
   "compilerOptions": {
-    "rootDir": ".."
+    "rootDir": "..",
+    "allowJs": true
   },
   "include": ["../*.tsx", "../components/**/*.tsx", "./**/*"],
   "references": [{ "path": "../shared" }]

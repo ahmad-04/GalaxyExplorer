@@ -31,15 +31,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize return handler for block navigation
   BlockReturnHandler.initialize();
-
-  // Show return button if we came from a block
-  BlockReturnHandler.showReturnButtonIfNeeded();
+  // Back to Reddit button disabled by request; keep state sync only
 
   // Check if we're launched from blocks for faster splash hiding
   const isFromBlocks =
     webviewContext &&
     (webviewContext.blockType === 'play-mode' || webviewContext.blockType === 'build-mode');
-  const splashTimeout = isFromBlocks ? 2000 : 7000; // Faster for block launches
+  // Let LoadingScene control when to hide the splash; keep only a long failsafe
+  const splashTimeout = 10000;
 
   console.log('[Main] Launch detection:', {
     isFromBlocks,
@@ -49,7 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Failsafe: hide splash after timeout in case boot hangs
   const splashTimeoutId = window.setTimeout(() => {
-    console.log('[Main] Splash timeout reached, hiding splash');
+    console.log('[Main] Splash failsafe reached, hiding splash');
     const el = document.getElementById('splash');
     if (el) el.classList.add('hidden');
   }, splashTimeout);
@@ -104,15 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     console.log('Starting game in development mode with config:', gameConfig);
-    const game = StartGame('game-container', gameConfig);
-
-    // Hide splash once the first scene creates (LoadingScene updates splash too)
-    if (game) {
-      game.events.once('ready', () => {
-        const el = document.getElementById('splash');
-        if (el) el.classList.add('hidden');
-      });
-    }
+    StartGame('game-container', gameConfig);
     window.clearTimeout(splashTimeoutId);
   }
 });

@@ -15,6 +15,8 @@ export class Weapon {
   private overlayAnimSpeed = 2; // >1 to speed up playback
   // Cache first-frame names to avoid re-querying
   private firstFrameCache: Map<string, string | number> = new Map();
+  // One-time particle texture guard for muzzle flash
+  private particleEnsured = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -37,8 +39,8 @@ export class Weapon {
       // Match scale to ship width heuristically (assuming ~48px base ship width)
       const scale = this.ship.displayWidth / 48;
       this.weaponSprite.setScale(scale);
-  // Sit behind the ship (but above engine module)
-  this.weaponSprite.setDepth(this.ship.depth - 0.5);
+      // Sit behind the ship (but above engine module)
+      this.weaponSprite.setDepth(this.ship.depth - 0.5);
 
       // Determine animation keys but do not auto-play; start only when shooting
       const maybeIdle = `${def.weaponSpriteKey}_idle`;
@@ -83,7 +85,7 @@ export class Weapon {
       this.spawnProjectile(m);
     }
 
-  // Visuals now handled by startFiring/stopFiring on input hold
+    // Visuals now handled by startFiring/stopFiring on input hold
 
     // Play SFX if present
     if (this.def.sfxKey && this.scene.sound) {
@@ -114,14 +116,17 @@ export class Weapon {
   }
 
   private spawnProjectile(offset: MuzzleOffset) {
+    // Ensure a basic particle texture exists for muzzle flash
+    this.ensureParticleTexture();
     const key = this.def.projectileKey;
     // Use weapon overlay as the transform host if available; otherwise use the ship
     const host = (this.weaponSprite as Phaser.GameObjects.Sprite) || this.ship;
     // Convert local muzzle offset (defined in source pixel space) to world position
     const cos = Math.cos(host.rotation);
     const sin = Math.sin(host.rotation);
-    const sx = (host as any).scaleX ?? 1;
-    const sy = (host as any).scaleY ?? 1;
+    const hostSprite = host as Phaser.GameObjects.Sprite;
+    const sx = (hostSprite.scaleX as number) ?? 1;
+    const sy = (hostSprite.scaleY as number) ?? 1;
     const lx = offset.x * sx;
     const ly = offset.y * sy;
     const px = host.x + lx * cos - ly * sin;
@@ -131,19 +136,15 @@ export class Weapon {
 
     const body = projectile.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(false);
-  // Direction: fire in weapon's local "up" direction (-90deg relative to host)
-  const velRad = host.rotation + Phaser.Math.DegToRad(-90);
-  // Visuals: keep projectile sprite aligned with host (no extra -90 visual twist)
-  projectile.setRotation(host.rotation);
+    // Direction: fire in weapon's local "up" direction (-90deg relative to host)
+    const velRad = host.rotation + Phaser.Math.DegToRad(-90);
+    // Visuals: keep projectile sprite aligned with host (no extra -90 visual twist)
+    projectile.setRotation(host.rotation);
     // Ensure we aren't showing the entire sheet: set first frame by name if available
     this.setFirstFrame(projectile, key);
     // If the projectile supports animations and an anim exists, play it in a loop (faster)
     try {
-      const animCandidates = [
-        `${key}_idle`,
-        `${key}_loop`,
-        `${key}_anim`,
-      ];
+      const animCandidates = [`${key}_idle`, `${key}_loop`, `${key}_anim`];
       let animKey: string | undefined;
       for (const k of animCandidates) {
         if (this.scene.anims.exists(k)) {
@@ -152,27 +153,61 @@ export class Weapon {
         }
       }
       if (!animKey) {
-        const map = (this.scene.anims as any)?.anims as Map<string, any> | undefined;
         const keyLc = key.toLowerCase();
-        map?.forEach((_val: any, name: string) => {
-          if (!animKey && name.toLowerCase().includes(keyLc)) animKey = name;
-        });
+        try {
+          const anims = this.scene.anims as unknown as {
+            anims?: Map<string, Phaser.Animations.Animation>;
+          };
+          const map = anims.anims;
+          if (map && map.forEach) {
+            map.forEach((_val, name) => {
+              if (!animKey && name.toLowerCase().includes(keyLc)) animKey = name;
+            });
+          }
+        } catch {
+          // ignore
+        }
       }
       if (animKey) {
-        const anyProj = projectile as unknown as { play?: Function; anims?: { timeScale: number } };
-        anyProj.play?.({ key: animKey, repeat: -1 });
-        if (anyProj.anims) anyProj.anims.timeScale = 1.4;
+        const projSprite = projectile as unknown as Phaser.GameObjects.Sprite & {
+          anims: Phaser.Animations.AnimationState;
+        };
+        // play exists on Sprite
+        (projSprite as Phaser.GameObjects.Sprite).play({ key: animKey, repeat: -1 });
+        if (projSprite.anims) projSprite.anims.timeScale = 1.4;
       }
     } catch {
       // ignore anim issues
     }
     if (this.def.projectileScale) projectile.setScale(this.def.projectileScale);
     if (this.def.projectileTint !== undefined) projectile.setTint(this.def.projectileTint);
-  this.scene.physics.velocityFromRotation(velRad, this.def.projectileSpeed, body.velocity);
+    this.scene.physics.velocityFromRotation(velRad, this.def.projectileSpeed, body.velocity);
 
     this.scene.time.delayedCall(this.def.projectileLifetimeMs, () => {
       if (projectile.active) projectile.destroy();
     });
+
+    // Tiny muzzle flash bloom at muzzle position
+    try {
+      const flash = this.scene.add.particles(px, py, 'particle', {
+        lifespan: 70,
+        speed: { min: 0, max: 20 },
+        scale: { start: 0.9, end: 0 },
+        alpha: { start: 1, end: 0 },
+        blendMode: Phaser.BlendModes.ADD,
+        tint: 0xffeeaa,
+        quantity: 8,
+        frequency: -1,
+        emitting: true,
+        angle: { min: 0, max: 360 },
+      });
+      // Clean up emitter quickly
+      this.scene.time.delayedCall(90, () => {
+        flash.destroy();
+      });
+    } catch {
+      // ignore if particles unavailable
+    }
   }
 
   // playShootAnimation() removed in favor of startFiring/stopFiring hold behavior
@@ -222,6 +257,23 @@ export class Weapon {
         this.firstFrameCache.set(texKey, first);
       }
       asAny.setFrame(first);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Create a minimal particle texture if missing (used by muzzle flash)
+  private ensureParticleTexture(): void {
+    if (this.particleEnsured) return;
+    try {
+      if (!this.scene.textures.exists('particle')) {
+        const g = this.scene.add.graphics();
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(4, 4, 4);
+        g.generateTexture('particle', 8, 8);
+        g.destroy();
+      }
+      this.particleEnsured = true;
     } catch {
       // ignore
     }

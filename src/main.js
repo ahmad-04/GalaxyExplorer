@@ -14,28 +14,27 @@ Devvit.addCustomPostType({
         return Devvit.createElement(MainMenuPost, { context: context });
     },
 });
-export default Devvit;
-// Add a serverless menu action to avoid localhost HTTP calls
+// Add a serverless menu action to create Galaxy Explorer posts
 Devvit.addMenuItem({
     label: 'Create Galaxy Explorer Menu',
     location: 'subreddit',
     forUserType: 'moderator',
     onPress: async (_event, context) => {
         try {
-            if (!context.subredditName) {
-                await context.ui.showToast({ text: 'Missing subreddit context' });
-                return;
-            }
-            const community = await context.reddit.getCurrentSubreddit();
+            const subreddit = await context.reddit.getCurrentSubreddit();
+            // Create a custom post - the preview triggers our custom post type
             const post = await context.reddit.submitPost({
-                subredditName: community.name,
+                subredditName: subreddit.name,
                 title: 'Galaxy Explorer - Main Menu',
-                text: 'Welcome to Galaxy Explorer! (Dev)'
+                preview: Devvit.createElement('vstack', { height: '100%', width: '100%', alignment: 'middle center', backgroundColor: 'navy' }, Devvit.createElement('text', { size: 'large', weight: 'bold', color: 'white' }, '🚀 Galaxy Explorer'), Devvit.createElement('text', { size: 'small', color: 'lightblue' }, 'Loading...')),
             });
-            await context.ui.navigateTo(`https://reddit.com${post.permalink}`);
+            context.ui.showToast({ text: 'Created Galaxy Explorer Menu!' });
+            context.ui.navigateTo(post);
         }
         catch (err) {
-            await context.ui.showToast({ text: 'Failed to create main menu post' });
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            context.ui.showToast({ text: `Error: ${errorMsg}` });
         }
     },
 });
+export default Devvit;

@@ -1,4 +1,13 @@
-import { WebviewContextData, StateSyncData } from '../../shared/types/blocks';
+import {
+  WebviewContextData,
+  StateSyncData,
+  PlayModeWebviewContext,
+  BuildModeWebviewContext,
+  LevelWebviewContext,
+  ChallengeWebviewContext,
+  LandingWebviewContext,
+  CommunityWebviewContext,
+} from '../../shared/types/blocks';
 
 /**
  * Client-side service for handling webview context and state synchronization
@@ -26,13 +35,22 @@ export class WebviewContextClient {
       }
 
       // If no URL context, try to get from Devvit props
-      if (typeof window !== 'undefined' && (window as any).Devvit) {
-        const props = await (window as any).Devvit.getProps();
-        if (props?.webviewContext) {
-          this.context = props.webviewContext as WebviewContextData;
-          console.log('Initialized context from Devvit props:', this.context);
-          this.initialized = true;
-          return this.context;
+      const w =
+        typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : undefined;
+      if (w && typeof w['Devvit'] === 'object' && w['Devvit']) {
+        const dv = w['Devvit'] as { getProps: <T = unknown>() => Promise<T> } | undefined;
+        if (dv && typeof dv.getProps === 'function') {
+          const props = (await dv.getProps<Record<string, unknown>>()) || {};
+          const wc =
+            props && typeof props === 'object' && 'webviewContext' in props
+              ? (props['webviewContext'] as WebviewContextData)
+              : undefined;
+          if (wc) {
+            this.context = wc;
+            console.log('Initialized context from Devvit props:', this.context);
+            this.initialized = true;
+            return this.context;
+          }
         }
       }
 
@@ -82,32 +100,82 @@ export class WebviewContextClient {
       console.log('[WebviewContext] Parsing URL parameters:', window.location.search);
 
       const postId = urlParams.get('postId');
-      const blockType = urlParams.get('blockType') as WebviewContextData['blockType'];
+      const blockTypeRaw = urlParams.get('blockType') || '';
       const action = urlParams.get('action');
       const timestamp = urlParams.get('timestamp');
 
       console.log('[WebviewContext] Extracted base params:', {
         postId,
-        blockType,
+        blockType: blockTypeRaw,
         action,
         timestamp,
       });
 
-      if (!postId || !blockType || !action || !timestamp) {
+      if (!postId || !blockTypeRaw || !action || !timestamp) {
         console.log('[WebviewContext] Missing required parameters, returning null');
         return null;
       }
+
+      // Treat legacy/alias block types first
+      // Reddit sometimes sends blockType=game with a separate mode parameter.
+      // Normalize that into our supported play-mode/build-mode shapes.
+      const modeParam = urlParams.get('mode');
+      if (blockTypeRaw === 'game') {
+        if (modeParam === 'play') {
+          const gameType =
+            (urlParams.get('gameType') as 'campaign' | 'community' | 'challenge' | null) ||
+            'campaign';
+          const levelId = urlParams.get('levelId') || undefined;
+          const difficultyStr = urlParams.get('difficulty');
+          const autoStartStr = urlParams.get('autoStart');
+
+          const ctx = {
+            postId,
+            blockType: 'play-mode' as const,
+            action,
+            timestamp: parseInt(timestamp),
+            gameType,
+            levelId,
+            difficulty: difficultyStr ? parseInt(difficultyStr) : undefined,
+            autoStart: autoStartStr ? autoStartStr === 'true' : true,
+            data: this.parseDataParam(urlParams.get('data')),
+          };
+          return ctx;
+        }
+        if (modeParam === 'build') {
+          const buildAction =
+            (urlParams.get('action') as 'create' | 'edit' | 'tutorial' | null) || 'create';
+          const levelId = urlParams.get('levelId') || undefined;
+          const templateId = urlParams.get('templateId') || undefined;
+          const tutorialStepStr = urlParams.get('tutorialStep');
+          const ctx = {
+            postId,
+            blockType: 'build-mode' as const,
+            action: buildAction,
+            timestamp: parseInt(timestamp),
+            levelId,
+            templateId,
+            tutorialStep: tutorialStepStr ? parseInt(tutorialStepStr) : undefined,
+            data: this.parseDataParam(urlParams.get('data')),
+          };
+          return ctx;
+        }
+        // Unknown mode with blockType=game; fall through to default base context
+      }
+
+      // From here on, treat the blockType as one of our known union values
+      const blockType = blockTypeRaw as WebviewContextData['blockType'];
 
       const baseContext = {
         postId,
         blockType,
         action,
         timestamp: parseInt(timestamp),
-      };
+      } as const;
 
       // Parse block type specific parameters
       switch (blockType) {
-        case 'level-preview':
+        case 'level-preview': {
           const levelId = urlParams.get('levelId') || '';
           const mode = urlParams.get('mode') as 'play' | 'edit' | 'preview' | null;
           const difficultyStr = urlParams.get('difficulty');
@@ -121,9 +189,10 @@ export class WebviewContextClient {
             difficulty: difficultyStr ? parseInt(difficultyStr) : undefined,
             creator: levelCreator || undefined,
             data: this.parseDataParam(urlParams.get('data')),
-          };
+          } as unknown as WebviewContextData;
+        }
 
-        case 'weekly-challenge':
+        case 'weekly-challenge': {
           return {
             ...baseContext,
             blockType,
@@ -132,9 +201,10 @@ export class WebviewContextClient {
             seedLevelId: urlParams.get('seedLevelId') || '',
             challengeMode: urlParams.get('challengeMode') === 'true',
             data: this.parseDataParam(urlParams.get('data')),
-          };
+          } as unknown as WebviewContextData;
+        }
 
-        case 'landing':
+        case 'landing': {
           const landingMode = urlParams.get('mode') as
             | 'tutorial'
             | 'getting-started'
@@ -147,9 +217,10 @@ export class WebviewContextClient {
             mode: landingMode,
             step: stepStr ? parseInt(stepStr) : undefined,
             data: this.parseDataParam(urlParams.get('data')),
-          };
+          } as unknown as WebviewContextData;
+        }
 
-        case 'community-showcase':
+        case 'community-showcase': {
           const filter = urlParams.get('filter') as
             | 'popular'
             | 'trending'
@@ -166,9 +237,10 @@ export class WebviewContextClient {
             creator: communityCreator || undefined,
             sortBy: sortBy || undefined,
             data: this.parseDataParam(urlParams.get('data')),
-          };
+          } as unknown as WebviewContextData;
+        }
 
-        case 'play-mode':
+        case 'play-mode': {
           const gameType = urlParams.get('gameType') as
             | 'campaign'
             | 'community'
@@ -191,15 +263,17 @@ export class WebviewContextClient {
             gameType: gameType || 'campaign',
             levelId: playLevelId || undefined,
             difficulty: playDifficultyStr ? parseInt(playDifficultyStr) : undefined,
-            autoStart: autoStartStr === 'true',
+            autoStart: autoStartStr ? autoStartStr === 'true' : true,
             data: this.parseDataParam(urlParams.get('data')),
           };
 
           console.log('[WebviewContext] Created play context:', playContext);
-          return playContext;
+          return playContext as unknown as WebviewContextData;
+        }
 
-        case 'build-mode':
-          const buildAction = urlParams.get('action') as 'create' | 'edit' | 'tutorial' | null;
+        case 'build-mode': {
+          const buildAction =
+            (urlParams.get('action') as 'create' | 'edit' | 'tutorial' | null) || 'create';
           const buildLevelId = urlParams.get('levelId');
           const templateId = urlParams.get('templateId');
           const tutorialStepStr = urlParams.get('tutorialStep');
@@ -207,15 +281,16 @@ export class WebviewContextClient {
           return {
             ...baseContext,
             blockType,
-            action: buildAction || 'create',
+            action: buildAction,
             levelId: buildLevelId || undefined,
             templateId: templateId || undefined,
             tutorialStep: tutorialStepStr ? parseInt(tutorialStepStr) : undefined,
             data: this.parseDataParam(urlParams.get('data')),
-          };
+          } as unknown as WebviewContextData;
+        }
 
         default:
-          return baseContext as WebviewContextData;
+          return baseContext as unknown as WebviewContextData;
       }
     } catch (error) {
       console.error('Error parsing URL parameters:', error);
@@ -394,8 +469,8 @@ export class WebviewContextClient {
     console.log('[WebviewContext] Base config:', config);
 
     switch (this.context.blockType) {
-      case 'level-preview':
-        const levelContext = this.context as any;
+      case 'level-preview': {
+        const levelContext = this.context as LevelWebviewContext;
         return {
           ...config,
           levelId: levelContext.levelId,
@@ -404,9 +479,10 @@ export class WebviewContextClient {
           creator: levelContext.creator,
           autoStart: levelContext.mode === 'play',
         };
+      }
 
-      case 'weekly-challenge':
-        const challengeContext = this.context as any;
+      case 'weekly-challenge': {
+        const challengeContext = this.context as ChallengeWebviewContext;
         return {
           ...config,
           weekId: challengeContext.weekId,
@@ -416,18 +492,20 @@ export class WebviewContextClient {
           userProgress: challengeContext.userProgress,
           autoStart: true,
         };
+      }
 
-      case 'landing':
-        const landingContext = this.context as any;
+      case 'landing': {
+        const landingContext = this.context as LandingWebviewContext;
         return {
           ...config,
           mode: landingContext.mode,
           step: landingContext.step,
           showTutorial: landingContext.mode === 'tutorial',
         };
+      }
 
-      case 'community-showcase':
-        const communityContext = this.context as any;
+      case 'community-showcase': {
+        const communityContext = this.context as CommunityWebviewContext;
         return {
           ...config,
           filter: communityContext.filter,
@@ -435,22 +513,24 @@ export class WebviewContextClient {
           sortBy: communityContext.sortBy,
           showBrowser: true,
         };
+      }
 
-      case 'play-mode':
-        const playContext = this.context as any;
+      case 'play-mode': {
+        const playContext = this.context as PlayModeWebviewContext;
         const playConfig = {
           ...config,
           gameType: playContext.gameType,
           levelId: playContext.levelId,
           difficulty: playContext.difficulty,
-          autoStart: playContext.autoStart || true,
+          autoStart: typeof playContext.autoStart === 'boolean' ? playContext.autoStart : true,
           mode: 'play',
         };
         console.log('[WebviewContext] Play mode config:', playConfig);
         return playConfig;
+      }
 
-      case 'build-mode':
-        const buildContext = this.context as any;
+      case 'build-mode': {
+        const buildContext = this.context as BuildModeWebviewContext;
         const buildConfig = {
           ...config,
           action: buildContext.action,
@@ -462,6 +542,7 @@ export class WebviewContextClient {
         };
         console.log('[WebviewContext] Build mode config:', buildConfig);
         return buildConfig;
+      }
 
       default:
         console.log('[WebviewContext] Unknown block type, returning base config:', config);

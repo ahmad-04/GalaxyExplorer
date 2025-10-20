@@ -44,6 +44,7 @@ export default defineConfig([
       'eslint.config.js',
       '**/vite.config.ts',
       'devvit.config.ts',
+      'src/server/core/post.js',
     ],
     languageOptions: {
       parserOptions: {
