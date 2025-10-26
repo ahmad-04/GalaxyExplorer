@@ -310,7 +310,12 @@ router.post('/internal/menu/create-level-card', async (_req, res) => {
                     { type: 'string', name: 'title', label: 'Post Title', required: true },
                     { type: 'string', name: 'heading', label: 'Splash Heading', required: true },
                     { type: 'string', name: 'description', label: 'Description', required: false },
-                    { type: 'string', name: 'backgroundUri', label: 'Background Image URL (optional)', required: false },
+                    {
+                        type: 'string',
+                        name: 'backgroundUri',
+                        label: 'Background Image URL (optional)',
+                        required: false,
+                    },
                     {
                         type: 'string',
                         name: 'buttonLabel',

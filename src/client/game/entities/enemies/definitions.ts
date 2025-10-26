@@ -128,9 +128,11 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
       shoot: 'kla_torpedo_ship_Shoot',
       death: 'kla_torpedo_death_Death',
     },
+    muzzleOffsets: [{ x: 0, y: 16 }],
     movement: { type: 'hover', speed: 60 },
-    // Scripted: move to top, fire 6 aimed snapshots, then exit straight down
-    fire: { type: 'none' },
+    // Scripted: move to top, fire 3 aimed torpedoes, then exit straight down
+    // Fire type 'interval' is placeholder to enable weapon overlay; actual firing is script-controlled
+    fire: { type: 'interval', intervalMs: 999999, burst: 1, aimed: true },
     projectile: {
       key: 'kla_torpedo',
       speed: 160,
@@ -147,6 +149,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     speed: 70,
     score: 80,
     bodyRadius: 26,
+    scale: 2,
     angleDeg: 180,
     anim: {
       move: 'kla_bomber_Move',
@@ -154,6 +157,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
       shoot: 'kla_bomber_Shoot',
       death: 'kla_bomber_death_Death',
     },
+    muzzleOffsets: [{ x: 0, y: 16 }],
     movement: { type: 'straight', speed: 70 },
     // Fire exactly 3 big bullets straight down, with a short pre-shot delay, then retreat upward
     fire: {
@@ -162,7 +166,6 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
       burst: 1,
       aimed: false,
       totalShots: 3,
-      startDelayMs: 500,
     },
     projectile: {
       key: 'kla_big_bullet',

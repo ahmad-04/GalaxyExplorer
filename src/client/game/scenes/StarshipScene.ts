@@ -271,7 +271,7 @@ export class StarshipScene extends Phaser.Scene {
     console.log('[StarshipScene] Physics should now be active');
 
     // DEBUG: Enable physics debug to see hitboxes
-    const DEBUG_MODE = false;
+    const DEBUG_MODE = true;
     if (DEBUG_MODE) {
       try {
         this.physics.world.drawDebug = true;

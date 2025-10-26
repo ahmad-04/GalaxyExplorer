@@ -175,6 +175,32 @@ export class EnemyManager {
 
     // DEBUG: Force specific enemy type for testing
     const DEBUG_FIGHTER_ONLY = false;
+    const DEBUG_TORPEDO_ONLY = false;
+    const DEBUG_BOMBER_ONLY = true;
+    if (DEBUG_BOMBER_ONLY) {
+      const bomberDef = ENEMIES['bomber'];
+      if (bomberDef && this.scene.textures.exists(bomberDef.key)) {
+        console.log('💣 [DEBUG] Spawning Bomber (debug mode active)');
+        const kla = new EnemyBase(this.scene, x, -60, bomberDef).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return;
+      } else {
+        console.warn('[DEBUG] Bomber assets not available, skipping spawn');
+        return;
+      }
+    }
+    if (DEBUG_TORPEDO_ONLY) {
+      const torpedoDef = ENEMIES['torpedo'];
+      if (torpedoDef && this.scene.textures.exists(torpedoDef.key)) {
+        console.log('🚀 [DEBUG] Spawning Torpedo (debug mode active)');
+        const kla = new EnemyBase(this.scene, x, -60, torpedoDef).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return;
+      } else {
+        console.warn('[DEBUG] Torpedo assets not available, skipping spawn');
+        return;
+      }
+    }
     if (DEBUG_FIGHTER_ONLY) {
       const fighterDef = ENEMIES['fighter'];
       if (fighterDef && this.scene.textures.exists(fighterDef.key)) {

@@ -291,6 +291,15 @@ export class LoadingScene extends Phaser.Scene {
       ensureFramesAnim('autoCannon', 'autoCannon_idle', 10);
       ensureFramesAnim('autoCannonProjectile', 'autoCannonProjectile_idle', 10);
       ensureFramesAnim('invincibilityShield', 'invincibilityShield_idle', 12);
+
+      // Torpedo projectile animations
+      ensureFramesAnim('kla_torpedo', 'kla_torpedo_Move', 10);
+      ensureFramesAnim('kla_torpedo', 'kla_torpedo_Idle', 10);
+
+      // Torpedo engine animations
+      ensureFramesAnim('kla_torpedo_engine', 'kla_torpedo_engine_Move', 12);
+      ensureFramesAnim('kla_torpedo_engine', 'kla_torpedo_engine_Idle', 12);
+
       // Kla'ed fallback loops
       const klaFallbacks = [
         'kla_scout',

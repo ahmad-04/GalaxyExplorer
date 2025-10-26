@@ -413,11 +413,17 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
           const args: { aimed?: boolean; spreadDeg?: number } = { aimed: !!f.aimed };
           if (typeof f.spreadDeg === 'number') args.spreadDeg = f.spreadDeg;
 
-          // Play weapon animation first, projectile will fire on frame 2
-          this.playWeaponsShoot(() => {
+          const fireNow = () => {
             this.fireProjectile(args);
             doShootAnim();
-          });
+          };
+
+          // If a weapons overlay exists, sync projectile on frame 2; otherwise fire immediately
+          if (this.weaponsOverlay && this.weaponsKey) {
+            this.playWeaponsShoot(() => fireNow());
+          } else {
+            fireNow();
+          }
 
           if (typeof this.remainingIntervalShots === 'number') this.remainingIntervalShots -= 1;
           // If we just fired the last shot, schedule retreat if configured
@@ -570,6 +576,10 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     // Try common patterns:
     // 1) kla_scout -> kla_scout_engine
     // 2) kla_fighter -> kla_fighter_engine
+    // 3) kla_torpedo_ship -> kla_torpedo_engine (remove _ship suffix)
+    if (baseKey.endsWith('_ship')) {
+      return baseKey.replace('_ship', '_engine');
+    }
     return `${baseKey}_engine`;
   }
 
@@ -610,7 +620,7 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     });
 
     // DEBUG: Log available animations for this engine
-    if (baseKey.toLowerCase().includes('scout')) {
+    if (baseKey.toLowerCase().includes('scout') || baseKey.toLowerCase().includes('torpedo')) {
       console.log('🔥 Engine overlay created for:', baseKey);
       console.log('🔥 Engine key:', engineKey);
       console.log('🔥 Looking for animations...');
@@ -635,12 +645,18 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
         try {
           this.engineOverlay.play({ key: animKey, repeat: -1 });
           animPlayed = true;
-          if (baseKey.toLowerCase().includes('scout')) {
+          if (
+            baseKey.toLowerCase().includes('scout') ||
+            baseKey.toLowerCase().includes('torpedo')
+          ) {
             console.log('✅ Engine animation playing:', animKey);
           }
           break;
         } catch (e) {
-          if (baseKey.toLowerCase().includes('scout')) {
+          if (
+            baseKey.toLowerCase().includes('scout') ||
+            baseKey.toLowerCase().includes('torpedo')
+          ) {
             console.warn('❌ Failed to play animation:', animKey, e);
           }
         }
@@ -648,7 +664,10 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     }
 
     // If no animation worked, log available animations for debugging
-    if (!animPlayed && baseKey.toLowerCase().includes('scout')) {
+    if (
+      !animPlayed &&
+      (baseKey.toLowerCase().includes('scout') || baseKey.toLowerCase().includes('torpedo'))
+    ) {
       console.warn('⚠️ No engine animation found. Checking texture frames...');
       try {
         const tex = this.sceneRef.textures.get(engineKey);
