@@ -270,16 +270,33 @@ export class StarshipScene extends Phaser.Scene {
 
     console.log('[StarshipScene] Physics should now be active');
 
-    // Ensure Arcade physics debug overlay is disabled (removes purple ring)
-    try {
-      this.physics.world.drawDebug = false;
-      if (this.physics.world.debugGraphic) {
+    // DEBUG: Enable physics debug to see hitboxes
+    const DEBUG_MODE = true;
+    if (DEBUG_MODE) {
+      try {
+        this.physics.world.drawDebug = true;
+        // Create the debug graphic if it doesn't exist
+        if (!this.physics.world.debugGraphic) {
+          this.physics.world.debugGraphic = this.add.graphics();
+        }
         this.physics.world.debugGraphic.clear();
-        this.physics.world.debugGraphic.setVisible(false);
+        console.log('[StarshipScene] 🔍 DEBUG MODE: Physics debug hitboxes ENABLED');
+        console.log('[StarshipScene] 🛸 DEBUG MODE: Scout-only spawning active');
+      } catch (e) {
+        console.warn('[StarshipScene] Failed to enable debug mode:', e);
       }
-      console.log('[StarshipScene] Arcade debug disabled for this scene');
-    } catch (e) {
-      console.warn('[StarshipScene] Failed to disable arcade debug:', e);
+    } else {
+      // Normal mode: Disable Arcade physics debug overlay (removes purple ring)
+      try {
+        this.physics.world.drawDebug = false;
+        if (this.physics.world.debugGraphic) {
+          this.physics.world.debugGraphic.clear();
+          this.physics.world.debugGraphic.setVisible(false);
+        }
+        console.log('[StarshipScene] Arcade debug disabled for this scene');
+      } catch (e) {
+        console.warn('[StarshipScene] Failed to disable arcade debug:', e);
+      }
     }
 
     // Smooth fade-in for gameplay scene (respect reduced motion)
@@ -642,16 +659,48 @@ export class StarshipScene extends Phaser.Scene {
       const body = ship.body as Phaser.Physics.Arcade.Body;
       const frameW = ship.frame.width;
       const frameH = ship.frame.height;
-      const scale = Math.max(ship.scaleX, ship.scaleY);
-      const desiredDisplayRadius = Math.min(ship.displayWidth, ship.displayHeight) * 0.4;
-      const radius = desiredDisplayRadius / scale;
-      const diameter = radius * 2;
-      const offsetX = (frameW - diameter) / 2;
-      const offsetY = (frameH - diameter) / 2;
-      body.setCircle(radius, offsetX, offsetY);
+
+      // Create a custom spaceship-shaped hitbox (more accurate than circle)
+      // Define points for a ship-like polygon (triangle with slight wing width)
+      // Points are relative to sprite origin (center), scaled to frame size
+      const shipShape = [
+        // Nose (top center)
+        frameW * 0.5,
+        frameH * 0.1,
+        // Right wing tip
+        frameW * 0.8,
+        frameH * 0.7,
+        // Right engine (bottom right)
+        frameW * 0.65,
+        frameH * 0.9,
+        // Left engine (bottom left)
+        frameW * 0.35,
+        frameH * 0.9,
+        // Left wing tip
+        frameW * 0.2,
+        frameH * 0.7,
+      ];
+
+      // Apply the custom polygon shape
+      body.setSize(frameW, frameH);
+      body.setOffset(0, 0);
+
+      // Note: Phaser Arcade Physics doesn't natively support polygon collision,
+      // but we can approximate with a smaller rectangular hitbox that better fits the ship
+      // Using a narrower, taller rectangle that follows the ship's vertical profile
+      const hitboxWidth = frameW * 0.4; // 40% of sprite width (tighter on wings)
+      const hitboxHeight = frameH * 0.85; // 85% of sprite height (covers nose to engines)
+      const hitboxOffsetX = (frameW - hitboxWidth) / 2; // Center horizontally
+      const hitboxOffsetY = frameH * 0.08; // Start from near the nose tip
+
+      body.setSize(hitboxWidth, hitboxHeight);
+      body.setOffset(hitboxOffsetX, hitboxOffsetY);
       body.allowRotation = false;
       ship.setAngularVelocity(0);
       ship.setRotation(0);
+
+      // DEBUG: Set player hitbox color (cyan for player)
+      body.debugBodyColor = 0x00ffff;
     }
   }
 
@@ -1125,7 +1174,23 @@ export class StarshipScene extends Phaser.Scene {
           this.registry.set('enemiesDefeated', currentDefeats + 1);
           console.log(`[StarshipScene] Enemy destroyed by shield (total: ${currentDefeats + 1})`);
         }
-        enemy.destroy();
+
+        // Use takeDamage for EnemyBase to trigger death animation and proper cleanup
+        if (typeof (enemy as any).takeDamage === 'function') {
+          try {
+            // Deal massive damage to ensure destruction
+            (enemy as any).takeDamage(9999);
+          } catch (e) {
+            console.warn(
+              '[StarshipScene] takeDamage failed on shield hit, falling back to destroy:',
+              e
+            );
+            enemy.destroy();
+          }
+        } else {
+          // Legacy enemy - destroy immediately
+          enemy.destroy();
+        }
 
         // After destroying by shield, check for test completion
         this.checkForTestCompletion();
@@ -1168,7 +1233,21 @@ export class StarshipScene extends Phaser.Scene {
         this.registry.set('enemiesDefeated', currentDefeats + 1);
         console.log(`[StarshipScene] Enemy destroyed by crash (total: ${currentDefeats + 1})`);
       }
-      enemy.destroy();
+
+      // Use takeDamage for EnemyBase to trigger death animation and proper cleanup
+      if (typeof (enemy as any).takeDamage === 'function') {
+        try {
+          // Deal massive damage to ensure destruction
+          (enemy as any).takeDamage(9999);
+        } catch (e) {
+          console.warn('[StarshipScene] takeDamage failed on crash, falling back to destroy:', e);
+          enemy.destroy();
+        }
+      } else {
+        // Legacy enemy - destroy immediately
+        enemy.destroy();
+      }
+
       // Check completion after crash-based destruction
       this.checkForTestCompletion();
     }

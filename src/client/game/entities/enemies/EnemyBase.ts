@@ -16,6 +16,9 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
   private weaponsKey?: string; // texture key for overlay
   private weaponsFrameNames?: string[]; // sorted frame names for overlay
   private weaponsHoldMs: number = 220; // pause after shot sequence before next sequence (e.g., death)
+  // Optional engine overlay (separate Aseprite sheet like 'kla_scout_engine')
+  private engineOverlay: Phaser.GameObjects.Sprite | null = null;
+  private engineKey?: string; // texture key for engine overlay
   private scriptState?: {
     kind: 'burstAtTop';
     topY: number;
@@ -49,8 +52,25 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const radius = this.def.bodyRadius ?? Math.min(this.displayWidth, this.displayHeight) * 0.35;
     body.setCircle(radius, (this.width - radius * 2) / 2, (this.height - radius * 2) / 2);
 
+    // DEBUG: Set hitbox color for visibility (green for enemies)
+    body.debugBodyColor = 0x00ff00;
+
+    // DEBUG: Log Scout creation with details
+    if (this.def.key && this.def.key.toLowerCase().includes('scout')) {
+      console.log('🛸 Scout spawned:', {
+        position: { x: this.x, y: this.y },
+        bodyRadius: radius,
+        speed: this.def.movement?.speed || 'N/A',
+        hp: this.hp,
+        movement: this.def.movement?.type || 'N/A',
+      });
+    }
+
     // If hover with a topY ceiling, place them exactly at that Y on spawn
-    if ((this.def.movement as any)?.type === 'hover' && typeof (this.def.movement as any)?.topY === 'number') {
+    if (
+      (this.def.movement as any)?.type === 'hover' &&
+      typeof (this.def.movement as any)?.topY === 'number'
+    ) {
       const topY = (this.def.movement as any).topY as number;
       this.y = topY;
     }
@@ -59,8 +79,11 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const moveKey = this.def.anim.move || this.def.anim.idle;
     if (moveKey && this.sceneRef.anims.exists(moveKey)) this.play({ key: moveKey, repeat: -1 });
 
-  // Optional weapons overlay (derive key if texture exists)
-  this.initWeaponsOverlay();
+    // Optional engine overlay (derive key if texture exists)
+    this.initEngineOverlay();
+
+    // Optional weapons overlay (derive key if texture exists)
+    this.initWeaponsOverlay();
 
     // Initialize optional simple script behavior
     if (this.def.script && this.def.script.type === 'burstAtTop') {
@@ -97,7 +120,9 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     }
     const hitKey = this.def.anim.hit;
     if (hitKey && this.anims) {
-      try { this.play(hitKey); } catch {}
+      try {
+        this.play(hitKey);
+      } catch {}
     }
     return false;
   }
@@ -118,7 +143,12 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const candidates: string[] = [];
     if (deathKey) candidates.push(deathKey);
     if (baseTexKey) {
-      candidates.push(`${baseTexKey}_Death`, `${baseTexKey}_death`, `${baseTexKey}_Explode`, `${baseTexKey}_explode`);
+      candidates.push(
+        `${baseTexKey}_Death`,
+        `${baseTexKey}_death`,
+        `${baseTexKey}_Explode`,
+        `${baseTexKey}_explode`
+      );
     }
 
     for (const k of candidates) {
@@ -153,7 +183,7 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-  return { baseTexKey: baseTexKey || this.texture.key };
+    return { baseTexKey: baseTexKey || this.texture.key };
   }
 
   private playDeathFx(explicitAnimKey?: string) {
@@ -174,20 +204,27 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
 
   private die() {
     this.playDeathFx(this.def.anim.death);
-    // Cleanup overlay
-  if (this.weaponsOverlay) { this.weaponsOverlay.destroy(); this.weaponsOverlay = null; }
+    // Cleanup overlays
+    if (this.engineOverlay) {
+      this.engineOverlay.destroy();
+      this.engineOverlay = null;
+    }
+    if (this.weaponsOverlay) {
+      this.weaponsOverlay.destroy();
+      this.weaponsOverlay = null;
+    }
     this.destroy();
   }
 
   override update(time: number, delta: number, player?: Phaser.Physics.Arcade.Sprite) {
-    // Keep overlay in sync
+    // Keep weapons overlay in sync (engine is synced via POST_UPDATE for no lag)
     this.syncWeaponsOverlay();
     if (this.handleRetreat(time)) return;
     if (this.updateScript(time, delta)) return;
-    
+
     // Always apply the movement pattern first
     this.updateMovement(delta);
-    
+
     // Check if this enemy has a target Y position (used by Build Mode/Custom levels)
     const targetY = this.getData('targetY');
     if (targetY !== undefined && this.y < targetY) {
@@ -196,27 +233,27 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
         console.log(`[Enemy] Approaching target position y=${targetY} from y=${this.y}`);
         this.setData('approaching', true);
       }
-      
+
       // Apply a Y-velocity adjustment to approach the target Y position
       // Override vertical velocity component to avoid movement patterns interfering with approach
       const body = this.body as Phaser.Physics.Arcade.Body;
       const approachSpeed = 180; // pixels per second
-      
+
       // Preserve horizontal velocity component from movement pattern
       const vx = body.velocity.x;
       body.setVelocity(vx, approachSpeed);
-      
+
       if (this.y >= targetY) {
         this.y = targetY; // Snap to exact position when reached
         this.setData('reachedTargetY', true);
         // Resume original movement pattern after reaching target
         this.updateMovement(delta);
       }
-      
+
       // Return true to skip default movement pattern during approach
       return;
     }
-    
+
     // Only start firing when on-screen
     if (this.y > 0) {
       this.updateFire(time, player);
@@ -230,9 +267,16 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       body.setVelocity(0, 0);
       return true;
     }
-    body.setVelocity(0, -((this.def.retreatAfterShots?.speed) ?? 120));
+    body.setVelocity(0, -(this.def.retreatAfterShots?.speed ?? 120));
     if (this.y < -50) {
-      if (this.weaponsOverlay) { this.weaponsOverlay.destroy(); this.weaponsOverlay = null; }
+      if (this.engineOverlay) {
+        this.engineOverlay.destroy();
+        this.engineOverlay = null;
+      }
+      if (this.weaponsOverlay) {
+        this.weaponsOverlay.destroy();
+        this.weaponsOverlay = null;
+      }
       this.destroy();
     }
     return true;
@@ -245,7 +289,9 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const shootAnim = () => {
       const k = this.def.anim.shoot;
       if (k && this.sceneRef.anims.exists(k)) {
-        try { this.play(k); } catch {}
+        try {
+          this.play(k);
+        } catch {}
       }
     };
 
@@ -290,7 +336,14 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       body.setVelocity(0, 0);
       if (time >= s.nextAt) {
         this.playDeathFx(this.def.anim.death);
-        if (this.weaponsOverlay) { this.weaponsOverlay.destroy(); this.weaponsOverlay = null; }
+        if (this.engineOverlay) {
+          this.engineOverlay.destroy();
+          this.engineOverlay = null;
+        }
+        if (this.weaponsOverlay) {
+          this.weaponsOverlay.destroy();
+          this.weaponsOverlay = null;
+        }
         this.destroy();
         s.state = 'done';
       }
@@ -342,17 +395,21 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const doShootAnim = () => {
       const k = this.def.anim.shoot;
       if (k && this.sceneRef.anims.exists(k)) {
-        try { this.play(k); } catch {}
+        try {
+          this.play(k);
+        } catch {}
       }
     };
 
     if (f.type === 'interval') {
       // Respect totalShots if configured
-      if (typeof this.remainingIntervalShots === 'number' && this.remainingIntervalShots <= 0) return;
+      if (typeof this.remainingIntervalShots === 'number' && this.remainingIntervalShots <= 0)
+        return;
       const burst = Math.max(1, f.burst ?? 1);
       for (let i = 0; i < burst; i++) {
         this.sceneRef.time.delayedCall(i * 80, () => {
-          if (typeof this.remainingIntervalShots === 'number' && this.remainingIntervalShots <= 0) return;
+          if (typeof this.remainingIntervalShots === 'number' && this.remainingIntervalShots <= 0)
+            return;
           const args: { aimed?: boolean; spreadDeg?: number } = { aimed: !!f.aimed };
           if (typeof f.spreadDeg === 'number') args.spreadDeg = f.spreadDeg;
           this.fireProjectile(args);
@@ -360,9 +417,14 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
           this.playWeaponsShoot();
           if (typeof this.remainingIntervalShots === 'number') this.remainingIntervalShots -= 1;
           // If we just fired the last shot, schedule retreat if configured
-          if (typeof this.remainingIntervalShots === 'number' && this.remainingIntervalShots <= 0 && this.def.retreatAfterShots) {
+          if (
+            typeof this.remainingIntervalShots === 'number' &&
+            this.remainingIntervalShots <= 0 &&
+            this.def.retreatAfterShots
+          ) {
             this.retreating = true;
-            this.retreatDelayUntil = this.sceneRef.time.now + (this.def.retreatAfterShots.delayMs ?? 0);
+            this.retreatDelayUntil =
+              this.sceneRef.time.now + (this.def.retreatAfterShots.delayMs ?? 0);
           }
         });
       }
@@ -380,27 +442,69 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  private fireProjectile(opts: { aimed?: boolean; spreadDeg?: number; homing?: { turnRate: number; accel: number }; bomb?: { gravity: number } }) {
+  private fireProjectile(opts: {
+    aimed?: boolean;
+    spreadDeg?: number;
+    homing?: { turnRate: number; accel: number };
+    bomb?: { gravity: number };
+  }) {
     const proj = this.def.projectile;
     if (!proj) return;
 
     const pool = (this.sceneRef as any).enemyProjectiles as EnemyProjectiles | undefined;
-    const spawnPoints = this.def.muzzleOffsets && this.def.muzzleOffsets.length > 0
-      ? this.def.muzzleOffsets.map((m) => ({ x: this.x + m.x, y: this.y + m.y }))
-      : [{ x: this.x, y: this.y + this.height * 0.4 }];
+    const spawnPoints =
+      this.def.muzzleOffsets && this.def.muzzleOffsets.length > 0
+        ? this.def.muzzleOffsets.map((m) => ({ x: this.x + m.x, y: this.y + m.y }))
+        : [{ x: this.x, y: this.y + this.height * 0.4 }];
 
     const spawnOne = (sx: number, sy: number) => {
       if (pool) {
         if (opts.bomb) {
-          pool.spawnBomb(sx, sy, proj.key, proj.speed, proj.lifetimeMs, opts.bomb.gravity, proj.tint, proj.scale);
+          pool.spawnBomb(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            opts.bomb.gravity,
+            proj.tint,
+            proj.scale
+          );
         } else if (opts.homing && proj.behavior === 'homing') {
-          pool.spawnHoming(sx, sy, proj.key, proj.speed, proj.lifetimeMs, opts.homing, proj.tint, proj.scale);
+          pool.spawnHoming(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            opts.homing,
+            proj.tint,
+            proj.scale
+          );
         } else if (opts.aimed || proj.behavior === 'aimed') {
           const target = (this.sceneRef as any).player as Phaser.Physics.Arcade.Sprite | undefined;
-          pool.spawnAimed(sx, sy, proj.key, proj.speed, proj.lifetimeMs, target, proj.tint, proj.scale);
+          pool.spawnAimed(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            target,
+            proj.tint,
+            proj.scale
+          );
         } else if (opts.spreadDeg || proj.behavior === 'spread') {
           const spreadDeg = opts.spreadDeg ?? 18;
-          pool.spawnSpread(sx, sy, proj.key, proj.speed, proj.lifetimeMs, spreadDeg, proj.tint, proj.scale);
+          pool.spawnSpread(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            spreadDeg,
+            proj.tint,
+            proj.scale
+          );
         } else {
           pool.spawnStraight(sx, sy, proj.key, proj.speed, proj.lifetimeMs, proj.tint, proj.scale);
         }
@@ -431,11 +535,20 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
         const right = this.sceneRef.physics.add.image(sx, sy + 8, proj.key);
         (left.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
         (right.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
-        left.setVelocity(Math.cos(base - spread) * proj.speed, Math.sin(base - spread) * proj.speed);
-        right.setVelocity(Math.cos(base + spread) * proj.speed, Math.sin(base + spread) * proj.speed);
+        left.setVelocity(
+          Math.cos(base - spread) * proj.speed,
+          Math.sin(base - spread) * proj.speed
+        );
+        right.setVelocity(
+          Math.cos(base + spread) * proj.speed,
+          Math.sin(base + spread) * proj.speed
+        );
         left.setAngle(Phaser.Math.RadToDeg(base - spread));
         right.setAngle(Phaser.Math.RadToDeg(base + spread));
-        this.sceneRef.time.delayedCall(proj.lifetimeMs, () => { left.destroy(); right.destroy(); });
+        this.sceneRef.time.delayedCall(proj.lifetimeMs, () => {
+          left.destroy();
+          right.destroy();
+        });
       } else {
         b.setVelocity(0, proj.speed);
         b.setAngle(90);
@@ -446,6 +559,122 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     };
 
     spawnPoints.forEach((p) => spawnOne(p.x, p.y));
+  }
+
+  // --- Engine overlay helpers ---
+  private deriveEngineKeyFromBase(baseKey: string): string | undefined {
+    // Try common patterns:
+    // 1) kla_scout -> kla_scout_engine
+    // 2) kla_fighter -> kla_fighter_engine
+    return `${baseKey}_engine`;
+  }
+
+  private initEngineOverlay() {
+    const baseKey = this.texture?.key as string;
+    const engineKey = this.deriveEngineKeyFromBase(baseKey);
+    if (!engineKey || !this.sceneRef.textures.exists(engineKey)) return;
+
+    this.engineKey = engineKey;
+    const spr = this.sceneRef.add.sprite(this.x, this.y, engineKey);
+    // Match transform
+    spr.setScale(this.scaleX, this.scaleY);
+    spr.setAngle(this.angle);
+    spr.setOrigin(this.originX, this.originY);
+    // Render behind the main ship sprite
+    spr.setDepth(this.depth - 1);
+    this.engineOverlay = spr;
+
+    // Keep engine locked to enemy position after physics step (like player's weapon system)
+    // This prevents the inertia-based swaying that occurs when syncing in update()
+    const syncEngine = () => {
+      if (!this.engineOverlay || !this.active) return;
+      this.engineOverlay.x = this.x;
+      this.engineOverlay.y = this.y;
+      this.engineOverlay.setAngle(this.angle);
+      // Keep scale and depth in sync too
+      if (this.engineOverlay.scaleX !== this.scaleX || this.engineOverlay.scaleY !== this.scaleY) {
+        this.engineOverlay.setScale(this.scaleX, this.scaleY);
+      }
+      if (this.engineOverlay.depth !== this.depth - 1) {
+        this.engineOverlay.setDepth(this.depth - 1);
+      }
+    };
+    this.sceneRef.events.on(Phaser.Scenes.Events.POST_UPDATE, syncEngine, this);
+    // Cleanup on enemy destruction
+    this.once('destroy', () => {
+      this.sceneRef.events.off(Phaser.Scenes.Events.POST_UPDATE, syncEngine, this);
+    });
+
+    // DEBUG: Log available animations for this engine
+    if (baseKey.toLowerCase().includes('scout')) {
+      console.log('🔥 Engine overlay created for:', baseKey);
+      console.log('🔥 Engine key:', engineKey);
+      console.log('🔥 Looking for animations...');
+    }
+
+    // Try to play engine animation - try multiple patterns
+    const animPatterns = [
+      `${engineKey}_Move`,
+      `${engineKey}_Idle`,
+      `${engineKey}_Thrust`,
+      `${engineKey}_Power`,
+      `${engineKey}_move`,
+      `${engineKey}_idle`,
+      `${engineKey}_thrust`,
+      `${engineKey}_power`,
+      engineKey, // Sometimes the texture key itself is the anim key
+    ];
+
+    let animPlayed = false;
+    for (const animKey of animPatterns) {
+      if (this.sceneRef.anims.exists(animKey)) {
+        try {
+          this.engineOverlay.play({ key: animKey, repeat: -1 });
+          animPlayed = true;
+          if (baseKey.toLowerCase().includes('scout')) {
+            console.log('✅ Engine animation playing:', animKey);
+          }
+          break;
+        } catch (e) {
+          if (baseKey.toLowerCase().includes('scout')) {
+            console.warn('❌ Failed to play animation:', animKey, e);
+          }
+        }
+      }
+    }
+
+    // If no animation worked, log available animations for debugging
+    if (!animPlayed && baseKey.toLowerCase().includes('scout')) {
+      console.warn('⚠️ No engine animation found. Checking texture frames...');
+      try {
+        const tex = this.sceneRef.textures.get(engineKey);
+        const frames = tex.getFrameNames();
+        console.log('📦 Available frames:', frames.length);
+        if (frames.length > 1) {
+          console.log('💡 Creating fallback frame-by-frame animation...');
+          // Create a simple animation from all frames if multiple exist
+          const frameObjs = frames
+            .filter((f) => f !== '__BASE')
+            .map((f) => ({ key: engineKey, frame: f }));
+          if (frameObjs.length > 0) {
+            const fallbackKey = `${engineKey}_auto`;
+            if (!this.sceneRef.anims.exists(fallbackKey)) {
+              this.sceneRef.anims.create({
+                key: fallbackKey,
+                frames: frameObjs,
+                frameRate: 10,
+                repeat: -1,
+              });
+            }
+            this.engineOverlay.play({ key: fallbackKey, repeat: -1 });
+            console.log('✅ Fallback animation playing:', fallbackKey);
+            animPlayed = true;
+          }
+        }
+      } catch (e) {
+        console.error('❌ Error creating fallback animation:', e);
+      }
+    }
   }
 
   // --- Weapons overlay helpers ---
@@ -460,6 +689,11 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
   }
 
   private initWeaponsOverlay() {
+    // Skip weapons overlay for enemies that don't have weapons
+    if (this.def.fire?.type === 'none') {
+      return;
+    }
+
     const baseKey = this.texture?.key as string;
     const candidates: string[] = [];
     const derived = this.deriveWeaponsKeyFromBase(baseKey);
@@ -514,10 +748,15 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     // If we have frames, prefer just flashing the next generic frame (non-looping)
     if (this.weaponsFrameNames && this.weaponsFrameNames.length > 0) {
       // Choose a middle frame for a generic flash
-      const idx = Math.min(this.weaponsFrameNames.length - 1, Math.floor(this.weaponsFrameNames.length / 2));
+      const idx = Math.min(
+        this.weaponsFrameNames.length - 1,
+        Math.floor(this.weaponsFrameNames.length / 2)
+      );
       const frameName = this.weaponsFrameNames[idx];
       if (frameName !== undefined) {
-        try { this.weaponsOverlay.setFrame(frameName as string); } catch {}
+        try {
+          this.weaponsOverlay.setFrame(frameName as string);
+        } catch {}
       }
       return;
     }
@@ -533,7 +772,10 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
 
   // For torpedo: try to play one of Shoot1..Shoot6 steps based on index
   private playWeaponsShootStep(stepIndex: number) {
-    if (!this.weaponsOverlay || !this.weaponsKey) { this.playWeaponsShoot(); return; }
+    if (!this.weaponsOverlay || !this.weaponsKey) {
+      this.playWeaponsShoot();
+      return;
+    }
     // Show only the target frame (no in-between animation)
     if (this.weaponsFrameNames && this.weaponsFrameNames.length > 0) {
       const sequence = [6, 8, 10, 12, 14, 16];
@@ -541,7 +783,9 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       const idx = Math.max(0, Math.min(this.weaponsFrameNames.length - 1, frameNum - 1));
       const frameName = this.weaponsFrameNames[idx];
       if (frameName !== undefined) {
-  try { this.weaponsOverlay.setFrame(frameName as string); } catch {}
+        try {
+          this.weaponsOverlay.setFrame(frameName as string);
+        } catch {}
       }
       return;
     }
@@ -579,7 +823,9 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       if (stepIndex === undefined) return undefined;
       const n = stepIndex + 1;
       // Try ...Shoot1 and ...Shoot_1 style
-      const exact = arr.find((k) => new RegExp(`_(?:.*)?(?:Shoot|shoot).*[^0-9]${n}$`).test(k) || k.endsWith(`_${n}`));
+      const exact = arr.find(
+        (k) => new RegExp(`_(?:.*)?(?:Shoot|shoot).*[^0-9]${n}$`).test(k) || k.endsWith(`_${n}`)
+      );
       if (exact) return exact;
       // Fallback: sort natural and pick index if in range
       const sorted = [...arr].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));

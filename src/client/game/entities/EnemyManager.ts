@@ -28,6 +28,15 @@ export class EnemyManager {
   private disableRandomSpawns = false;
   // DEV: Focus mode to spawn only a specific Kla'ed enemy definition (e.g., 'fighter' or 'torpedo')
   private focusOnlyDefKey: keyof typeof ENEMIES | undefined = undefined;
+
+  // ============================================
+  // DEBUG MODE - SCOUT DEVELOPMENT
+  // ============================================
+  // Set DEBUG_SCOUT_ONLY = true in spawnEnemy() to:
+  // - Only spawn Scout enemies
+  // - Enable physics debug hitboxes (green for enemies, cyan for player)
+  // - Useful for testing Scout behavior in isolation
+  // ============================================
   // Weighted spawn frequencies for Kla'ed enemies (higher = more common)
   private klaWeights: Partial<Record<keyof typeof ENEMIES, number>> = {
     scout: 4,
@@ -43,12 +52,12 @@ export class EnemyManager {
     this.difficulty = difficulty;
     this.speedMultiplier = 1;
 
-  // Create placeholder graphics for enemy types
+    // Create placeholder graphics for enemy types
     EnemyPlaceholders.createPlaceholders(scene);
 
-  // Set up centralized enemy projectile pool and expose on scene for convenience
-  this.projectilePool = new EnemyProjectiles(scene);
-  (this.scene as any).enemyProjectiles = this.projectilePool;
+    // Set up centralized enemy projectile pool and expose on scene for convenience
+    this.projectilePool = new EnemyProjectiles(scene);
+    (this.scene as any).enemyProjectiles = this.projectilePool;
 
     console.log(`[EnemyManager] Initialized with difficulty ${difficulty}`);
   }
@@ -97,7 +106,7 @@ export class EnemyManager {
     }
 
     // Set up the spawn timer
-  const effectiveDelay = this.focusOnlyDefKey === 'torpedo' ? Math.max(delay, 2200) : delay;
+    const effectiveDelay = this.focusOnlyDefKey === 'torpedo' ? Math.max(delay, 2200) : delay;
     this.spawnTimerAuditId = Math.floor(Math.random() * 1_000_000);
     this.spawnTimer = this.scene.time.addEvent({
       delay: effectiveDelay,
@@ -164,6 +173,24 @@ export class EnemyManager {
     // Determine position
     const x = Phaser.Math.Between(60, this.scene.scale.width - 60);
 
+    // DEBUG: Force Scout-only spawning for testing
+    const DEBUG_SCOUT_ONLY = true;
+    if (DEBUG_SCOUT_ONLY) {
+      const scoutDef = ENEMIES['scout'];
+      if (scoutDef && this.scene.textures.exists(scoutDef.key)) {
+        console.log('🛸 [DEBUG] Spawning Scout (debug mode active)');
+        const kla = new EnemyBase(this.scene, x, -60, scoutDef).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return;
+      } else {
+        // Fallback to legacy scout if Kla'ed version not available
+        const enemy = EnemyFactory.createEnemy(this.scene, EnemyType.SCOUT, x, -60);
+        this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
+        this.setupEnemyMovement(enemy);
+        return;
+      }
+    }
+
     // DEV focus: only spawn a specific Kla'ed unit (fighter, torpedo, etc.) if configured
     if (this.focusOnlyDefKey) {
       const def: (typeof ENEMIES)[keyof typeof ENEMIES] | undefined = ENEMIES[this.focusOnlyDefKey];
@@ -172,7 +199,9 @@ export class EnemyManager {
         this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
         return;
       } else {
-        console.warn(`[EnemyManager] Focus '${this.focusOnlyDefKey}' enabled but assets missing; skipping spawn.`);
+        console.warn(
+          `[EnemyManager] Focus '${this.focusOnlyDefKey}' enabled but assets missing; skipping spawn.`
+        );
         return;
       }
     }
@@ -186,10 +215,10 @@ export class EnemyManager {
           console.warn('[EnemyManager] pickRandomKlaDefKey returned missing def:', defKey);
           // fall through to legacy
         } else {
-        console.log('[EnemyManager] RANDOM -> Kla def', defKey);
-        const kla = new EnemyBase(this.scene, x, -60, def).spawn();
-        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
-        return;
+          console.log('[EnemyManager] RANDOM -> Kla def', defKey);
+          const kla = new EnemyBase(this.scene, x, -60, def).spawn();
+          this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+          return;
         }
       }
     }
@@ -219,8 +248,8 @@ export class EnemyManager {
     }
 
     // Create legacy enemy
-  console.log('[EnemyManager] RANDOM -> legacy enemy', enemyType);
-  const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, -60);
+    console.log('[EnemyManager] RANDOM -> legacy enemy', enemyType);
+    const enemy = EnemyFactory.createEnemy(this.scene, enemyType, x, -60);
 
     // Add enemy to the group (cast to Phaser.GameObjects.GameObject for type compatibility)
     this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
