@@ -412,9 +412,13 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
             return;
           const args: { aimed?: boolean; spreadDeg?: number } = { aimed: !!f.aimed };
           if (typeof f.spreadDeg === 'number') args.spreadDeg = f.spreadDeg;
-          this.fireProjectile(args);
-          doShootAnim();
-          this.playWeaponsShoot();
+
+          // Play weapon animation first, projectile will fire on frame 2
+          this.playWeaponsShoot(() => {
+            this.fireProjectile(args);
+            doShootAnim();
+          });
+
           if (typeof this.remainingIntervalShots === 'number') this.remainingIntervalShots -= 1;
           // If we just fired the last shot, schedule retreat if configured
           if (
@@ -707,22 +711,73 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     const wk = candidates.find((k) => this.sceneRef.textures.exists(k));
     if (!wk) return;
     this.weaponsKey = wk;
-    const spr = this.sceneRef.add.sprite(this.x, this.y, wk);
+
+    // Cache sorted frame names first
+    let initialFrame: string | undefined;
+    let frameNames: string[] = [];
+    try {
+      const tex = this.sceneRef.textures.get(wk);
+      frameNames = tex
+        .getFrameNames()
+        .filter((n) => n !== '__BASE')
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      if (frameNames.length > 0) {
+        this.weaponsFrameNames = frameNames;
+        initialFrame = frameNames[0]; // Use first frame as default
+      }
+    } catch {
+      // Ignore texture errors
+    }
+
+    // Create sprite with explicit initial frame
+    const spr = this.sceneRef.add.sprite(this.x, this.y, wk, initialFrame);
+
     // Match transform
     spr.setScale(this.scaleX, this.scaleY);
     spr.setAngle(this.angle);
     spr.setOrigin(this.originX, this.originY);
     spr.setDepth(this.depth + 1);
     this.weaponsOverlay = spr;
-    // Cache sorted frame names for per-shot frame stepping
+
+    // DEBUG: Log weapon initialization for Fighter
+    if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+      console.log('🔧 Fighter weapons initialized:', {
+        key: wk,
+        initialFrame,
+        frameCount: this.weaponsFrameNames?.length || 0,
+        visible: spr.visible,
+        alpha: spr.alpha,
+      });
+    }
+
+    // Create shoot animation
     try {
-      const tex = this.sceneRef.textures.get(wk);
-      const names = tex
-        .getFrameNames()
-        .filter((n) => n !== '__BASE')
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      if (names.length > 0) this.weaponsFrameNames = names;
-    } catch {}
+      // Create a shoot animation from frames if it doesn't exist
+      const shootAnimKey = `${wk}_Shoot`;
+      if (!this.sceneRef.anims.exists(shootAnimKey) && frameNames.length > 0) {
+        // Exclude duplicate frames at the end (Fighter weapons has frames 4-5 duplicated at x:0,y:0)
+        // Use only the first 4 frames (0-3) for the shoot animation
+        const animFrames = frameNames.slice(0, Math.min(4, frameNames.length));
+        const frameObjs = animFrames.map((frameName: string) => ({ key: wk, frame: frameName }));
+        this.sceneRef.anims.create({
+          key: shootAnimKey,
+          frames: frameObjs,
+          frameRate: 10,
+          repeat: 0, // Play once
+        });
+
+        // DEBUG: Log for Fighter weapons
+        if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+          console.log(
+            '✅ Created Fighter weapon animation:',
+            shootAnimKey,
+            `(${animFrames.length} frames from ${frameNames.length} total)`
+          );
+        }
+      }
+    } catch {
+      // Ignore animation creation errors
+    }
     // Do not auto-play; will only update on shooting
   }
 
@@ -743,9 +798,79 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
   }
 
   // Play a generic shoot animation on overlay (single burst)
-  private playWeaponsShoot() {
+  private playWeaponsShoot(onFrame2Callback?: () => void) {
     if (!this.weaponsOverlay || !this.weaponsKey) return;
-    // If we have frames, prefer just flashing the next generic frame (non-looping)
+
+    // DEBUG: Log for Fighter weapons
+    const baseKey = this.texture?.key as string;
+    if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+      console.log('⚔️ Fighter weapon shoot triggered:', {
+        weaponsKey: this.weaponsKey,
+        hasFrames: this.weaponsFrameNames?.length || 0,
+        hasCallback: !!onFrame2Callback,
+      });
+    }
+
+    // Try to find and play the shoot animation
+    const shootAnimKey = `${this.weaponsKey}_Shoot`;
+    if (this.sceneRef.anims.exists(shootAnimKey)) {
+      try {
+        this.weaponsOverlay.play({ key: shootAnimKey, repeat: 0 });
+
+        // DEBUG: Log every frame during animation to find empty frames
+        if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+          this.weaponsOverlay.on(
+            'animationupdate',
+            (_anim: unknown, frame: Phaser.Animations.AnimationFrame) => {
+              console.log(`🎬 Frame ${frame.index}:`, frame.textureFrame);
+            }
+          );
+        }
+
+        // If callback provided, fire projectile when frame 2 is reached
+        if (onFrame2Callback) {
+          this.weaponsOverlay.once(
+            'animationupdate',
+            (_anim: unknown, frame: Phaser.Animations.AnimationFrame) => {
+              if (frame.index === 2) {
+                onFrame2Callback();
+                if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+                  console.log('🔫 Projectile fired on frame 2');
+                }
+              }
+            }
+          );
+        }
+
+        // Reset to frame 0 when animation completes to show idle weapon state
+        this.weaponsOverlay.once('animationcomplete', () => {
+          // Clean up debug listener
+          if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+            this.weaponsOverlay?.off('animationupdate');
+          }
+
+          if (this.weaponsOverlay && this.weaponsFrameNames && this.weaponsFrameNames.length > 0) {
+            try {
+              this.weaponsOverlay.setFrame(this.weaponsFrameNames[0] as string);
+              if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+                console.log('🔄 Reset weapon to frame 0');
+              }
+            } catch {}
+          }
+        });
+
+        if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+          console.log('✅ Fighter weapon animation playing:', shootAnimKey);
+        }
+        return;
+      } catch (e) {
+        if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+          console.warn('❌ Failed to play Fighter weapon animation:', e);
+        }
+      }
+    }
+
+    // Fallback: If we have frames, prefer just flashing the next generic frame (non-looping)
     if (this.weaponsFrameNames && this.weaponsFrameNames.length > 0) {
       // Choose a middle frame for a generic flash
       const idx = Math.min(
@@ -756,7 +881,16 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       if (frameName !== undefined) {
         try {
           this.weaponsOverlay.setFrame(frameName as string);
-        } catch {}
+          // Fire callback immediately in fallback mode
+          if (onFrame2Callback) onFrame2Callback();
+          if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+            console.log('✅ Fighter weapon frame set:', frameName);
+          }
+        } catch (e) {
+          if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+            console.warn('❌ Failed to set Fighter weapon frame:', e);
+          }
+        }
       }
       return;
     }
@@ -764,9 +898,21 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     if (key) {
       try {
         this.weaponsOverlay.play({ key, repeat: 0 });
+        // Fire callback immediately if no frame tracking
+        if (onFrame2Callback) onFrame2Callback();
         const st: any = (this.weaponsOverlay as any).anims;
         if (st && typeof st.setTimeScale === 'function') st.setTimeScale(0.5); // slow down
-      } catch {}
+        if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+          console.log('✅ Fighter weapon animation playing:', key);
+        }
+      } catch (e) {
+        if (baseKey && baseKey.toLowerCase().includes('fighter')) {
+          console.warn('❌ Failed to play Fighter weapon animation:', e);
+        }
+      }
+    } else if (onFrame2Callback) {
+      // No animation available, fire immediately
+      onFrame2Callback();
     }
   }
 

@@ -173,20 +173,17 @@ export class EnemyManager {
     // Determine position
     const x = Phaser.Math.Between(60, this.scene.scale.width - 60);
 
-    // DEBUG: Force Scout-only spawning for testing
-    const DEBUG_SCOUT_ONLY = true;
-    if (DEBUG_SCOUT_ONLY) {
-      const scoutDef = ENEMIES['scout'];
-      if (scoutDef && this.scene.textures.exists(scoutDef.key)) {
-        console.log('🛸 [DEBUG] Spawning Scout (debug mode active)');
-        const kla = new EnemyBase(this.scene, x, -60, scoutDef).spawn();
+    // DEBUG: Force specific enemy type for testing
+    const DEBUG_FIGHTER_ONLY = false;
+    if (DEBUG_FIGHTER_ONLY) {
+      const fighterDef = ENEMIES['fighter'];
+      if (fighterDef && this.scene.textures.exists(fighterDef.key)) {
+        console.log('⚔️ [DEBUG] Spawning Fighter (debug mode active)');
+        const kla = new EnemyBase(this.scene, x, -60, fighterDef).spawn();
         this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
         return;
       } else {
-        // Fallback to legacy scout if Kla'ed version not available
-        const enemy = EnemyFactory.createEnemy(this.scene, EnemyType.SCOUT, x, -60);
-        this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
-        this.setupEnemyMovement(enemy);
+        console.warn('[DEBUG] Fighter assets not available, skipping spawn');
         return;
       }
     }
