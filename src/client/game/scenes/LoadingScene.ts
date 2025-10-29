@@ -300,6 +300,9 @@ export class LoadingScene extends Phaser.Scene {
       ensureFramesAnim('kla_torpedo_engine', 'kla_torpedo_engine_Move', 12);
       ensureFramesAnim('kla_torpedo_engine', 'kla_torpedo_engine_Idle', 12);
 
+      // Frigate weapons shoot animation (6 frames, last is duplicate of first)
+      ensureFramesAnim('kla_frigate_weapons', 'kla_frigate_weapons_Shoot', 10);
+
       // Kla'ed fallback loops
       const klaFallbacks = [
         'kla_scout',

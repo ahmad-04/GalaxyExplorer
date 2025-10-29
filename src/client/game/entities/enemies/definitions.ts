@@ -68,7 +68,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     hp: 1,
     speed: 90,
     score: 20,
-    bodyRadius: 14,
+    bodyRadius: 10, // Smaller hitbox for easier dodging
     scale: 1.25,
     // Face downward like other Kla'ed fighters
     angleDeg: 180,
@@ -88,7 +88,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     hp: 1,
     speed: 110,
     score: 35,
-    bodyRadius: 18,
+    bodyRadius: 14, // Smaller hitbox
     scale: 2,
     angleDeg: 180,
     anim: {
@@ -119,7 +119,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     hp: 2,
     speed: 80,
     score: 60,
-    bodyRadius: 22,
+    bodyRadius: 15, // Smaller hitbox
     scale: 1.5,
     angleDeg: 180,
     anim: {
@@ -148,7 +148,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     hp: 3,
     speed: 70,
     score: 80,
-    bodyRadius: 26,
+    bodyRadius: 18, // Smaller hitbox
     scale: 2,
     angleDeg: 180,
     anim: {
@@ -183,7 +183,7 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
     hp: 10,
     speed: 60,
     score: 200,
-    bodyRadius: 32,
+    bodyRadius: 28, // Smaller hitbox for large ship
     scale: 3,
     angleDeg: 180,
     anim: {
@@ -192,30 +192,38 @@ export const ENEMIES: Record<string, EnemyDefinition> = {
       shoot: 'kla_frigate_Shoot',
       death: 'kla_frigate_death_Death',
     },
+    // Frame-synced muzzle offsets:
+    // Original sprite is 64x64, center at 32,32
+    // Frame 2: outer guns at pixels 16.5,28 and 46.5,28
+    // Frame 4: center guns should be symmetric around center
+    // With 180° rotation and 3x scale, we need to flip Y and scale offsets
     muzzleOffsets: [
-      { x: -18, y: 20 },
-      { x: 18, y: 20 },
-      { x: 0, y: 26 },
+      { x: -46.5, y: 12 }, // Outer gun left: (16.5-32)*3 = -46.5, (32-28)*3 = 12
+      { x: 43.5, y: 12 }, // Outer gun right: (46.5-32)*3 = 43.5, (32-28)*3 = 12
+      { x: -7.5, y: 27 }, // Center gun left: slightly left of center, y=27
+      { x: 7.5, y: 27 }, // Center gun right: slightly right of center, y=27
     ],
-    // Approach from top and stop around y=90 to remain on upper side
-    movement: { type: 'hover', speed: 0, topY: 90 },
-    // Easier pattern: more delay, single shots, and longer wind-up
+    // Scripted: descend from above to Y=90 and hover there, firing continuously
+    movement: { type: 'hover', speed: 60 },
+    // Slower firing: 3 second intervals with 1.5 second start delay
+    // Fire type 'interval' is placeholder to enable weapon overlay; actual firing is script-controlled
     fire: {
       type: 'interval',
-      intervalMs: 2200,
+      intervalMs: 3000,
       burst: 1,
-      spreadDeg: 12,
-      aimed: true,
-      startDelayMs: 1200,
+      aimed: false,
+      startDelayMs: 1500,
     },
     projectile: {
       key: 'kla_big_bullet',
-      speed: 240,
-      lifetimeMs: 2500,
-      behavior: 'aimed',
+      speed: 200,
+      lifetimeMs: 3000,
+      behavior: 'straight',
       damage: 2,
       scale: 1.5,
     },
+    // Descend to Y=90, hover there permanently and fire indefinitely (no self-destruct)
+    script: { type: 'burstAtTop', topY: 90, shots: 999, intervalMs: 3000, afterSpeed: 0 },
   },
   // battlecruise removed
 };

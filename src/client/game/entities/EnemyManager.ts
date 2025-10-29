@@ -176,7 +176,20 @@ export class EnemyManager {
     // DEBUG: Force specific enemy type for testing
     const DEBUG_FIGHTER_ONLY = false;
     const DEBUG_TORPEDO_ONLY = false;
-    const DEBUG_BOMBER_ONLY = true;
+    const DEBUG_BOMBER_ONLY = false;
+    const DEBUG_FRIGATE_ONLY = true;
+    if (DEBUG_FRIGATE_ONLY) {
+      const frigateDef = ENEMIES['frigate'];
+      if (frigateDef && this.scene.textures.exists(frigateDef.key)) {
+        console.log('🚢 [DEBUG] Spawning Frigate (debug mode active)');
+        const kla = new EnemyBase(this.scene, x, -60, frigateDef).spawn();
+        this.enemies.add(kla as unknown as Phaser.GameObjects.GameObject);
+        return;
+      } else {
+        console.warn('[DEBUG] Frigate assets not available, skipping spawn');
+        return;
+      }
+    }
     if (DEBUG_BOMBER_ONLY) {
       const bomberDef = ENEMIES['bomber'];
       if (bomberDef && this.scene.textures.exists(bomberDef.key)) {

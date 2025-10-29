@@ -65,6 +65,9 @@ export class StarshipScene extends Phaser.Scene {
   > = new Map();
   private powerUpBasePos = { x: 70, y: 70 };
   private powerUpSpacing = 60; // horizontal spacing between power-up icons
+  private touchControlActive = false;
+  private touchPointerId: number | null = null;
+  private touchTarget = new Phaser.Math.Vector2();
 
   // resolved texture keys (fallback-safe)
   private tex = { ship: 'ship', bullet: 'bullet', enemy: 'enemy', stars: 'stars' };
@@ -270,8 +273,8 @@ export class StarshipScene extends Phaser.Scene {
 
     console.log('[StarshipScene] Physics should now be active');
 
-    // DEBUG: Enable physics debug to see hitboxes
-    const DEBUG_MODE = true;
+    // DEBUG: Enable physics debug to see hitboxes (disabled for proper testing)
+    const DEBUG_MODE = false;
     if (DEBUG_MODE) {
       try {
         this.physics.world.drawDebug = true;
@@ -315,6 +318,12 @@ export class StarshipScene extends Phaser.Scene {
     this.game.canvas.setAttribute('tabindex', '0');
     this.input.once('pointerdown', () => this.game.canvas.focus());
     this.game.canvas.focus();
+
+    // Enable touch/mouse drag movement alongside keyboard input
+    this.input.on('pointerdown', this.handlePointerDown, this);
+    this.input.on('pointerup', this.handlePointerUp, this);
+    this.input.on('pointerupoutside', this.handlePointerUp, this);
+    this.input.on('pointermove', this.handlePointerMove, this);
 
     // Capture keys
     const KC = Phaser.Input.Keyboard.KeyCodes;
@@ -479,7 +488,7 @@ export class StarshipScene extends Phaser.Scene {
     // UI
     this.scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '20px', color: '#ffffff' });
     this.add
-      .text(w / 2, h - 16, 'Click game, then use Arrows + Space', {
+      .text(w / 2, h - 16, 'Tap/Click to focus, drag or use WASD/Arrows to move', {
         fontSize: '12px',
         color: '#bbbbbb',
       })
@@ -657,44 +666,29 @@ export class StarshipScene extends Phaser.Scene {
       ship.setDrag(shipDrag).setAngularDrag(150).setMaxVelocity(shipMaxVelocity);
 
       const body = ship.body as Phaser.Physics.Arcade.Body;
-      const frameW = ship.frame.width;
-      const frameH = ship.frame.height;
-
-      // Create a custom spaceship-shaped hitbox (more accurate than circle)
-      // Define points for a ship-like polygon (triangle with slight wing width)
-      // Points are relative to sprite origin (center), scaled to frame size
-      const shipShape = [
-        // Nose (top center)
-        frameW * 0.5,
-        frameH * 0.1,
-        // Right wing tip
-        frameW * 0.8,
-        frameH * 0.7,
-        // Right engine (bottom right)
-        frameW * 0.65,
-        frameH * 0.9,
-        // Left engine (bottom left)
-        frameW * 0.35,
-        frameH * 0.9,
-        // Left wing tip
-        frameW * 0.2,
-        frameH * 0.7,
-      ];
-
-      // Apply the custom polygon shape
-      body.setSize(frameW, frameH);
-      body.setOffset(0, 0);
-
-      // Note: Phaser Arcade Physics doesn't natively support polygon collision,
-      // but we can approximate with a smaller rectangular hitbox that better fits the ship
-      // Using a narrower, taller rectangle that follows the ship's vertical profile
-      const hitboxWidth = frameW * 0.4; // 40% of sprite width (tighter on wings)
-      const hitboxHeight = frameH * 0.85; // 85% of sprite height (covers nose to engines)
-      const hitboxOffsetX = (frameW - hitboxWidth) / 2; // Center horizontally
-      const hitboxOffsetY = frameH * 0.08; // Start from near the nose tip
-
-      body.setSize(hitboxWidth, hitboxHeight);
-      body.setOffset(hitboxOffsetX, hitboxOffsetY);
+      // Use a small circular hitbox centered around the cockpit for fair, readable collisions.
+      // Radius is a fraction of the sprite size; center slightly above middle to match the nose/cockpit.
+      // Use base frame size and current origin to compute the collider offset.
+      // This keeps the body aligned regardless of scale or trimming.
+      const displayW = ship.displayWidth;
+      const displayH = ship.displayHeight;
+      const radius = Math.max(4, Math.floor(Math.min(displayW, displayH) * 0.12));
+      const offsetX = ship.displayOriginX - radius;
+      const offsetY = ship.displayOriginY - radius - displayH * 0.02;
+      body.setCircle(radius, offsetX, offsetY);
+      if (import.meta.env.MODE !== 'production') {
+        console.log('[StarshipScene] Player hitbox', {
+          displayW,
+          displayH,
+          originX: ship.displayOriginX,
+          originY: ship.displayOriginY,
+          radius,
+          offsetX,
+          offsetY,
+          scaleX: ship.scaleX,
+          scaleY: ship.scaleY,
+        });
+      }
       body.allowRotation = false;
       ship.setAngularVelocity(0);
       ship.setRotation(0);
@@ -819,38 +813,94 @@ export class StarshipScene extends Phaser.Scene {
     }
 
     // WASD + arrows
-    const left = this.cursors.left?.isDown || this.keys.A?.isDown;
-    const right = this.cursors.right?.isDown || this.keys.D?.isDown;
-    const up = this.cursors.up?.isDown || this.keys.W?.isDown;
-    const down = this.cursors.down?.isDown || this.keys.S?.isDown;
-    const fire = this.cursors.space?.isDown || this.keys.SPACE?.isDown;
+    let left = !!(this.cursors.left?.isDown || this.keys.A?.isDown);
+    let right = !!(this.cursors.right?.isDown || this.keys.D?.isDown);
+    let up = !!(this.cursors.up?.isDown || this.keys.W?.isDown);
+    let down = !!(this.cursors.down?.isDown || this.keys.S?.isDown);
 
     // NEW: no rotation — zero angular velocity every frame
     this.ship.setAngularVelocity(0);
 
-    // NEW: strafe-style movement (fixed facing)
-    const shipSpeed = this.shipAcceleration;
-    let vx = 0;
-    let vy = 0;
-    if (left) vx -= shipSpeed;
-    if (right) vx += shipSpeed;
-    if (up) vy -= shipSpeed; // up is toward top of screen
-    if (down) vy += shipSpeed; // down is toward bottom of screen
+    const body = this.ship.body as Phaser.Physics.Arcade.Body;
+    let wasMoving = false;
 
-    // Normalize diagonals so combined speed isn't faster
-    if (vx !== 0 && vy !== 0) {
-      const inv = 1 / Math.SQRT2;
-      vx *= inv;
-      vy *= inv;
+    if (this.touchControlActive && this.touchPointerId !== null) {
+      const prevX = this.ship.x;
+      const prevY = this.ship.y;
+      const bounds = this.physics.world.bounds;
+      const halfW = body.halfWidth ?? this.ship.displayWidth * 0.5;
+      const halfH = body.halfHeight ?? this.ship.displayHeight * 0.5;
+      const targetX = Phaser.Math.Clamp(
+        this.touchTarget.x,
+        bounds.left + halfW,
+        bounds.right - halfW
+      );
+      const targetY = Phaser.Math.Clamp(
+        this.touchTarget.y,
+        bounds.top + halfH,
+        bounds.bottom - halfH
+      );
+
+      const validTarget = Number.isFinite(targetX) && Number.isFinite(targetY);
+      if (validTarget) {
+        const dx = targetX - prevX;
+        const dy = targetY - prevY;
+        const dist = Math.hypot(dx, dy);
+        const speed = this.shipAcceleration; // px/sec
+        const maxStep = speed * (delta / 1000); // px this frame
+
+        // For animation hints
+        left = dx < -1;
+        right = dx > 1;
+        up = dy < -1;
+        down = dy > 1;
+
+        if (dist <= 1) {
+          body.setVelocity(0, 0);
+          wasMoving = false;
+        } else if (dist <= maxStep) {
+          // Close enough to snap at end of frame (feels smooth)
+          this.ship.setVelocity(0, 0);
+          this.ship.setPosition(targetX, targetY);
+          wasMoving = true;
+        } else {
+          // Move toward target at constant speed
+          const inv = 1 / dist;
+          const vx = dx * inv * speed;
+          const vy = dy * inv * speed;
+          this.ship.setVelocity(vx, vy);
+          wasMoving = true;
+        }
+      } else {
+        this.touchControlActive = false;
+        this.touchPointerId = null;
+      }
     }
 
-    const wasMoving = vx !== 0 || vy !== 0;
-    if (wasMoving) {
-      this.ship.setVelocity(vx, vy);
-    } else {
-      // quick damping when no input for more responsive controls
-      const body = this.ship.body as Phaser.Physics.Arcade.Body;
-      this.ship.setVelocity(body.velocity.x * 0.95, body.velocity.y * 0.95);
+    if (!wasMoving && (!this.touchControlActive || this.touchPointerId === null)) {
+      // Keyboard / gamepad movement when touch drag isn't active
+      const shipSpeed = this.shipAcceleration;
+      let vx = 0;
+      let vy = 0;
+      if (left) vx -= shipSpeed;
+      if (right) vx += shipSpeed;
+      if (up) vy -= shipSpeed; // up is toward top of screen
+      if (down) vy += shipSpeed; // down is toward bottom of screen
+
+      // Normalize diagonals so combined speed isn't faster
+      if (vx !== 0 && vy !== 0) {
+        const inv = 1 / Math.SQRT2;
+        vx *= inv;
+        vy *= inv;
+      }
+
+      wasMoving = vx !== 0 || vy !== 0;
+      if (wasMoving) {
+        this.ship.setVelocity(vx, vy);
+      } else {
+        // quick damping when no input for more responsive controls
+        this.ship.setVelocity(body.velocity.x * 0.95, body.velocity.y * 0.95);
+      }
     }
 
     // Animate engine based on thrust (position is synced in POST_UPDATE)
@@ -891,14 +941,10 @@ export class StarshipScene extends Phaser.Scene {
       void _err;
     }
 
-    // Shooting via weapon (hold-to-fire). Start looping anim on keydown, stop on keyup.
+    // Shooting via weapon (auto-fire).
     if (this.weapon) {
-      if (fire) {
-        this.weapon.startFiring();
-        this.weapon.tryFire(time);
-      } else {
-        this.weapon.stopFiring();
-      }
+      this.weapon.startFiring();
+      this.weapon.tryFire(time);
     }
 
     // Wrap player ship only - enemies are handled by EnemyManager
@@ -908,6 +954,28 @@ export class StarshipScene extends Phaser.Scene {
     if (this.activePowerUps.size > 0) {
       this.updatePowerUpTimerUI();
     }
+  }
+
+  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
+    this.touchControlActive = true;
+    this.touchPointerId = pointer.id;
+    const targetX = Number.isFinite(pointer.worldX) ? pointer.worldX : pointer.x;
+    const targetY = Number.isFinite(pointer.worldY) ? pointer.worldY : pointer.y;
+    this.touchTarget.set(targetX, targetY);
+  }
+
+  private handlePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!this.touchControlActive) return;
+    if (this.touchPointerId !== pointer.id) return;
+    const targetX = Number.isFinite(pointer.worldX) ? pointer.worldX : pointer.x;
+    const targetY = Number.isFinite(pointer.worldY) ? pointer.worldY : pointer.y;
+    this.touchTarget.set(targetX, targetY);
+  }
+
+  private handlePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.touchPointerId !== pointer.id) return;
+    this.touchControlActive = false;
+    this.touchPointerId = null;
   }
 
   // Try common animation key variants for Aseprite tags created via createFromAseprite
@@ -1004,6 +1072,8 @@ export class StarshipScene extends Phaser.Scene {
     if (!bullet.active || !enemySprite.active) return;
 
     bullet.destroy();
+    const enemyX = enemySprite.x;
+    const enemyY = enemySprite.y;
 
     // Check if enemy is one of our custom enemy types
     const enemy = enemySprite as unknown as Enemy;
@@ -1078,75 +1148,74 @@ export class StarshipScene extends Phaser.Scene {
 
       // Create explosion at the enemy's position
       console.log(
-        `[StarshipScene] DEBUG - Creating explosion at (${enemySprite.x}, ${enemySprite.y}) with type ${enemyTypeValue}`
+        `[StarshipScene] DEBUG - Creating explosion at (${enemyX}, ${enemyY}) with type ${enemyTypeValue}`
       );
       console.log('[StarshipScene] DEBUG - Current texture keys:', this.textures.getTextureKeys());
-      this.createExplosionEffect(enemySprite.x, enemySprite.y, enemyTypeValue);
+      this.createExplosionEffect(enemyX, enemyY, enemyTypeValue);
       this.boomSfx?.play();
-    }
+      // Chance to drop a power-up only when the enemy is actually destroyed
+      if (Phaser.Math.Between(0, 10) > 5) {
+        // Randomly choose a power-up type
+        const rand = Phaser.Math.Between(0, 2);
+        let powerUpType: PowerUpType;
+        if (rand === 0) {
+          powerUpType = PowerUpType.SCORE_MULTIPLIER;
+        } else if (rand === 1) {
+          powerUpType = PowerUpType.SHIELD;
+        } else {
+          powerUpType = PowerUpType.RAPID_FIRE;
+        }
 
-    // Chance to drop a power-up
-    if (Phaser.Math.Between(0, 10) > 5) {
-      // Randomly choose a power-up type
-      const rand = Phaser.Math.Between(0, 2);
-      let powerUpType: PowerUpType;
-      if (rand === 0) {
-        powerUpType = PowerUpType.SCORE_MULTIPLIER;
-      } else if (rand === 1) {
-        powerUpType = PowerUpType.SHIELD;
-      } else {
-        powerUpType = PowerUpType.RAPID_FIRE;
+        let textureKey = 'powerup_score';
+        if (powerUpType === PowerUpType.SHIELD) {
+          textureKey = 'powerup_shield';
+        } else if (powerUpType === PowerUpType.RAPID_FIRE) {
+          textureKey = 'powerup_rapidfire';
+        }
+
+        console.log(
+          `[StarshipScene] Dropping power-up of type: ${PowerUpType[powerUpType]} with texture key: ${textureKey}`
+        );
+
+        // Create the power-up drop with the correct texture
+        const powerUp = this.powerUps.create(
+          enemyX,
+          enemyY,
+          textureKey
+        ) as Phaser.Physics.Arcade.Sprite;
+
+        // Store the type on the power-up object itself
+        powerUp.setData('powerUpType', powerUpType);
+
+        // Use a fallback texture if needed
+        if (!powerUp.texture.key || powerUp.frame.name === '__MISSING') {
+          console.log(`[StarshipScene] Creating fallback for ${textureKey}`);
+          this.createPowerUpFallback(textureKey);
+          powerUp.setTexture(textureKey);
+        }
+
+        powerUp.setVelocityY(100);
+
+        // Make power-ups more visible and distinct based on type
+        let tint = 0xffdd00; // Yellow for score multiplier
+        if (powerUpType === PowerUpType.SHIELD) {
+          tint = 0x00ccff; // Blue for shield
+        } else if (powerUpType === PowerUpType.RAPID_FIRE) {
+          tint = 0x00ff00; // Green for rapid fire
+        }
+
+        powerUp.setTint(tint);
+
+        // Add a pulsing effect to make it more visible
+        this.tweens.add({
+          targets: powerUp,
+          scale: { from: 0.7, to: 1 },
+          alpha: { from: 0.7, to: 1 },
+          duration: 500,
+          yoyo: true,
+          repeat: -1,
+        });
       }
-
-      let textureKey = 'powerup_score';
-      if (powerUpType === PowerUpType.SHIELD) {
-        textureKey = 'powerup_shield';
-      } else if (powerUpType === PowerUpType.RAPID_FIRE) {
-        textureKey = 'powerup_rapidfire';
-      }
-
-      console.log(
-        `[StarshipScene] Dropping power-up of type: ${PowerUpType[powerUpType]} with texture key: ${textureKey}`
-      );
-
-      // Create the power-up drop with the correct texture
-      const powerUp = this.powerUps.create(
-        enemySprite.x,
-        enemySprite.y,
-        textureKey
-      ) as Phaser.Physics.Arcade.Sprite;
-
-      // Store the type on the power-up object itself
-      powerUp.setData('powerUpType', powerUpType);
-
-      // Use a fallback texture if needed
-      if (!powerUp.texture.key || powerUp.frame.name === '__MISSING') {
-        console.log(`[StarshipScene] Creating fallback for ${textureKey}`);
-        this.createPowerUpFallback(textureKey);
-        powerUp.setTexture(textureKey);
-      }
-
-      powerUp.setVelocityY(100);
-
-      // Make power-ups more visible and distinct based on type
-      let tint = 0xffdd00; // Yellow for score multiplier
-      if (powerUpType === PowerUpType.SHIELD) {
-        tint = 0x00ccff; // Blue for shield
-      } else if (powerUpType === PowerUpType.RAPID_FIRE) {
-        tint = 0x00ff00; // Green for rapid fire
-      }
-
-      powerUp.setTint(tint);
-
-      // Add a pulsing effect to make it more visible
-      this.tweens.add({
-        targets: powerUp,
-        scale: { from: 0.7, to: 1 },
-        alpha: { from: 0.7, to: 1 },
-        duration: 500,
-        yoyo: true,
-        repeat: -1,
-      });
     }
 
     // In Build Mode tests, check for completion when enemies are cleared
@@ -2159,6 +2228,14 @@ export class StarshipScene extends Phaser.Scene {
 
     // Disable collision detection first
     this.collisionsActive = false;
+    this.touchControlActive = false;
+    this.touchPointerId = null;
+    if (this.input) {
+      this.input.off('pointerdown', this.handlePointerDown, this);
+      this.input.off('pointerup', this.handlePointerUp, this);
+      this.input.off('pointerupoutside', this.handlePointerUp, this);
+      this.input.off('pointermove', this.handlePointerMove, this);
+    }
 
     // Clean up enemy manager
     if (this.enemyManager) {

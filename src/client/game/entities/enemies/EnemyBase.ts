@@ -311,10 +311,18 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     if (s.state === 'burst') {
       body.setVelocity(0, 0);
       if (time >= s.nextAt && s.shotsDone < s.shots) {
-        // Fire aimed snapshot at player's current position
-        this.fireProjectile({ aimed: true });
-        shootAnim();
-        this.playWeaponsShootStep(s.shotsDone); // 0-based index
+        // Frigate uses frame-synced weapons burst, others fire normally
+        const baseKey = this.texture?.key as string;
+        if (baseKey === 'kla_frigate') {
+          // Frigate fires via playFrigateWeaponsBurst (frame-synced)
+          this.playFrigateWeaponsBurst();
+          shootAnim();
+        } else {
+          // Torpedo and others: fire aimed snapshot at player's current position
+          this.fireProjectile({ aimed: true });
+          shootAnim();
+          this.playWeaponsShootStep(s.shotsDone); // 0-based index
+        }
         s.shotsDone += 1;
         s.nextAt = time + s.intervalMs;
       }
@@ -405,6 +413,17 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
       // Respect totalShots if configured
       if (typeof this.remainingIntervalShots === 'number' && this.remainingIntervalShots <= 0)
         return;
+
+      // Special handling for Frigate: frame-synchronized multi-shot burst
+      const baseKey = this.texture?.key as string;
+      if (baseKey === 'kla_frigate') {
+        this.playFrigateWeaponsBurst();
+        doShootAnim();
+        if (typeof this.remainingIntervalShots === 'number') this.remainingIntervalShots -= 1;
+        this.nextFireAt = time + f.intervalMs;
+        return;
+      }
+
       const burst = Math.max(1, f.burst ?? 1);
       for (let i = 0; i < burst; i++) {
         this.sceneRef.time.delayedCall(i * 80, () => {
@@ -569,6 +588,94 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     };
 
     spawnPoints.forEach((p) => spawnOne(p.x, p.y));
+  }
+
+  // Fire projectiles from specific muzzle indices only (for Frigate frame-synced bursts)
+  private fireProjectileFromMuzzles(
+    muzzleIndices: number[],
+    opts: {
+      aimed?: boolean;
+      spreadDeg?: number;
+      homing?: { turnRate: number; accel: number };
+      bomb?: { gravity: number };
+    }
+  ) {
+    const proj = this.def.projectile;
+    if (!proj) return;
+
+    const pool = (this.sceneRef as any).enemyProjectiles as EnemyProjectiles | undefined;
+    const allMuzzles = this.def.muzzleOffsets || [];
+
+    // Filter to only requested muzzle indices
+    const selectedPoints = muzzleIndices
+      .filter((i) => i >= 0 && i < allMuzzles.length)
+      .map((i) => {
+        const muzzle = allMuzzles[i];
+        return muzzle
+          ? {
+              x: this.x + muzzle.x,
+              y: this.y + muzzle.y,
+            }
+          : null;
+      })
+      .filter((p): p is { x: number; y: number } => p !== null);
+
+    const spawnOne = (sx: number, sy: number) => {
+      if (pool) {
+        if (opts.bomb) {
+          pool.spawnBomb(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            opts.bomb.gravity,
+            proj.tint,
+            proj.scale
+          );
+        } else if (opts.homing && proj.behavior === 'homing') {
+          pool.spawnHoming(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            opts.homing,
+            proj.tint,
+            proj.scale
+          );
+        } else if (opts.aimed === true || (opts.aimed !== false && proj.behavior === 'aimed')) {
+          // Only use aimed if explicitly requested OR if not explicitly set to false and behavior is aimed
+          const target = (this.sceneRef as any).player as Phaser.Physics.Arcade.Sprite | undefined;
+          pool.spawnAimed(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            target,
+            proj.tint,
+            proj.scale
+          );
+        } else if (opts.spreadDeg || proj.behavior === 'spread') {
+          const spreadDeg = opts.spreadDeg ?? 18;
+          pool.spawnSpread(
+            sx,
+            sy,
+            proj.key,
+            proj.speed,
+            proj.lifetimeMs,
+            spreadDeg,
+            proj.tint,
+            proj.scale
+          );
+        } else {
+          pool.spawnStraight(sx, sy, proj.key, proj.speed, proj.lifetimeMs, proj.tint, proj.scale);
+        }
+      }
+    };
+
+    selectedPoints.forEach((p) => spawnOne(p.x, p.y));
   }
 
   // --- Engine overlay helpers ---
@@ -956,6 +1063,63 @@ export class EnemyBase extends Phaser.Physics.Arcade.Sprite {
     }
     // Fallback: generic single-frame flash
     this.playWeaponsShoot();
+  }
+
+  // Frigate-specific: Play weapons animation and fire 2 bullets on frame 2, 2 bullets on frame 4
+  private playFrigateWeaponsBurst() {
+    if (!this.weaponsOverlay || !this.weaponsKey) return;
+
+    const shootAnimKey = `${this.weaponsKey}_Shoot`;
+    if (!this.sceneRef.anims.exists(shootAnimKey)) {
+      console.warn('🚢 Frigate weapons animation not found:', shootAnimKey);
+      return;
+    }
+
+    try {
+      // Slow down the weapon animation to 0.4x speed for more delay between shots
+      this.weaponsOverlay.play({ key: shootAnimKey, repeat: 0 });
+      const animState = (this.weaponsOverlay as any).anims;
+      if (animState && typeof animState.setTimeScale === 'function') {
+        animState.setTimeScale(0.4);
+      }
+      console.log('🚢 Frigate weapons burst initiated (center first, outer second)');
+
+      // Track which frames we've already fired on to avoid duplicate firing
+      const firedFrames = new Set<number>();
+
+      const onUpdate = (_anim: unknown, frame: Phaser.Animations.AnimationFrame) => {
+        console.log(`🚢 Frigate weapon frame ${frame.index}`);
+
+        // Frame 2: Fire from CENTER guns FIRST (muzzle offsets 2 and 3) - straight down
+        if (frame.index === 2 && !firedFrames.has(2)) {
+          firedFrames.add(2);
+          console.log('🚢 Frame 2: Firing CENTER guns (straight)');
+          this.fireProjectileFromMuzzles([2, 3], { aimed: false });
+        }
+
+        // Frame 4: Fire from OUTER guns SECOND (muzzle offsets 0 and 1) - straight down
+        if (frame.index === 4 && !firedFrames.has(4)) {
+          firedFrames.add(4);
+          console.log('🚢 Frame 4: Firing OUTER guns (straight)');
+          this.fireProjectileFromMuzzles([0, 1], { aimed: false });
+        }
+      };
+
+      this.weaponsOverlay.on('animationupdate', onUpdate);
+
+      // Reset to frame 0 when animation completes
+      this.weaponsOverlay.once('animationcomplete', () => {
+        this.weaponsOverlay?.off('animationupdate', onUpdate);
+        if (this.weaponsOverlay && this.weaponsFrameNames && this.weaponsFrameNames.length > 0) {
+          try {
+            this.weaponsOverlay.setFrame(this.weaponsFrameNames[0] as string);
+            console.log('🚢 Frigate weapons reset to idle');
+          } catch {}
+        }
+      });
+    } catch (e) {
+      console.warn('🚢 Failed to play Frigate weapon animation:', e);
+    }
   }
 
   // (Removed in-between animation path) We now directly set the shot frame per spec.
